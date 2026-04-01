@@ -1,0 +1,7 @@
+.content {
+    -fx-background-color: -card-bg;
+}
+
+.label {
+    -fx-text-fill: -text-color;
+}

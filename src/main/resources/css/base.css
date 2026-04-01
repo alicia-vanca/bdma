@@ -1,0 +1,62 @@
+.root {
+    -fx-font-family: "Segoe UI";
+}
+
+/* COMMON LAYOUT */
+.content {
+    -fx-background-radius: 12;
+    -fx-padding: 20;
+}
+
+/* TEXT */
+.title {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+/* INPUT */
+.input {
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-padding: 8;
+    -fx-pref-height: 34;
+    -fx-min-height: 34;
+}
+
+/* BUTTON */
+.btn-primary,
+.btn-secondary {
+    -fx-pref-height: 34;
+    -fx-padding: 0 16;
+    -fx-alignment: CENTER;
+    -fx-background-radius: 6;
+}
+
+.combo-box {
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-pref-height: 34;
+    -fx-min-height: 34;
+    /* KHÔNG set padding cho ComboBox — nó tự quản lý nội bộ */
+}
+
+/* TABLE */
+.table-cell {
+    -fx-padding: 8;
+}
+
+/* FORM */
+.form {
+    -fx-padding: 20;
+    -fx-spacing: 12;
+    -fx-background-radius: 10;
+}
+
+/* MESSAGE */
+.label.message-success {
+    -fx-text-fill: #27ae60;
+}
+
+.label.message-error {
+    -fx-text-fill: #c0392b;
+}

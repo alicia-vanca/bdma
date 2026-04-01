@@ -1,0 +1,52 @@
+.root {
+    -fx-background-color: -app-bg;
+}
+
+/* HEADER SHELL */
+.header-shell {
+    -fx-background-color: -sidebar-bg;
+}
+
+/* TOP BAR */
+.top-bar {
+    -fx-padding: 0;
+}
+
+/* APP TITLE */
+.header-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+/* TABS ROW */
+.tabs-row {
+    -fx-padding: 0 0 2 0;
+}
+
+/* USER MENU */
+.user-menu {
+    -fx-background-color: -card-bg;
+    -fx-text-fill: -text-color;
+    -fx-pref-width: 140;
+    -fx-min-width: 140;
+    -fx-max-width: 140;
+}
+
+/* USER MENU POPUP */
+.context-menu {
+    -fx-pref-width: 140;
+    -fx-min-width: 140;
+}
+
+.context-menu .menu-item {
+    -fx-pref-width: 140;
+    -fx-text-fill: -text-color;
+}
+
+/* HEADER TAB BUTTON */
+.menu-tab-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-color;
+    -fx-background-radius: 6;
+    -fx-padding: 8 14;
+}

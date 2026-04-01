@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<VBox fx:id="root"
+      spacing="15"
+      xmlns="http://javafx.com/javafx/21"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.app.user.controller.UserController"
+      stylesheets="@/css/admin.css"
+      styleClass="content">
+
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+
+    <HBox alignment="CENTER_LEFT" spacing="10">
+        <Label text="%user.title" styleClass="title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="%user.add" onAction="#onAdd" styleClass="btn-primary"/>
+    </HBox>
+    <HBox spacing="10">
+        <TextField fx:id="txtSearch" promptText="%user.search" styleClass="input"/>
+        <ComboBox fx:id="cbRole" promptText="%user.role.all"/>
+        <Button text="%common.search" onAction="#onSearch" styleClass="btn-primary"/>
+        <Button text="%common.reset" onAction="#onReset" styleClass="btn-secondary"/>
+    </HBox>
+    <Label fx:id="message" styleClass="message-error" visible="false" managed="false"/>
+    <TableView fx:id="table" VBox.vgrow="ALWAYS">
+
+        <columns>
+            <TableColumn fx:id="colSTT" text="%common.stt" prefWidth="60"/>
+            <TableColumn fx:id="colUsername" text="%user.username" prefWidth="180"/>
+            <TableColumn fx:id="colRole" text="%user.role" prefWidth="120"/>
+            <TableColumn fx:id="colAction" text="%common.action" prefWidth="220"/>
+        </columns>
+
+    </TableView>
+
+    <HBox alignment="CENTER_RIGHT" spacing="10">
+        <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage"
+                styleClass="btn-secondary"/>
+        <Label fx:id="lblPageInfo" text="%common.page"/>
+        <Button fx:id="btnNext" text="%common.next" onAction="#onNextPage"
+                styleClass="btn-secondary"/>
+    </HBox>
+
+</VBox>

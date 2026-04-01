@@ -1,0 +1,38 @@
+.root {
+    -fx-background-color: -app-bg;
+}
+
+.login-card {
+    -fx-background-color: -card-bg;
+}
+
+/* TEXT */
+.title {
+    -fx-text-fill: -text-color;
+}
+
+/* INPUT */
+.input {
+    -fx-background-color: -input-bg;
+    -fx-border-color: -border-color;
+}
+
+.input:focused {
+    -fx-background-color: -input-focus-bg;
+    -fx-border-color: -primary;
+}
+
+/* BUTTON */
+.login-btn {
+    -fx-background-color: -primary;
+    -fx-text-fill: white;
+}
+
+.login-btn:hover {
+    -fx-background-color: -primary-hover;
+}
+
+/* ERROR */
+.message-error {
+    -fx-text-fill: -danger;
+}

@@ -1,0 +1,32 @@
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<StackPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.app.auth.controller.LoginController"
+           styleClass="root">
+
+    <VBox spacing="15" alignment="CENTER" styleClass="login-card">
+        <padding>
+            <Insets top="30" right="40" bottom="30" left="40"/>
+        </padding>
+
+        <HBox spacing="10" alignment="CENTER_RIGHT">
+            <Button fx:id="btnEnglish" text="EN" onAction="#switchToEnglish"
+                    styleClass="lang-btn"/>
+            <Button fx:id="btnVietnamese" text="VN" onAction="#switchToVietnamese"
+                    styleClass="lang-btn"/>
+        </HBox>
+
+        <Label text="%login.title" styleClass="title"/>
+
+        <TextField fx:id="username" promptText="%login.username" styleClass="input"/>
+
+        <PasswordField fx:id="password" promptText="%login.password" styleClass="input"/>
+
+        <Label fx:id="message" styleClass="message-error"/>
+
+        <Button text="%login.button" onAction="#handleLogin" styleClass="login-btn"/>
+
+    </VBox>
+</StackPane>

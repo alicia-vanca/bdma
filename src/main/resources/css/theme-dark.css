@@ -1,0 +1,301 @@
+.root {
+    /* ===== BACKGROUND ===== */
+    -app-bg: #0f172a;
+    -card-bg: #1e293b;
+
+    /* ===== TEXT ===== */
+    -text-color: #f1f5f9;
+    -text-inverse: #0f172a;
+
+    /* ===== PRIMARY ===== */
+    -primary: #3b82f6;
+    -primary-hover: #2563eb;
+
+    /* ===== BORDER + INPUT ===== */
+    -border-color: #334155;
+    -input-bg: #1e293b;
+    -input-focus-bg: #273549;
+
+    /* ===== ERROR ===== */
+    -danger: #f87171;
+
+    /* ===== SIDEBAR (DARK) ===== */
+    -sidebar-bg: #1e293b;
+
+    /* ===== TABLE ===== */
+    -table-bg: #1e293b;
+    -table-odd: #162032;
+    -table-hover: #1e3a5f;
+    -table-selected: #1d4ed8;
+}
+
+/* ===== ROOT ===== */
+.root {
+    -fx-background-color: -app-bg;
+    -fx-text-fill: #f1f5f9;
+    -fx-text-base-color: #f1f5f9;
+}
+
+/* ===== CARD ===== */
+.card {
+    -fx-background-color: -card-bg;
+    -fx-border-color: -border-color;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+}
+
+/* ===== TEXT ===== */
+.label {
+    -fx-text-fill: -text-color;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+    -fx-background-color: -sidebar-bg;
+}
+
+/* MENU TITLE */
+.sidebar-title {
+    -fx-text-fill: #94a3b8;
+    -fx-font-weight: bold;
+    -fx-padding: 10 10 5 10;
+}
+
+/* MENU BUTTON */
+.menu-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-color;
+    -fx-background-radius: 6;
+    -fx-padding: 8 12;
+    -fx-max-width: Infinity;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.menu-btn:hover {
+    -fx-background-color: #334155;
+}
+
+/* ACTIVE MENU */
+.menu-btn.active-button {
+    -fx-background-color: -primary;
+    -fx-text-fill: white;
+}
+
+/* HEADER TAB BUTTON */
+.menu-tab-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-color;
+    -fx-background-radius: 6;
+    -fx-padding: 8 14;
+}
+
+.menu-tab-btn:hover {
+    -fx-background-color: #334155;
+}
+
+.menu-tab-btn.active-button {
+    -fx-background-color: -primary;
+    -fx-text-fill: white;
+}
+
+/* ===== BUTTON ===== */
+.btn-primary {
+    -fx-background-color: -primary;
+    -fx-text-fill: white;
+    -fx-background-radius: 6;
+}
+
+.btn-primary:hover {
+    -fx-background-color: -primary-hover;
+}
+
+.btn-secondary {
+    -fx-background-color: #334155;
+    -fx-text-fill: -text-color;
+    -fx-background-radius: 6;
+}
+
+.btn-secondary:hover {
+    -fx-background-color: #475569;
+}
+
+/* DISABLED BUTTON */
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.button.btn-update:disabled {
+    -fx-opacity: 1;
+    -fx-text-fill: #475569;
+    -fx-background-color: #1e293b;
+}
+
+/* ===== INPUT ===== */
+.text-field,
+.password-field,
+.combo-box {
+    -fx-background-color: -input-bg;
+    -fx-border-color: -border-color;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+}
+
+.text-input {
+    -fx-text-fill: -text-color;
+    -fx-prompt-text-fill: #64748b;
+    -fx-highlight-fill: -primary;
+    -fx-highlight-text-fill: white;
+}
+
+.combo-box .list-cell {
+    -fx-text-fill: -text-color;
+    -fx-background-color: transparent;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: -card-bg;
+    -fx-border-color: -border-color;
+}
+
+.combo-box-popup .list-cell {
+    -fx-background-color: -card-bg;
+    -fx-text-fill: -text-color;
+}
+
+.combo-box-popup .list-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.combo-box-popup .list-cell:selected {
+    -fx-background-color: -table-selected;
+    -fx-text-fill: white;
+}
+
+.text-field:focus,
+.password-field:focus,
+.combo-box:focus {
+    -fx-background-color: -input-focus-bg;
+    -fx-border-color: -primary;
+}
+
+.button.btn-update {
+    -fx-background-color: #334155;
+    -fx-text-fill: -text-color;
+    -fx-background-radius: 6;
+    -fx-background-insets: 0;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+}
+
+.button.btn-update:hover {
+    -fx-background-color: #475569;
+}
+
+.update-status {
+    -fx-text-fill: #94a3b8;
+}
+
+/* ===== TABLE ===== */
+.table-view {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+}
+
+.table-view .column-header-background,
+.table-view .filler {
+    -fx-background-color: -card-bg;
+}
+
+.table-view .column-header {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent -border-color transparent transparent;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: -text-color;
+    -fx-font-weight: bold;
+}
+
+.table-row-cell {
+    -fx-background-color: -table-bg;
+}
+
+.table-view .table-cell {
+    -fx-text-fill: -text-color;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: -table-odd;
+}
+
+.table-row-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: -table-selected;
+}
+
+.table-row-cell:selected .table-cell {
+    -fx-text-fill: white;
+}
+
+/* ===== ERROR TEXT ===== */
+.message-error {
+    -fx-text-fill: -danger;
+}
+
+/* ===== LANG BUTTON ===== */
+.lang-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-color;
+    -fx-background-radius: 6;
+    -fx-padding: 8 12;
+    -fx-alignment: CENTER_LEFT;
+}
+
+/* ACTIVE LANG */
+.lang-btn.active-button {
+    -fx-background-color: -primary;
+    -fx-text-fill: white;
+}
+
+/* ===== THEME TOGGLE BUTTON ===== */
+.theme-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-color;
+    -fx-background-radius: 6;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+    -fx-padding: 4 7 4 7;
+    -fx-min-width: 28px;
+    -fx-min-height: 28px;
+}
+
+.theme-btn:hover {
+    -fx-background-color: #334155;
+    -fx-background-radius: 6;
+}
+
+.theme-btn-active {
+    -fx-background-color: -primary;
+    -fx-text-fill: white;
+    -fx-background-radius: 6;
+}
+
+/* ===== CONTEXT MENU ===== */
+.context-menu {
+    -fx-background-color: -card-bg;
+    -fx-border-color: -border-color;
+}
+
+.context-menu .menu-item {
+    -fx-text-fill: -text-color;
+    -fx-background-color: -card-bg;
+}
+
+.context-menu .menu-item:hover {
+    -fx-background-color: -table-hover;
+}
+
+.context-menu .menu-item:focused {
+    -fx-background-color: -table-hover;
+}

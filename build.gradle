@@ -1,0 +1,95 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.springframework.boot' version '3.3.2'
+    id 'io.spring.dependency-management' version '1.1.5'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'com.app'
+version = System.getenv("APP_VERSION") ?: '1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+javafx {
+    version = '21'
+    modules = ['javafx.controls', 'javafx.fxml']
+}
+
+dependencies {
+
+    // ✅ Spring Boot core (có sẵn Logback)
+    implementation 'org.springframework.boot:spring-boot-starter'
+
+    // ✅ JDBC (nhẹ hơn JPA)
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+
+    // ✅ SQLite
+    implementation 'org.xerial:sqlite-jdbc:3.46.0.0'
+
+    // ✅ Flyway (optional - nếu bạn dùng migration)
+    implementation 'org.flywaydb:flyway-core:10.15.0'
+
+    // ✅ HTTP client
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // ✅ JSON
+    implementation 'org.json:json:20251224'
+
+    // ✅ Lombok
+    compileOnly 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+
+    // 🔐 Password hash
+    implementation 'org.springframework.security:spring-security-crypto'
+
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    mainClass = 'com.app.MainApp'
+}
+
+bootJar {
+    archiveBaseName = 'app'
+    archiveVersion = (System.getenv("APP_VERSION") ?: "1.0").replace("v", "")
+
+    manifest {
+        attributes(
+                "Main-Class": "com.app.MainApp",
+                "Implementation-Version": archiveVersion
+        )
+    }
+}
+
+shadowJar {
+    archiveBaseName.set('app')
+    archiveVersion.set((System.getenv("APP_VERSION") ?: "1.0").replace("v", ""))
+    archiveClassifier.set("")
+
+    manifest {
+        attributes(
+                'Main-Class': 'com.app.MainApp',
+                'Implementation-Version': archiveVersion.get()
+        )
+    }
+
+    // 🔥 cực quan trọng
+    mergeServiceFiles()
+}
+
+build {
+    dependsOn shadowJar
+}

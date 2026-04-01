@@ -1,0 +1,71 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Download JavaFX SDK
+        run: |
+          curl -L "https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_windows-x64_bin-sdk.zip" -o javafx.zip
+          Expand-Archive -Path javafx.zip -DestinationPath C:\
+          Rename-Item "C:\javafx-sdk-21.0.2" "C:\javafx-sdk"
+
+      - name: Grant Gradle permission
+        run: chmod +x gradlew
+        shell: bash
+
+      - name: Build shadow JAR
+        env:
+          APP_VERSION: ${{ github.ref_name }}
+          LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
+        run: ./gradlew clean shadowJar
+
+      - name: Prepare package folder
+        run: |
+          mkdir build\package
+          copy build\libs\app-*.jar build\package\
+          xcopy "C:\javafx-sdk\bin" "build\package\" /E /H /Y
+
+      - name: Convert icon
+        run: |
+          magick src\main\resources\image\icon.webp -resize 256x256 build\package\icon.ico
+
+      - name: Install WiX Toolset
+        run: choco install wixtoolset -y
+
+      - name: Package as EXE
+        env:
+          LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          jpackage  --input build\package  --name HelloWorldApp  --main-jar app-$version.jar  --main-class com.app.MainApp  --type exe  --win-shortcut  --app-version $version  --icon build\package\icon.ico  --vendor "Hoanvuive"  --dest build\installer  --module-path "C:\javafx-sdk\lib"  --add-modules "javafx.controls,javafx.fxml,java.sql,java.naming,java.logging"  --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN"  --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/installer/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

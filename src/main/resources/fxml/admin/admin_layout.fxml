@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<BorderPane xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.app.admin.controller.AdminLayoutController"
+            styleClass="root">
+
+    <top>
+        <VBox styleClass="header-shell" spacing="8">
+            <padding>
+                <Insets top="10" right="15" bottom="10" left="15"/>
+            </padding>
+
+            <HBox alignment="CENTER_LEFT" spacing="10" styleClass="top-bar">
+                <Label text="BDMA" styleClass="header-title"/>
+                <Region HBox.hgrow="ALWAYS"/>
+
+                <HBox spacing="10" alignment="CENTER_RIGHT">
+                    <Button fx:id="btnEnglish" text="EN" onAction="#switchToEnglish"
+                            styleClass="lang-btn"/>
+                    <Button fx:id="btnVietnamese" text="VN" onAction="#switchToVietnamese"
+                            styleClass="lang-btn"/>
+                </HBox>
+                <HBox spacing="4" alignment="CENTER">
+                    <Button fx:id="btnLightTheme"
+                            text="☀"
+                            onAction="#switchToLightTheme"
+                            styleClass="theme-btn"/>
+                    <Button fx:id="btnDarkTheme"
+                            text="☾"
+                            onAction="#switchToDarkTheme"
+                            styleClass="theme-btn"/>
+                </HBox>
+                <Button fx:id="btnCheckUpdate"
+                        text="%top.update"
+                        onAction="#onCheckUpdateManual"
+                        styleClass="btn-update"/>
+
+                <Label fx:id="labelUpdateStatus" styleClass="update-status"/>
+
+                <MenuButton fx:id="userMenu" styleClass="user-menu">
+                    <items>
+                        <MenuItem text="%top.info" onAction="#onUserInfo"/>
+                        <MenuItem text="%top.logout" onAction="#logout"/>
+                    </items>
+                </MenuButton>
+            </HBox>
+
+            <HBox spacing="10" styleClass="tabs-row">
+                <Button text="%menu.dashboard"
+                        fx:id="btnDashboard"
+                        onAction="#goDashboard"
+                        styleClass="menu-tab-btn"/>
+
+                <Button text="%menu.user"
+                        fx:id="btnUser"
+                        onAction="#goUser"
+                        styleClass="menu-tab-btn"/>
+            </HBox>
+        </VBox>
+    </top>
+
+    <center>
+        <StackPane fx:id="contentArea" styleClass="content"/>
+    </center>
+
+</BorderPane>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<VBox spacing="18"
+      alignment="CENTER"
+      prefWidth="420"
+      prefHeight="320"
+      minWidth="420"
+      xmlns="http://javafx.com/javafx/21"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.app.user.controller.UserFormController"
+      stylesheets="@/css/admin.css"
+      styleClass="form">
+
+    <Label text="%user.form.title" styleClass="title"/>
+
+    <TextField fx:id="txtUsername" promptText="%user.username" styleClass="input"/>
+
+    <PasswordField fx:id="txtPassword" promptText="%user.password.hint" styleClass="input"/>
+
+    <ComboBox fx:id="cbRole" promptText="%user.role.select"
+              maxWidth="1.7976931348623157E308"/>
+
+    <Label fx:id="lblError" visible="false" styleClass="message-error"/>
+
+    <HBox spacing="10" alignment="CENTER">
+        <Button text="%common.save" onAction="#onSave" styleClass="btn-primary"/>
+        <Button text="%common.cancel" onAction="#onCancel" styleClass="btn-secondary"/>
+    </HBox>
+
+</VBox>
