@@ -67,7 +67,7 @@ jobs:
           $version = "${{ env.APP_VERSION }}"
           jpackage `
             --input build\package `
-            --name HelloWorldApp `
+            --name BDMA `
             --main-jar app-$version.jar `
             --main-class com.app.MainApp `
             --type exe `
