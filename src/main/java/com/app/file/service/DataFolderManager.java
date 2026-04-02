@@ -31,7 +31,7 @@ public class DataFolderManager {
     private final FolderSecurityService security;
 
     public DataFolderManager() {
-        this.dataDir = new File(AppPaths.appDir() + "/data");
+        this.dataDir = new File(AppPaths.dataDir() + "/data");
         this.tempDir = new File(AppPaths.tmpDir());
         this.security = new FolderSecurityService(dataDir.getAbsolutePath());
     }
