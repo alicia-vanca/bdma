@@ -30,7 +30,7 @@ public class UpdateService {
 
     private static final Logger log = LoggerFactory.getLogger(UpdateService.class);
 
-    private static final String GITHUB_API = "https://api.github.com/repos/hoantrandanh-wq/testversion/releases";
+    private static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
     private static final String LAST_CHECK_DATE = "lastCheckDate";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final Path PREFS_FILE = Path.of(AppPaths.configDir(), "update-prefs.json");
