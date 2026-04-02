@@ -224,7 +224,13 @@ FunctionEnd
 
 ; ── Xóa data ────────────────────────────────────────────────────
 Function DeleteData
-  RMDir /r "${APP_DATA_DIR}"
+  StrCpy $0 "${APP_DATA_DIR}" 4 -4
+  ${If} $0 != "bdma"
+    MessageBox MB_OK|MB_ICONSTOP "Refusing to delete unsafe app data path: ${APP_DATA_DIR}"
+    Abort
+  ${EndIf}
+
   ExecWait '$SYSDIR\cmd.exe /C attrib -R -H -S "$\"${APP_DATA_DIR}$\"" /S /D'
+  RMDir /r "${APP_DATA_DIR}"
   ExecWait '$SYSDIR\cmd.exe /C rmdir /S /Q "$\"${APP_DATA_DIR}$\""'
 FunctionEnd
