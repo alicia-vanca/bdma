@@ -85,13 +85,21 @@ jobs:
           $sourceDir = Join-Path (Get-Location).Path "build\dist\BDMA"
           $iconPath = Join-Path (Get-Location).Path "src\main\resources\image\logo.ico"
           $appPathsSource = Get-Content "src\main\java\com\app\common\config\AppPaths.java" -Raw
-          $appDirMatch = [regex]::Match($appPathsSource, 'APP_DIR\s*=\s*System\.getProperty\("user\.home"\)\s*\+\s*"(?<suffix>[^"]+)"')
+          $appDirMatch = [regex]::Match($appPathsSource, 'APP_DIR\s*=\s*System\.getProperty\("user\.home"\)\s*\+(?<suffixExpression>.*?);', [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
           if (-not $appDirMatch.Success) {
             throw "Could not extract APP_DIR from AppPaths.java"
           }
 
-          $appDataDir = '$PROFILE' + ($appDirMatch.Groups['suffix'].Value -replace '/', '\\')
+          $suffixParts = [regex]::Matches($appDirMatch.Groups['suffixExpression'].Value, '"([^"]*)"') | ForEach-Object {
+            $_.Groups[1].Value
+          }
+
+          if ($suffixParts.Count -eq 0) {
+            throw "Could not extract APP_DIR suffix from AppPaths.java"
+          }
+
+          $appDataDir = '$PROFILE' + (($suffixParts -join '') -replace '/', '\\')
 
           New-Item -ItemType Directory -Force -Path build\installer | Out-Null
 
