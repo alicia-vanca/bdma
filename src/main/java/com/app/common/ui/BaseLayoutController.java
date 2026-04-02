@@ -51,7 +51,8 @@ public abstract class BaseLayoutController {
         return null;
     }
 
-    // Use explicit controller type to keep casting checked at runtime and avoid unchecked generic casts.
+    // Use explicit controller type to keep casting checked at runtime and avoid
+    // unchecked generic casts.
     protected <T> ViewLoader.LoadResult<T> loadViewWithController(String fxml, Class<T> controllerType) {
         ViewLoader.LoadResult<Object> result = viewLoader.loadWithController(fxml, this);
         if (result != null) {
@@ -76,6 +77,27 @@ public abstract class BaseLayoutController {
         if (!active.getStyleClass().contains(ACTIVE_BUTTON)) {
             active.getStyleClass().add(ACTIVE_BUTTON);
         }
+    }
+
+    // Layouts with menu tabs should override this and return all tab buttons used
+    // by setActiveButton(). Default is an empty list for layouts without tab menus.
+    protected List<Button> getMenuButtons() {
+        return List.of();
+    }
+
+    // Override in subclasses to map a module FXML path to its nav button, so that
+    // reloadUI() can restore the correct active-button highlight after a language
+    // reload.
+    protected abstract Button getButtonForModule(String fxml);
+
+    // Shared notice hooks allow child modules to show shell-level messages without
+    // depending on a concrete layout controller implementation.
+    public void showNoticeSuccess(String text) {
+        // default no-op for layouts that do not provide shell-level notice UI
+    }
+
+    public void showNoticeError(String text) {
+        // default no-op for layouts that do not provide shell-level notice UI
     }
 
     // ── UI ────────────────────────────────────────────────────────────────
@@ -105,6 +127,12 @@ public abstract class BaseLayoutController {
                 && result.controller() instanceof BaseLayoutController layoutCtrl) {
             Node moduleNode = layoutCtrl.loadView(moduleToRestore);
             layoutCtrl.setContent(moduleNode);
+            // Restore the active nav button to match the restored module; openDefaultTab()
+            // already activated btnDashboard, so we must override it here.
+            Button btn = layoutCtrl.getButtonForModule(moduleToRestore);
+            if (btn != null) {
+                layoutCtrl.setActiveButton(layoutCtrl.getMenuButtons(), btn);
+            }
         }
     }
 }

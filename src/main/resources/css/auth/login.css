@@ -4,6 +4,7 @@
 
 .login-card {
     -fx-background-color: -card-bg;
+    -fx-max-width: 500;
 }
 
 /* TEXT */
@@ -26,6 +27,7 @@
 .login-btn {
     -fx-background-color: -primary;
     -fx-text-fill: white;
+    -fx-background-radius: 6;
 }
 
 .login-btn:hover {

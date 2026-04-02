@@ -1,5 +1,9 @@
 .root {
-    -fx-background-color: -app-bg;
+    -fx-background-color: -card-bg;
+}
+
+.content-shell {
+    -fx-background-color: -card-bg;
 }
 
 /* HEADER SHELL */
@@ -21,6 +25,30 @@
 /* TABS ROW */
 .tabs-row {
     -fx-padding: 0 0 2 0;
+}
+
+/* TOP RIGHT HEADER ACTIONS */
+.top-right-actions {
+    -fx-alignment: CENTER_RIGHT;
+}
+
+.greeting-label {
+    -fx-font-size: 13px;
+    -fx-font-weight: 600;
+}
+
+.btn-logout {
+    -fx-background-color: -danger;
+    -fx-text-fill: white;
+    -fx-background-radius: 6;
+    -fx-padding: 6 12;
+    -fx-min-width: 96;
+    -fx-pref-width: 96;
+    -fx-cursor: hand;
+}
+
+.btn-logout:hover {
+    -fx-opacity: 0.9;
 }
 
 /* USER MENU */

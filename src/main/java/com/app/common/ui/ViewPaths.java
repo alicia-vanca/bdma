@@ -9,6 +9,8 @@ public final class ViewPaths {
     public static final String USER_LIST = "/fxml/user/user.fxml";
     public static final String USER_INFO = "/fxml/user/user-info.fxml";
     public static final String USER_FORM = "/fxml/user/user-form.fxml";
+    public static final String USER_ACCOUNT_DIALOG = USER_FORM;
+    public static final String SETTINGS_POPUP = "/fxml/common/settings-popup.fxml";
 
     private ViewPaths() {
     }

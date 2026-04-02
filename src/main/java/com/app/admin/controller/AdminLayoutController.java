@@ -3,17 +3,20 @@ package com.app.admin.controller;
 import com.app.MainApp;
 import com.app.common.i18n.I18n;
 import com.app.common.session.Session;
-import com.app.common.theme.ThemeManager;
 import com.app.common.ui.BaseLayoutController;
+import com.app.common.ui.DialogHelper;
+import com.app.common.ui.SettingsPopupHelper;
 import com.app.common.ui.ViewLoader;
 import com.app.common.ui.ViewPaths;
 import com.app.update.controller.UpdateController;
+import com.app.user.controller.UserFormController;
 import com.app.user.controller.UserInfoController;
+import javafx.animation.PauseTransition;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.MenuButton;
 import javafx.scene.layout.StackPane;
+import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,81 +26,72 @@ import java.util.List;
 @Component
 public class AdminLayoutController extends BaseLayoutController {
 
-    private static final String THEME_BTN_ACTIVE = "theme-btn-active";
-
     private static final Logger log = LoggerFactory.getLogger(AdminLayoutController.class);
+    private static final String MESSAGE_ERROR = "message-error";
+    private static final String MESSAGE_SUCCESS = "message-success";
 
     private final UpdateController updateController;
 
     @FXML
     private StackPane contentArea;
     @FXML
-    private Button btnCheckUpdate;
+    private Label labelGreeting;
     @FXML
-    private Label labelUpdateStatus;
+    private Button btnSettings;
     @FXML
-    private MenuButton userMenu;
+    private Button btnLogout;
     @FXML
     private Button btnDashboard;
     @FXML
     private Button btnUser;
     @FXML
-    private Button btnEnglish;
-    @FXML
-    private Button btnVietnamese;
-    @FXML
-    private Button btnLightTheme;
-    @FXML
-    private Button btnDarkTheme;
+    private Label noticeLabel;
+
+    private SettingsPopupHelper settingsPopupHelper;
+    private final PauseTransition hideNoticeTransition = new PauseTransition(Duration.seconds(3));
 
     public AdminLayoutController(ViewLoader viewLoader, UpdateController updateController) {
         super(viewLoader);
         this.updateController = updateController;
     }
 
-    // ── BaseLayoutController impl ───────────────────────────────────────────
-
     @Override
     protected StackPane getContentArea() {
         return contentArea;
     }
 
+    @Override
     protected List<Button> getMenuButtons() {
         // Dashboard is visible to all roles, so always include it in the active-state
         // list.
         return List.of(btnDashboard, btnUser);
     }
 
-    protected List<Button> getLangButtons() {
-        return List.of(btnEnglish, btnVietnamese);
-    }
-
-    // ── Init ────────────────────────────────────────────────────────────────
-
     @FXML
     public void initialize() {
-        // Wire update callbacks once so header controls always reflect updater state.
-        updateController.setOnCheckStart(() -> btnCheckUpdate.setDisable(true));
-        updateController.setOnCheckEnd(() -> btnCheckUpdate.setDisable(false));
-        updateController.setOnStatusChange(msg -> labelUpdateStatus.setText(msg));
+        // Keep header buttons responsive while update checks are running.
+        updateController.setOnCheckStart(() -> btnSettings.setDisable(true));
+        updateController.setOnCheckEnd(() -> btnSettings.setDisable(false));
+        updateController.setOnStatusChange(msg -> log.info("Update status: {}", msg));
+
+        noticeLabel.setVisible(false);
+        hideNoticeTransition.setOnFinished(e -> noticeLabel.setVisible(false));
 
         // Set greeting early because this template is shared by both admin and
         // non-admin users.
-        userMenu.setText(I18n.get("top.hello", Session.getUser().getUsername()));
+        labelGreeting.setText(I18n.get("top.hello", Session.getUser().getUsername()));
 
-        // Process role-specific tab visibility before choosing default content.
+        settingsPopupHelper = new SettingsPopupHelper(
+                "admin",
+                btnSettings,
+                this::reloadUI,
+                this::onCheckUpdateManual,
+                this::onUserInfo);
+        settingsPopupHelper.initialize();
+
         configureTabsByRole();
         openDefaultTab();
-
-        // Preserve active language marker after UI init/reload.
-        String lang = I18n.getLocale().getLanguage();
-        setActiveButton(getLangButtons(), "vi".equals(lang) ? btnVietnamese : btnEnglish);
-
-        // Keep theme toggle state consistent with persisted theme.
-        updateThemeButtons();
     }
-
-    // ── Menu handlers ───────────────────────────────────────────────────────
 
     @FXML
     public void goDashboard() {
@@ -119,10 +113,16 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     private void onUserInfo() {
-        // Route "Information" menu to the same user/profile tab behavior for
-        // consistency.
-        setActiveButton(getMenuButtons(), btnUser);
-        openMyProfile();
+        // Open account settings as a dialog from the header action so users can
+        // inspect identity info and change password without leaving the current page.
+        DialogHelper.DialogResult<UserFormController> dialog = DialogHelper.openWithController(
+                ViewPaths.USER_ACCOUNT_DIALOG,
+                I18n.get("user.account.title"));
+        dialog.controller().prepareForAccount(Session.getUser());
+        dialog.controller().setOnSuccess(() -> showNoticeSuccess(I18n.get("user.account.password.updated.success")));
+        dialog.controller().setOnNoChange(() -> showNoticeSuccess(I18n.get("user.update.nochange")));
+        dialog.stage().setResizable(false);
+        dialog.stage().showAndWait();
     }
 
     @FXML
@@ -136,8 +136,12 @@ public class AdminLayoutController extends BaseLayoutController {
         updateController.onCheckUpdateManual();
     }
 
-    private void openMyProfile() {
+    @FXML
+    private void openSettingsPopup() {
+        settingsPopupHelper.togglePopup();
+    }
 
+    private void openMyProfile() {
         // Request typed controller result to keep navigation casting checked and
         // explicit.
         var result = loadViewWithController(ViewPaths.USER_INFO, UserInfoController.class);
@@ -154,61 +158,43 @@ public class AdminLayoutController extends BaseLayoutController {
         setContent(result.node());
     }
 
-    // Both tabs are visible to all roles; goUser() loads different content
-    // depending on role.
+    @Override
+    public void showNoticeSuccess(String text) {
+        noticeLabel.setText(text);
+        noticeLabel.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
+        noticeLabel.getStyleClass().add(MESSAGE_SUCCESS);
+        noticeLabel.setVisible(true);
+        noticeLabel.toFront();
+        hideNoticeTransition.stop();
+        hideNoticeTransition.playFromStart();
+    }
+
+    @Override
+    public void showNoticeError(String text) {
+        noticeLabel.setText(text);
+        noticeLabel.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
+        noticeLabel.getStyleClass().add(MESSAGE_ERROR);
+        noticeLabel.setVisible(true);
+        noticeLabel.toFront();
+        hideNoticeTransition.stop();
+        hideNoticeTransition.playFromStart();
+    }
+
     private void configureTabsByRole() {
         // No tabs are hidden — content differs by role, not visibility.
     }
 
-    // All roles land on the dashboard by default; delegate to goDashboard to avoid
-    // duplicating logic.
     private void openDefaultTab() {
         goDashboard();
     }
 
-    @FXML
-    private void switchToEnglish() {
-        // Reload layout after language switch so shared header tabs and body text
-        // update together.
-        I18n.setLocale(java.util.Locale.forLanguageTag("en"));
-        reloadUI();
-        setActiveButton(getLangButtons(), btnEnglish);
-    }
-
-    @FXML
-    private void switchToVietnamese() {
-        // Reload layout after language switch so shared header tabs and body text
-        // update together.
-        I18n.setLocale(java.util.Locale.forLanguageTag("vi"));
-        reloadUI();
-        setActiveButton(getLangButtons(), btnVietnamese);
-    }
-
-    @FXML
-    private void switchToLightTheme() {
-        // Apply theme immediately to the current shared shell and active body module.
-        ThemeManager.setTheme(ThemeManager.THEME_LIGHT);
-        ThemeManager.apply(MainApp.getScene());
-        updateThemeButtons();
-    }
-
-    @FXML
-    private void switchToDarkTheme() {
-        // Apply theme immediately to the current shared shell and active body module.
-        ThemeManager.setTheme(ThemeManager.THEME_DARK);
-        ThemeManager.apply(MainApp.getScene());
-        updateThemeButtons();
-    }
-
-    private void updateThemeButtons() {
-        // Only one theme toggle should be active so current mode is obvious to users.
-        boolean isDark = ThemeManager.THEME_DARK.equals(ThemeManager.getTheme());
-        btnDarkTheme.getStyleClass().removeAll(THEME_BTN_ACTIVE);
-        btnLightTheme.getStyleClass().removeAll(THEME_BTN_ACTIVE);
-        if (isDark) {
-            btnDarkTheme.getStyleClass().add(THEME_BTN_ACTIVE);
-        } else {
-            btnLightTheme.getStyleClass().add(THEME_BTN_ACTIVE);
-        }
+    @Override
+    protected Button getButtonForModule(String fxml) {
+        // Map each module's FXML path to its sidebar nav button so reloadUI() can
+        // restore the correct active-button highlight after a language change reload.
+        return switch (fxml) {
+            case ViewPaths.USER_LIST, ViewPaths.USER_INFO -> btnUser;
+            default -> null;
+        };
     }
 }
