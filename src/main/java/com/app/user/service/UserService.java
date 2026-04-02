@@ -36,6 +36,13 @@ public class UserService {
         return userRepository.findAll();
     }
 
+    public boolean usernameExists(String username) {
+        String normalizedUsername = normalizeUsername(username);
+        return normalizedUsername != null
+                && !normalizedUsername.isBlank()
+                && userRepository.existsByUsername(normalizedUsername);
+    }
+
     public User create(User user) {
         String username = normalizeUsername(user.getUsername());
 
@@ -103,7 +110,8 @@ public class UserService {
     }
 
     private String normalizeUsername(String username) {
-        if (username == null) return null;
+        if (username == null)
+            return null;
         return username.trim().toLowerCase();
     }
 }

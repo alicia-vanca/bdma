@@ -41,6 +41,9 @@ bin/
 
 ### VS Code ###
 .vscode/
+
+### AI/Agent Instruction Files ###
+AGENTS.md
 .github/copilot-instructions.md
 
 ### Mac OS ###

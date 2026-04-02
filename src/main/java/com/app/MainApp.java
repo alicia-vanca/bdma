@@ -87,10 +87,12 @@ public class MainApp extends Application {
     }
 
     public static void showLogin() {
-        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 400, 300);
+        primaryStage.setResizable(false);
+        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 400, 350);
     }
 
     public static void showAdmin() {
+        primaryStage.setResizable(true);
         loadAndNavigate(ViewPaths.ADMIN_LAYOUT, "BDMA", 1200, 800);
     }
 
