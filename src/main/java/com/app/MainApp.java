@@ -10,6 +10,7 @@ import com.app.common.helper.SpringContextHolder;
 import com.app.common.i18n.I18n;
 import com.app.common.theme.ThemeManager;
 import com.app.common.ui.NavigationService;
+import com.app.common.ui.StageUtils;
 import com.app.common.ui.ViewLoader;
 import com.app.common.ui.ViewPaths;
 import com.app.file.service.DataFolderManager;
@@ -64,6 +65,7 @@ public class MainApp extends Application {
     @Override
     public void start(Stage stage) {
         setPrimaryStage(stage);
+        StageUtils.applyAppIcon(primaryStage);
         LogContext.init();
         I18n.loadSavedLocale();
 

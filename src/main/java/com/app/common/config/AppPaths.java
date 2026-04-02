@@ -4,7 +4,8 @@ import java.io.File;
 
 public final class AppPaths {
 
-    private static final String APP_DIR = System.getProperty("user.home") + "/.helloworld-app";
+    private static final String APP_DIR = System.getProperty("user.home") + "/AppData/Local/" +
+            "bdma";
 
     private AppPaths() {
     }
@@ -31,5 +32,9 @@ public final class AppPaths {
 
     public static File logConfigFile() {
         return new File(configDir() + "/logback.xml");
+    }
+
+    public static File dataDir() {
+        return new File(System.getProperty("user.home") + "/AppData/Local/File/dbma");
     }
 }

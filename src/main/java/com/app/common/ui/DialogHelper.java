@@ -28,6 +28,7 @@ public class DialogHelper {
         CssLoader.applyDialog(scene, fxml);
 
         Stage stage = new Stage();
+        StageUtils.applyAppIcon(stage);
         stage.setTitle(title);
         stage.setScene(scene);
         stage.initOwner(MainApp.getPrimaryStage());
