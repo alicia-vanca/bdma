@@ -243,7 +243,7 @@
 }
 
 .table-row-cell:selected .table-cell {
-    -fx-text-fill: white;
+    -fx-text-fill: -text-color;
 }
 
 /* ===== ERROR TEXT ===== */

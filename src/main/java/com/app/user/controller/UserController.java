@@ -96,17 +96,26 @@ public class UserController implements LayoutAware {
         if (!Session.isAdmin()) {
             return;
         }
-
         currentView = root;
+        setupRoleComboBox();
+        setupFilterListeners();
+        setupTableColumns();
+        addActionColumn();
+        loadData();
+        restoreFilterState();
+    }
 
+    private void setupRoleComboBox() {
         cbRole.getItems().addAll(I18n.get(COMMON_ALL), Role.ADMIN.toString(), Role.USER.toString());
         // Restore previous role selection if the user had a non-default filter active,
         // translating the "All" sentinel to the current locale's string.
         String roleToRestore = (savedRoleFilter == null) ? I18n.get(COMMON_ALL) : savedRoleFilter;
         cbRole.setValue(roleToRestore);
+    }
 
-        // Keep username filtering responsive while typing without requiring
-        // explicit Search button clicks.
+    // Keep username filtering responsive while typing without requiring
+    // explicit Search button clicks.
+    private void setupFilterListeners() {
         txtSearch.textProperty().addListener((obs, oldValue, newValue) -> {
             savedSearchText = newValue == null ? "" : newValue;
             onSearch();
@@ -116,20 +125,22 @@ public class UserController implements LayoutAware {
             savedRoleFilter = (newValue == null || newValue.equals(I18n.get(COMMON_ALL))) ? null : newValue;
             onSearch();
         });
+    }
 
+    private void setupTableColumns() {
         colSTT.setCellValueFactory(c -> new SimpleIntegerProperty(
-                currentPageIndex * PAGE_SIZE
-                        + table.getItems().indexOf(c.getValue()) + 1));
+                currentPageIndex * PAGE_SIZE + table.getItems().indexOf(c.getValue()) + 1));
 
         colUsername.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getUsername()));
         colUsername.setCellFactory(col -> new TableCell<>() {
-
-            private final Hyperlink link = new Hyperlink();
-
+            private final Label label = new Label();
             {
-                link.setOnAction(e -> {
-                    User user = getTableView().getItems().get(getIndex());
-                    openUserInfo(user);
+                label.setStyle("-fx-cursor: hand; -fx-text-fill: -fx-text-base-color; -fx-underline: false;");
+                label.setOnMouseClicked(e -> {
+                    if (!isEmpty() && getItem() != null) {
+                        User user = getTableView().getItems().get(getIndex());
+                        openUserInfo(user);
+                    }
                 });
             }
 
@@ -139,17 +150,16 @@ public class UserController implements LayoutAware {
                 if (empty || item == null) {
                     setGraphic(null);
                 } else {
-                    link.setText(item);
-                    setGraphic(link);
+                    label.setText(item);
+                    setGraphic(label);
                 }
             }
         });
 
         colRole.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getRole().toString()));
+    }
 
-        addActionColumn();
-        loadData();
-        // Restore search text and re-apply filter after data is loaded.
+    private void restoreFilterState() {
         if (!savedSearchText.isEmpty()) {
             txtSearch.setText(savedSearchText);
         }
