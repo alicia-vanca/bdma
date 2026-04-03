@@ -33,11 +33,9 @@ public final class AppRuntimeInitializer {
     }
 
     public static void initialize() {
-        String appDir = AppPaths.appDir();
-
         ensureBaseDirectories();
         // App context (device ID) must be initialized before key derivation
-        initializeAppContext(appDir);
+        initializeAppContext();
         forceLoadSqliteDriver();
         ensureDatabaseFile();
         byte[] dbKey = deriveDbKey();
@@ -50,7 +48,8 @@ public final class AppRuntimeInitializer {
     private static void ensureBaseDirectories() {
         ensureDir(AppPaths.appDir());
         ensureDir(AppPaths.configDir());
-        ensureDir(AppPaths.tmpDir());
+        ensureDir(AppPaths.appTmpDir());
+        ensureDir(AppPaths.sqliteTmpDir());
     }
 
     private static void ensureDir(String path) {
@@ -72,7 +71,7 @@ public final class AppRuntimeInitializer {
     }
 
     private static void configureSqlite() {
-        System.setProperty("org.sqlite.tmpdir", AppPaths.tmpDir());
+        System.setProperty("org.sqlite.tmpdir", AppPaths.sqliteTmpDir());
     }
 
     private static void forceLoadSqliteDriver() {
@@ -83,8 +82,8 @@ public final class AppRuntimeInitializer {
         }
     }
 
-    private static void initializeAppContext(String appDir) {
-        DeviceIdManager deviceIdManager = new DeviceIdManager(appDir);
+    private static void initializeAppContext() {
+        DeviceIdManager deviceIdManager = new DeviceIdManager();
         AppContext.setDeviceId(deviceIdManager.getDeviceId());
 
         String version = AppRuntimeInitializer.class.getPackage().getImplementationVersion();
@@ -93,6 +92,11 @@ public final class AppRuntimeInitializer {
         }
         AppContext.setVersion(version);
 
+        // Populate MDC as soon as runtime context is available so startup logs on
+        // the launcher thread carry device and version information.
+        LogContext.init();
+
+        log.info("Machine-based device ID resolved");
         log.info("App started - version: {}", AppContext.getVersion());
     }
 

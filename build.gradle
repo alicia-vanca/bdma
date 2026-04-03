@@ -37,6 +37,9 @@ dependencies {
     // ✅ SQLite (fork with SQLite3MultipleCiphers encryption support)
     implementation 'io.github.willena:sqlite-jdbc:3.49.1.0'
 
+    // ✅ Bean Validation (Jakarta Validation + Hibernate Validator)
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
     // ✅ Flyway (optional - nếu bạn dùng migration)
     implementation 'org.flywaydb:flyway-core:10.15.0'
 

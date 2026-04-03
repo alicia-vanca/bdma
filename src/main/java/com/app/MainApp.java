@@ -99,10 +99,10 @@ public class MainApp extends Application {
 
     @Override
     public void stop() {
-        if (dataFolderManager != null)
-            dataFolderManager.shutdown();
         if (springContext != null)
             springContext.close();
+        if (dataFolderManager != null)
+            dataFolderManager.shutdown();
         log.info("App stopped");
     }
 

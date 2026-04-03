@@ -32,7 +32,7 @@ public class DataFolderManager {
 
     public DataFolderManager() {
         this.dataDir = new File(AppPaths.dataDir() + "/data");
-        this.tempDir = new File(AppPaths.tmpDir());
+        this.tempDir = new File(AppPaths.appTmpDir());
         this.security = new FolderSecurityService(dataDir.getAbsolutePath());
     }
 

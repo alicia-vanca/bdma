@@ -128,6 +128,10 @@ public class UserFormController {
             throw new AppException(I18n.get("user.username.required"));
         }
 
+        if (mode != DialogMode.ACCOUNT && !userService.isValidUsername(username)) {
+            throw new AppException(I18n.get("user.username.invalid"));
+        }
+
         if (mode == DialogMode.CREATE && userService.usernameExists(username)) {
             throw new AppException(I18n.get("user.username.exists"));
         }
@@ -154,12 +158,11 @@ public class UserFormController {
             return roleChanged || shouldApplyPassword;
         }
 
-        // Account mode only updates password; blank password means no-op.
+        // Account info mode only updates password; blank password means no-op.
         return shouldApplyPassword;
     }
 
-    // Live username checks only apply to the create flow because edit/account rows
-    // render username as a read-only label.
+    // Front-end live username checks (only apply to the create flow)
     private void validateUsernameAsTyped() {
         if (mode != DialogMode.CREATE) {
             hideError();
@@ -172,6 +175,26 @@ public class UserFormController {
             return;
         }
 
+        // 1) special characters
+        if (userService.containsInvalidCharacters(username)) {
+            showError(I18n.get("user.username.invalid.chars"));
+            return;
+        }
+
+        // 2) first character must be a letter
+        if (!userService.startsWithLetter(username)) {
+            showError(I18n.get("user.username.invalid.start"));
+            return;
+        }
+
+        // 3) length checks
+        if (username.length() < UserService.USERNAME_MIN_LENGTH
+                || username.length() > UserService.USERNAME_MAX_LENGTH) {
+            showError(I18n.get("user.username.invalid.length"));
+            return;
+        }
+
+        // 4) username exists checks
         if (userService.usernameExists(username)) {
             showError(I18n.get("user.username.exists"));
             return;
