@@ -55,6 +55,7 @@ public class LoginController {
         settingsPopupHelper = new SettingsPopupHelper(
                 "login",
                 btnSettings,
+                null,
                 this::reloadUI,
                 updateController::onCheckUpdateManual,
                 null);

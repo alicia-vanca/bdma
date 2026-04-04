@@ -1,5 +1,6 @@
 package com.app.file.service;
 
+import com.app.common.enums.FolderType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,15 +13,12 @@ public class FolderSecurityService {
 
     private static final Logger log = LoggerFactory.getLogger(FolderSecurityService.class);
 
-    private static final String LOCKED_FOLDER_NAME =
-            "System Data.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
-
     private final Path parentPath;
     private final String unlockedFolderName;
     private final Path unlockedPath;
     private final Path lockedPath;
 
-    public FolderSecurityService(String folderPath) {
+    public FolderSecurityService(String folderPath, FolderType folderType) {
         this.unlockedPath = Path.of(folderPath);
         Path parent = unlockedPath.getParent();
         if (parent == null) {
@@ -28,7 +26,7 @@ public class FolderSecurityService {
         }
         this.parentPath = parent;
         this.unlockedFolderName = unlockedPath.getFileName().toString();
-        this.lockedPath = parentPath.resolve(LOCKED_FOLDER_NAME);
+        this.lockedPath = parentPath.resolve(folderType.getLockedName());
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -70,7 +68,7 @@ public class FolderSecurityService {
         }
 
         try {
-            int renameCode = runCommand("cmd", "/c", "ren", unlockedFolderName, LOCKED_FOLDER_NAME);
+            int renameCode = runCommand("cmd", "/c", "ren", unlockedFolderName, lockedPath.getFileName().toString());
             if (renameCode != 0 || !lockedPath.toFile().exists()) {
                 log.error("Lock failed — rename exit code: {}", renameCode);
                 return;
@@ -78,10 +76,10 @@ public class FolderSecurityService {
 
             runCommand("cmd", "/c", "attrib", "+h", "+s", lockedPath.toString());
             applyDeleteProtection(lockedPath.toString());
-            log.info("Data folder locked");
+            log.info("Data folder locked: {}", lockedPath);
 
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();  // restore flag
+            Thread.currentThread().interrupt();
             log.error("Lock interrupted", e);
         } catch (IOException e) {
             log.error("Lock failed", e);
@@ -98,16 +96,16 @@ public class FolderSecurityService {
             runCommand("cmd", "/c", "attrib", "-h", "-s", lockedPath.toString());
             removeDeleteProtection(lockedPath.toString());
 
-            int renameCode = runCommand("cmd", "/c", "ren", LOCKED_FOLDER_NAME, unlockedFolderName);
+            int renameCode = runCommand("cmd", "/c", "ren", lockedPath.getFileName().toString(), unlockedFolderName);
             if (renameCode != 0 || !unlockedPath.toFile().exists()) {
                 log.error("Unlock failed — rename exit code: {}", renameCode);
                 return;
             }
 
-            log.info("Data folder unlocked");
+            log.info("Data folder unlocked: {}", unlockedPath);
 
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();  // restore flag
+            Thread.currentThread().interrupt();
             log.error("Unlock interrupted", e);
         } catch (IOException e) {
             log.error("Unlock failed", e);
@@ -126,7 +124,7 @@ public class FolderSecurityService {
                 log.warn("Delete protection failed, exit code: {}", code);
             }
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();  // restore flag
+            Thread.currentThread().interrupt();
             log.error("Failed to apply delete protection", e);
         } catch (IOException e) {
             log.error("Failed to apply delete protection", e);
@@ -143,7 +141,7 @@ public class FolderSecurityService {
                 log.warn("Remove delete protection failed, exit code: {}", code);
             }
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();  // restore flag
+            Thread.currentThread().interrupt();
             log.error("Failed to remove delete protection", e);
         } catch (IOException e) {
             log.error("Failed to remove delete protection", e);
