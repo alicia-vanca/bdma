@@ -38,7 +38,7 @@ public final class AppPaths {
         return new File(configDir() + "/logback.xml");
     }
 
-    public static File dataDir() {
-        return new File(System.getProperty("user.home") + "/AppData/Local/File/dbma");
+    public static File appConfigFile() {
+        return new File(configDir() + "/app-config.json");
     }
 }

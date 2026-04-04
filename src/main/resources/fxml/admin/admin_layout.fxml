@@ -3,7 +3,8 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<StackPane xmlns:fx="http://javafx.com/fxml/1"
+<StackPane fx:id="root"
+           xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.app.admin.controller.AdminLayoutController"
            styleClass="root">
 
@@ -22,13 +23,13 @@
                     <HBox spacing="8" alignment="CENTER_RIGHT" styleClass="top-right-actions">
                         <Label fx:id="labelGreeting" styleClass="greeting-label"/>
                         <Button fx:id="btnSettings"
-                            text="⚙"
-                            onAction="#openSettingsPopup"
-                            styleClass="icon-btn"/>
+                                text="⚙"
+                                onAction="#openSettingsPopup"
+                                styleClass="icon-btn"/>
                         <Button fx:id="btnLogout"
-                            text="%top.logout"
-                            onAction="#logout"
-                            styleClass="btn-logout"/>
+                                text="%top.logout"
+                                onAction="#logout"
+                                styleClass="btn-logout"/>
                     </HBox>
                 </HBox>
 
@@ -42,6 +43,12 @@
                             fx:id="btnUser"
                             onAction="#goUser"
                             styleClass="menu-tab-btn"/>
+
+                    <Button text="%settings.title"
+                            fx:id="btnAppSetting"
+                            onAction="#toggleAppSettingMenu"
+                            styleClass="menu-tab-btn"/>
+
                 </HBox>
             </VBox>
         </top>
@@ -51,6 +58,24 @@
         </center>
 
     </BorderPane>
+
+    <VBox fx:id="appSettingMenu"
+          managed="false"
+          mouseTransparent="true"
+          visible="false"
+          fillWidth="true"
+          styleClass="dropdown-menu">
+        <Button fx:id="btnStorageSetting"
+                text="%settings.storage"
+                onAction="#goStorageSetting"
+                maxWidth="Infinity"
+                styleClass="dropdown-item"/>
+        <Button fx:id="btnDataBackupSetting"
+                text="%settings.data_backup"
+                onAction="#goDataBackupSetting"
+                maxWidth="Infinity"
+                styleClass="dropdown-item"/>
+    </VBox>
 
     <Label fx:id="noticeLabel"
            visible="false"

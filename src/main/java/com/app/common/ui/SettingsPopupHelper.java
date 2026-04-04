@@ -2,11 +2,13 @@ package com.app.common.ui;
 
 import com.app.MainApp;
 import com.app.common.i18n.I18n;
+import com.app.setting.controller.SettingsPopupController;
+import com.app.setting.service.UserSettingService;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Bounds;
-import javafx.scene.layout.VBox;
 import javafx.scene.control.Button;
+import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +26,7 @@ public class SettingsPopupHelper {
 
     private final String stateKey;
     private final Button anchorButton;
+    private final UserSettingService userSettingService;
     private final Runnable reloadUiAction;
     private final Runnable onCheckUpdateAction;
     private final Runnable onInformationAction;
@@ -31,12 +34,14 @@ public class SettingsPopupHelper {
     private Popup settingsPopup;
 
     public SettingsPopupHelper(String stateKey,
-            Button anchorButton,
-            Runnable reloadUiAction,
-            Runnable onCheckUpdateAction,
-            Runnable onInformationAction) {
+                               Button anchorButton,
+                               UserSettingService userSettingService,   // ← nullable
+                               Runnable reloadUiAction,
+                               Runnable onCheckUpdateAction,
+                               Runnable onInformationAction) {
         this.stateKey = stateKey;
         this.anchorButton = anchorButton;
+        this.userSettingService = userSettingService;
         this.reloadUiAction = reloadUiAction;
         this.onCheckUpdateAction = onCheckUpdateAction;
         this.onInformationAction = onInformationAction;
@@ -135,6 +140,7 @@ public class SettingsPopupHelper {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource(ViewPaths.SETTINGS_POPUP), I18n.getBundle());
             loader.setController(new SettingsPopupController(
+                    userSettingService,        // ← thêm vào
                     reloadUiAction,
                     this::prepareForReloadIfOpen,
                     this::refreshIfOpen,

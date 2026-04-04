@@ -1,6 +1,9 @@
 package com.app.file.service;
 
+import com.app.common.config.AppConfig;
+import com.app.common.config.AppConfigService;
 import com.app.common.config.AppPaths;
+import com.app.common.enums.FolderType;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,28 +28,34 @@ public class DataFolderManager {
     private static final Logger log = LoggerFactory.getLogger(DataFolderManager.class);
 
     @Getter
-    private final File dataDir;
+    private File dataDir;
+    @Getter
+    private File backupDir;
     @Getter
     private final File tempDir;
-    private final FolderSecurityService security;
 
-    public DataFolderManager() {
-        this.dataDir = new File(AppPaths.dataDir() + "/data");
+    private FolderSecurityService dataSecurity;
+    private FolderSecurityService backupSecurity;
+
+    private final AppConfigService appConfigService;
+
+    public DataFolderManager(AppConfigService appConfigService) {
+        this.appConfigService = appConfigService;
         this.tempDir = new File(AppPaths.appTmpDir());
-        this.security = new FolderSecurityService(dataDir.getAbsolutePath());
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
     public void init() {
-        security.ensureExists();
-        security.ensureLocked();
+        AppConfig.Storage storage = appConfigService.getConfig().getStorage();
+        initDataDir(storage.getDataDir());
+        initBackupDir(storage.getBackupDir());
         clearTemp();
-        log.info("DataFolderManager initialized, data={}", dataDir.getAbsolutePath());
     }
 
     public void shutdown() {
-        security.ensureLocked();
+        if (dataSecurity != null) dataSecurity.ensureLocked();
+        if (backupSecurity != null) backupSecurity.ensureLocked();
         clearTemp();
         log.info("DataFolderManager shut down");
     }
@@ -54,16 +63,16 @@ public class DataFolderManager {
     // ── File operations ──────────────────────────────────────────────────────
 
     public File openFileToTemp(String fileName) throws IOException {
+        ensureDataReady();
         ensureDir(tempDir);
 
         File dest = new File(tempDir, fileName);
-
-        security.ensureUnlocked();
+        dataSecurity.ensureUnlocked();
         try {
             Files.copy(new File(dataDir, fileName).toPath(), dest.toPath(),
                     StandardCopyOption.REPLACE_EXISTING);
         } finally {
-            security.ensureLocked();
+            dataSecurity.ensureLocked();
         }
 
         log.info("Opened {} to temp", fileName);
@@ -71,12 +80,14 @@ public class DataFolderManager {
     }
 
     public void saveFileFromTemp(String fileName) throws IOException {
-        security.ensureUnlocked();
+        ensureDataReady();
+
+        dataSecurity.ensureUnlocked();
         try {
             Files.copy(new File(tempDir, fileName).toPath(), new File(dataDir, fileName).toPath(),
                     StandardCopyOption.REPLACE_EXISTING);
         } finally {
-            security.ensureLocked();
+            dataSecurity.ensureLocked();
         }
 
         log.info("Saved {} from temp to data", fileName);
@@ -89,10 +100,44 @@ public class DataFolderManager {
     }
 
     public boolean isDataLocked() {
-        return security.isLocked();
+        return dataSecurity != null && dataSecurity.isLocked();
+    }
+
+    public boolean isDataDirConfigured() {
+        return dataDir != null;
+    }
+
+    public boolean isBackupDirConfigured() {
+        return backupDir != null;
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
+
+    private void initDataDir(String configuredPath) {
+        if (configuredPath == null || configuredPath.isBlank()) return;
+
+        this.dataDir = new File(configuredPath + "/data_bdma");
+        this.dataSecurity = new FolderSecurityService(dataDir.getAbsolutePath(), FolderType.SAVE);
+        dataSecurity.ensureExists();
+        dataSecurity.ensureLocked();
+        log.info("DataDir initialized: {}", dataDir.getAbsolutePath());
+    }
+
+    private void initBackupDir(String configuredPath) {
+        if (configuredPath == null || configuredPath.isBlank()) return;
+
+        this.backupDir = new File(configuredPath + "/backup_bdma");
+        this.backupSecurity = new FolderSecurityService(backupDir.getAbsolutePath(), FolderType.BACKUP);
+        backupSecurity.ensureExists();
+        backupSecurity.ensureLocked();
+        log.info("BackupDir initialized: {}", backupDir.getAbsolutePath());
+    }
+
+    private void ensureDataReady() throws IOException {
+        if (dataDir == null || dataSecurity == null) {
+            throw new IOException("Data directory is not configured yet.");
+        }
+    }
 
     private void ensureDir(File dir) {
         if (!dir.exists() && !dir.mkdirs()) {
@@ -132,6 +177,50 @@ public class DataFolderManager {
             Files.delete(dir.toPath());
         } catch (IOException e) {
             log.warn("Failed to delete directory: {}", dir.getAbsolutePath());
+        }
+    }
+
+    public void backupFromSave(String fileName) throws IOException {
+        if (backupDir == null || backupSecurity == null) {
+            throw new IOException("Backup directory is not configured yet.");
+        }
+        ensureDataReady();
+
+        // Temporarily unlock both fields to allow copying
+        dataSecurity.ensureUnlocked();
+        backupSecurity.ensureUnlocked();
+        try {
+            Files.copy(
+                    new File(dataDir, fileName).toPath(),
+                    new File(backupDir, fileName).toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+            log.info("Backed up {} from save to backup", fileName);
+        } finally {
+            dataSecurity.ensureLocked();
+            backupSecurity.ensureLocked();
+        }
+    }
+
+    public void restoreFromBackup(String fileName) throws IOException {
+        if (backupDir == null || backupSecurity == null) {
+            throw new IOException("Backup directory is not configured yet.");
+        }
+        ensureDataReady();
+
+        // Temporarily unlock both fields to allow restoring
+        backupSecurity.ensureUnlocked();
+        dataSecurity.ensureUnlocked();
+        try {
+            Files.copy(
+                    new File(backupDir, fileName).toPath(),
+                    new File(dataDir, fileName).toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+            log.info("Restored {} from backup to save", fileName);
+        } finally {
+            backupSecurity.ensureLocked();
+            dataSecurity.ensureLocked();
         }
     }
 }

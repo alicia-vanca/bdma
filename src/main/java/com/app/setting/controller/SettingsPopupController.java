@@ -1,8 +1,12 @@
-package com.app.common.ui;
+package com.app.setting.controller;
 
 import com.app.MainApp;
+import com.app.common.enums.Language;
+import com.app.common.enums.Theme;
 import com.app.common.i18n.I18n;
+import com.app.common.session.Session;
 import com.app.common.theme.ThemeManager;
+import com.app.setting.service.UserSettingService;
 import javafx.beans.binding.Bindings;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -13,7 +17,6 @@ import javafx.scene.layout.VBox;
 import java.util.List;
 import java.util.Locale;
 
-// Handle Settings popup interactions while keeping structure in FXML.
 public class SettingsPopupController {
 
     private static final String ACTIVE_BUTTON = "active-button";
@@ -49,6 +52,7 @@ public class SettingsPopupController {
     @FXML
     private Button btnUpdate;
 
+    private final UserSettingService userSettingService;
     private final Runnable reloadUiAction;
     private final Runnable prepareReloadAction;
     private final Runnable refreshPopupAction;
@@ -57,12 +61,14 @@ public class SettingsPopupController {
     private final Runnable onInformationAction;
 
     public SettingsPopupController(
+            UserSettingService userSettingService,
             Runnable reloadUiAction,
             Runnable prepareReloadAction,
             Runnable refreshPopupAction,
             Runnable hidePopupAction,
             Runnable onCheckUpdateAction,
             Runnable onInformationAction) {
+        this.userSettingService = userSettingService;
         this.reloadUiAction = reloadUiAction;
         this.prepareReloadAction = prepareReloadAction;
         this.refreshPopupAction = refreshPopupAction;
@@ -145,9 +151,9 @@ public class SettingsPopupController {
     }
 
     private void switchLanguageIfNeeded(String languageTag) {
-        if (languageTag.equals(I18n.getLocale().getLanguage())) {
-            return;
-        }
+        if (languageTag.equals(I18n.getLocale().getLanguage())) return;
+        Language language = LANG_EN.equals(languageTag) ? Language.EN : Language.VI;
+        saveUserConfig(null, language);
 
         prepareReloadAction.run();
         I18n.setLocale(Locale.forLanguageTag(languageTag));
@@ -155,9 +161,27 @@ public class SettingsPopupController {
     }
 
     private void switchTheme(String theme) {
+        Theme themeEnum = ThemeManager.THEME_DARK.equals(theme) ? Theme.DARK : Theme.LIGHT;
+        saveUserConfig(themeEnum, null);
         ThemeManager.setTheme(theme);
         ThemeManager.apply(MainApp.getScene());
         refreshPopupAction.run();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void saveUserConfig(Theme theme, Language language) {
+        try {
+            Long userId = Session.getUser().getId();
+            if (theme != null) {
+                userSettingService.saveTheme(userId, theme);
+            }
+            if (language != null) {
+                userSettingService.saveLanguage(userId, language);
+            }
+        } catch (Exception e) {
+            //  Do not block the UI if the database save fails
+        }
     }
 
     private void bindEqualButtonWidths(HBox row, Button... buttons) {

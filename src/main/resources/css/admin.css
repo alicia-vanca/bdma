@@ -77,4 +77,29 @@
     -fx-text-fill: -text-color;
     -fx-background-radius: 6;
     -fx-padding: 8 14;
+    -fx-min-width: 168;
+    -fx-pref-width: 168;
+    -fx-max-width: 168;
+    -fx-alignment: CENTER;
+}
+
+.dropdown-menu {
+    -fx-background-color: -card-bg;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(0, 0, 0, 0.12);
+    -fx-border-radius: 8;
+    -fx-padding: 4;
+    -fx-spacing: 2;
+}
+
+.dropdown-item {
+    -fx-alignment: CENTER_LEFT;
+    -fx-background-color: transparent;
+    -fx-background-radius: 6;
+    -fx-padding: 8 12;
+    -fx-text-fill: -text-color;
+}
+
+.dropdown-item:hover {
+    -fx-background-color: rgba(0, 0, 0, 0.06);
 }
