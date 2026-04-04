@@ -41,7 +41,7 @@ public class DataFolderManager {
 
     public DataFolderManager(AppConfigService appConfigService) {
         this.appConfigService = appConfigService;
-        this.tempDir = new File(AppPaths.tmpDir());
+        this.tempDir = new File(AppPaths.appTmpDir());
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────

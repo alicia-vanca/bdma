@@ -22,8 +22,12 @@ public final class AppPaths {
         return APP_DIR + "/logs";
     }
 
-    public static String tmpDir() {
-        return APP_DIR + "/tmp";
+    public static String appTmpDir() {
+        return APP_DIR + "/tmp/app";
+    }
+
+    public static String sqliteTmpDir() {
+        return APP_DIR + "/tmp/sqlite";
     }
 
     public static File dataFile() {
