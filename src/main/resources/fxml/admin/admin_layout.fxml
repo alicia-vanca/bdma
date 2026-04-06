@@ -3,67 +3,88 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<BorderPane xmlns:fx="http://javafx.com/fxml/1"
-            fx:controller="com.app.admin.controller.AdminLayoutController"
-            styleClass="root">
+<StackPane fx:id="root"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.admin.controller.AdminLayoutController"
+           styleClass="root">
 
-    <top>
-        <VBox styleClass="header-shell" spacing="8">
-            <padding>
-                <Insets top="10" right="15" bottom="10" left="15"/>
-            </padding>
+    <BorderPane>
 
-            <HBox alignment="CENTER_LEFT" spacing="10" styleClass="top-bar">
-                <Label text="BDMA" styleClass="header-title"/>
-                <Region HBox.hgrow="ALWAYS"/>
+        <top>
+            <VBox styleClass="header-shell" spacing="8">
+                <padding>
+                    <Insets top="10" right="15" bottom="10" left="15"/>
+                </padding>
 
-                <HBox spacing="10" alignment="CENTER_RIGHT">
-                    <Button fx:id="btnEnglish" text="EN" onAction="#switchToEnglish"
-                            styleClass="lang-btn"/>
-                    <Button fx:id="btnVietnamese" text="VN" onAction="#switchToVietnamese"
-                            styleClass="lang-btn"/>
+                <HBox alignment="CENTER_LEFT" spacing="10" styleClass="top-bar">
+                    <Label text="BDMA" styleClass="header-title"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+
+                    <HBox spacing="8" alignment="CENTER_RIGHT" styleClass="top-right-actions">
+                        <Label fx:id="labelGreeting" styleClass="greeting-label"/>
+                        <Button fx:id="btnSettings"
+                                text="⚙"
+                                onAction="#openSettingsPopup"
+                                styleClass="icon-btn"/>
+                        <Button fx:id="btnLogout"
+                                text="%top.logout"
+                                onAction="#logout"
+                                styleClass="btn-logout"/>
+                    </HBox>
                 </HBox>
-                <HBox spacing="4" alignment="CENTER">
-                    <Button fx:id="btnLightTheme"
-                            text="☀"
-                            onAction="#switchToLightTheme"
-                            styleClass="theme-btn"/>
-                    <Button fx:id="btnDarkTheme"
-                            text="☾"
-                            onAction="#switchToDarkTheme"
-                            styleClass="theme-btn"/>
+
+                <HBox spacing="10" styleClass="tabs-row">
+                    <Button text="%menu.dashboard"
+                            fx:id="btnDashboard"
+                            onAction="#goDashboard"
+                            styleClass="menu-tab-btn"/>
+
+                    <Button text="%menu.user"
+                            fx:id="btnUser"
+                            onAction="#goUser"
+                            styleClass="menu-tab-btn"/>
+
+                    <Button text="%settings.title"
+                            fx:id="btnAppSetting"
+                            onAction="#toggleAppSettingMenu"
+                            styleClass="menu-tab-btn"/>
+
                 </HBox>
-                <Button fx:id="btnCheckUpdate"
-                        text="%top.update"
-                        onAction="#onCheckUpdateManual"
-                        styleClass="btn-update"/>
+            </VBox>
+        </top>
 
-                <Label fx:id="labelUpdateStatus" styleClass="update-status"/>
+        <center>
+            <StackPane fx:id="contentArea" styleClass="content-shell"/>
+        </center>
 
-                <MenuButton fx:id="userMenu" styleClass="user-menu">
-                    <items>
-                        <MenuItem text="%top.info" onAction="#onUserInfo"/>
-                        <MenuItem text="%top.logout" onAction="#logout"/>
-                    </items>
-                </MenuButton>
-            </HBox>
+    </BorderPane>
 
-            <HBox spacing="10" styleClass="tabs-row">
-                <Button text="%menu.dashboard"
-                        fx:id="btnDashboard"
-                        onAction="#goDashboard"
-                        styleClass="menu-tab-btn"/>
+    <VBox fx:id="appSettingMenu"
+          managed="false"
+          mouseTransparent="true"
+          visible="false"
+          fillWidth="true"
+          styleClass="dropdown-menu">
+        <Button fx:id="btnStorageSetting"
+                text="%settings.storage"
+                onAction="#goStorageSetting"
+                maxWidth="Infinity"
+                styleClass="dropdown-item"/>
+        <Button fx:id="btnDataBackupSetting"
+                text="%settings.data_backup"
+                onAction="#goDataBackupSetting"
+                maxWidth="Infinity"
+                styleClass="dropdown-item"/>
+    </VBox>
 
-                <Button text="%menu.user"
-                        fx:id="btnUser"
-                        onAction="#goUser"
-                        styleClass="menu-tab-btn"/>
-            </HBox>
-        </VBox>
-    </top>
+    <Label fx:id="noticeLabel"
+           visible="false"
+           mouseTransparent="true"
+           styleClass="global-notice,message-success"
+           StackPane.alignment="BOTTOM_CENTER">
+        <StackPane.margin>
+            <Insets top="0" right="0" bottom="40" left="0"/>
+        </StackPane.margin>
+    </Label>
 
-    <center>
-        <StackPane fx:id="contentArea" styleClass="content"/>
-    </center>
-
-</BorderPane>
+</StackPane>

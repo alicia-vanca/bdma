@@ -4,7 +4,8 @@ import java.io.File;
 
 public final class AppPaths {
 
-    private static final String APP_DIR = System.getProperty("user.home") + "/.helloworld-app";
+    private static final String APP_DIR = System.getProperty("user.home") + "/AppData/Local/" +
+            "bdma";
 
     private AppPaths() {
     }
@@ -21,8 +22,12 @@ public final class AppPaths {
         return APP_DIR + "/logs";
     }
 
-    public static String tmpDir() {
-        return APP_DIR + "/tmp";
+    public static String appTmpDir() {
+        return APP_DIR + "/tmp/app";
+    }
+
+    public static String sqliteTmpDir() {
+        return APP_DIR + "/tmp/sqlite";
     }
 
     public static File dataFile() {
@@ -31,5 +36,9 @@ public final class AppPaths {
 
     public static File logConfigFile() {
         return new File(configDir() + "/logback.xml");
+    }
+
+    public static File appConfigFile() {
+        return new File(configDir() + "/app-config.json");
     }
 }

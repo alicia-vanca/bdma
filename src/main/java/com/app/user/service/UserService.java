@@ -7,6 +7,8 @@ import com.app.common.exception.UserAlreadyExistsException;
 import com.app.common.exception.ValidationException;
 import com.app.common.session.Session;
 import com.app.common.util.SecurityUtil;
+import com.app.common.i18n.I18n;
+import java.util.regex.Pattern;
 import com.app.user.model.User;
 import com.app.user.repository.UserRepository;
 import org.slf4j.Logger;
@@ -22,12 +24,24 @@ public class UserService {
 
     private final UserRepository userRepository;
 
+    public static final int USERNAME_MIN_LENGTH = 4;
+    public static final int USERNAME_MAX_LENGTH = 20;
+
+    // Username must start with a letter, be 4-20 chars, and contain letters, digits
+    // or underscore
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]{3,19}$");
+
     public UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
     }
 
     public User login(String username, String password) {
-        return userRepository.findByUsername(username)
+        String normalized = normalizeUsername(username);
+        if (normalized == null || normalized.isBlank()) {
+            return null;
+        }
+
+        return userRepository.findByUsername(normalized)
                 .filter(u -> SecurityUtil.verify(password, u.getPassword()))
                 .orElse(null);
     }
@@ -36,11 +50,50 @@ public class UserService {
         return userRepository.findAll();
     }
 
-    public User create(User user) {
-        String username = normalizeUsername(user.getUsername());
+    public boolean usernameExists(String username) {
+        String normalizedUsername = normalizeUsername(username);
+        return normalizedUsername != null
+                && !normalizedUsername.isBlank()
+                && userRepository.existsByUsername(normalizedUsername);
+    }
 
+    public boolean isValidUsername(String username) {
+        String normalized = normalizeUsername(username);
+        return normalized != null && USERNAME_PATTERN.matcher(normalized).matches();
+    }
+
+    /**
+     * Returns true when the provided username contains any character
+     * that is not a letter, digit or underscore.
+     */
+    public boolean containsInvalidCharacters(String username) {
+        if (username == null)
+            return false;
+        return !username.matches("^\\w*$");
+    }
+
+    /**
+     * Returns true when the first non-space character is a letter.
+     */
+    public boolean startsWithLetter(String username) {
+        if (username == null)
+            return false;
+        String trimmed = username.trim();
+        if (trimmed.isEmpty())
+            return false;
+        char ch = trimmed.charAt(0);
+        return Character.isLetter(ch);
+    }
+
+    public User create(User user) {
         if (user.getUsername() == null || user.getUsername().isBlank()) {
             throw new ValidationException("Username is required");
+        }
+
+        String username = normalizeUsername(user.getUsername());
+
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new ValidationException(I18n.get("user.username.invalid"));
         }
 
         if (user.getPassword() == null || user.getPassword().isBlank()) {
@@ -103,7 +156,8 @@ public class UserService {
     }
 
     private String normalizeUsername(String username) {
-        if (username == null) return null;
+        if (username == null)
+            return null;
         return username.trim().toLowerCase();
     }
 }

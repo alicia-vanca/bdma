@@ -137,8 +137,8 @@ public class UpdateService {
         conn.setConnectTimeout(10_000);
 
         Path dest = Path.of(
-                System.getProperty("user.home"), "Desktop",
-                "HelloWorldApp-update-" + info.latestVersion() + ".exe"
+                System.getProperty("user.home"), "Downloads",
+                "BDMA-" + info.latestVersion() + ".exe"
         );
 
         try (InputStream in = conn.getInputStream();

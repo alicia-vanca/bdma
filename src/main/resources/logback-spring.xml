@@ -1,6 +1,6 @@
 <configuration>
 
-    <property name="APP_DIR" value="${user.home}/.helloworld-app"/>
+    <property name="APP_DIR" value="${user.home}/AppData/Local/bdma"/>
     <property name="LOG_DIR" value="${APP_DIR}/logs"/>
 
     <property name="LOG_PATTERN"

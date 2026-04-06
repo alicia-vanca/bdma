@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<StackPane xmlns="http://javafx.com/javafx/21"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.setting.controller.DataBackupController"
+           stylesheets="@/css/admin.css"
+           styleClass="content">
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+
+    <VBox spacing="15">
+        <Label text="%setting.databackup.title" styleClass="title"/>
+
+        <VBox styleClass="folder-box" spacing="10">
+            <padding>
+                <Insets top="16" right="16" bottom="16" left="16"/>
+            </padding>
+
+            <Label text="%setting.databackup.autodelete.title" styleClass="section-label"/>
+            <Label text="%setting.databackup.autodelete.desc" wrapText="true"/>
+
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <CheckBox fx:id="chkAutoDelete"
+                          text="%setting.databackup.autodelete.checkbox"
+                          onAction="#onToggleAutoDelete"/>
+            </HBox>
+
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <Label text="%setting.databackup.status.label"/>
+                <Label fx:id="lblStatus" text=""/>
+            </HBox>
+        </VBox>
+    </VBox>
+</StackPane>

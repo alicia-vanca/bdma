@@ -12,7 +12,6 @@ import com.app.common.ui.ViewLoader;
 import com.app.common.ui.ViewPaths;
 import com.app.user.model.User;
 import com.app.user.service.UserService;
-import javafx.animation.PauseTransition;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -20,8 +19,7 @@ import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
-import javafx.util.Duration;
+import javafx.scene.layout.StackPane;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -36,8 +34,6 @@ public class UserController implements LayoutAware {
     private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
     private static final String COMMON_ALL = "common.all";
-    private static final String MESSAGE_ERROR = "message-error";
-    private static final String MESSAGE_SUCCESS = "message-success";
 
     @FXML
     private TableView<User> table;
@@ -52,11 +48,9 @@ public class UserController implements LayoutAware {
     @FXML
     private TextField txtSearch;
     @FXML
-    private Label message;
-    @FXML
     private ComboBox<String> cbRole;
     @FXML
-    private VBox root;
+    private StackPane root;
     @FXML
     private Button btnPrev;
     @FXML
@@ -72,10 +66,16 @@ public class UserController implements LayoutAware {
 
     private static final int PAGE_SIZE = 10;
     private int currentPageIndex = 0;
-    private final PauseTransition hideMessageTransition = new PauseTransition(Duration.seconds(5));
 
     private BaseLayoutController layoutController;
     private Node currentView;
+
+    // Persist filter state across language-change reloads. @FXML fields are
+    // replaced
+    // on each FXMLLoader cycle, so we keep the user's last inputs in plain fields
+    // and restore them in initialize() instead of always defaulting to empty/all.
+    private String savedSearchText = "";
+    private String savedRoleFilter = null; // null = use locale-default "All"
 
     public UserController(UserService userService, ViewLoader viewLoader) {
         this.userService = userService;
@@ -96,31 +96,51 @@ public class UserController implements LayoutAware {
         if (!Session.isAdmin()) {
             return;
         }
-
         currentView = root;
-        message.setVisible(false);
-        message.setManaged(false);
-        hideMessageTransition.setOnFinished(e -> {
-            message.setVisible(false);
-            message.setManaged(false);
-        });
+        setupRoleComboBox();
+        setupFilterListeners();
+        setupTableColumns();
+        addActionColumn();
+        loadData();
+        restoreFilterState();
+    }
 
+    private void setupRoleComboBox() {
         cbRole.getItems().addAll(I18n.get(COMMON_ALL), Role.ADMIN.toString(), Role.USER.toString());
-        cbRole.setValue(I18n.get(COMMON_ALL));
+        // Restore previous role selection if the user had a non-default filter active,
+        // translating the "All" sentinel to the current locale's string.
+        String roleToRestore = (savedRoleFilter == null) ? I18n.get(COMMON_ALL) : savedRoleFilter;
+        cbRole.setValue(roleToRestore);
+    }
 
+    // Keep username filtering responsive while typing without requiring
+    // explicit Search button clicks.
+    private void setupFilterListeners() {
+        txtSearch.textProperty().addListener((obs, oldValue, newValue) -> {
+            savedSearchText = newValue == null ? "" : newValue;
+            onSearch();
+        });
+        cbRole.valueProperty().addListener((obs, oldValue, newValue) -> {
+            // Store null for the "All" sentinel so it re-translates correctly on reload.
+            savedRoleFilter = (newValue == null || newValue.equals(I18n.get(COMMON_ALL))) ? null : newValue;
+            onSearch();
+        });
+    }
+
+    private void setupTableColumns() {
         colSTT.setCellValueFactory(c -> new SimpleIntegerProperty(
-                currentPageIndex * PAGE_SIZE
-                        + table.getItems().indexOf(c.getValue()) + 1));
+                currentPageIndex * PAGE_SIZE + table.getItems().indexOf(c.getValue()) + 1));
 
         colUsername.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getUsername()));
         colUsername.setCellFactory(col -> new TableCell<>() {
-
-            private final Hyperlink link = new Hyperlink();
-
+            private final Label label = new Label();
             {
-                link.setOnAction(e -> {
-                    User user = getTableView().getItems().get(getIndex());
-                    openUserInfo(user);
+                label.setStyle("-fx-cursor: hand; -fx-text-fill: -fx-text-base-color; -fx-underline: false;");
+                label.setOnMouseClicked(e -> {
+                    if (!isEmpty() && getItem() != null) {
+                        User user = getTableView().getItems().get(getIndex());
+                        openUserInfo(user);
+                    }
                 });
             }
 
@@ -130,16 +150,19 @@ public class UserController implements LayoutAware {
                 if (empty || item == null) {
                     setGraphic(null);
                 } else {
-                    link.setText(item);
-                    setGraphic(link);
+                    label.setText(item);
+                    setGraphic(label);
                 }
             }
         });
 
         colRole.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getRole().toString()));
+    }
 
-        addActionColumn();
-        loadData();
+    private void restoreFilterState() {
+        if (!savedSearchText.isEmpty()) {
+            txtSearch.setText(savedSearchText);
+        }
     }
 
     // ── Data ────────────────────────────────────────────────────────────────
@@ -159,13 +182,13 @@ public class UserController implements LayoutAware {
 
     @FXML
     private void onSearch() {
-        String keyword = txtSearch.getText().toLowerCase().trim();
+        String keyword = txtSearch.getText() == null ? "" : txtSearch.getText().toLowerCase().trim();
         String role = cbRole.getValue();
 
         filteredUsers = allUsers.stream()
                 .filter(u -> {
                     boolean matchUsername = u.getUsername().toLowerCase().contains(keyword);
-                    boolean matchRole = role.equals(I18n.get(COMMON_ALL)) ||
+                    boolean matchRole = role == null || role.equals(I18n.get(COMMON_ALL)) ||
                             u.getRole().toString().equals(role);
                     return matchUsername && matchRole;
                 })
@@ -264,8 +287,7 @@ public class UserController implements LayoutAware {
         int to = Math.min(from + PAGE_SIZE, filteredUsers.size());
 
         table.setItems(FXCollections.observableArrayList(
-                from < to ? filteredUsers.subList(from, to) : List.of()
-        ));
+                from < to ? filteredUsers.subList(from, to) : List.of()));
     }
 
     private void updatePagerControls(int pageCount) {
@@ -283,42 +305,86 @@ public class UserController implements LayoutAware {
     private void openForm(User user) {
         try {
             boolean isEdit = user != null;
-            boolean isEditingCurrentUser = isEdit
-                    && Objects.equals(user.getId(), Session.getCurrentUserId());
-            Role originalRole = isEdit ? user.getRole() : null;
+            boolean isEditingCurrentUser = isEdit && isCurrentSessionUser(user);
+            Role originalRole = null;
+            if (user != null) {
+                originalRole = user.getRole();
+            }
 
             var dialog = DialogHelper.<UserFormController>openWithController(
                     ViewPaths.USER_FORM,
-                    user == null ? I18n.get("user.add.title") : I18n.get("user.edit.title"));
+                    isEdit ? I18n.get("user.edit.title") : I18n.get("user.add.title"));
 
-            dialog.controller().setUser(user);
-            dialog.controller().setOnSuccess(() -> {
-                String key = user == null ? "user.add.success" : "user.edit.success";
-                showSuccess(I18n.get(key));
-
-                boolean downgradedSelfFromAdmin = isEditingCurrentUser
-                        && originalRole == Role.ADMIN
-                        && user.getRole() == Role.USER;
-                if (downgradedSelfFromAdmin) {
-                    User sessionUser = Session.getUser();
-                    if (sessionUser != null) {
-                        sessionUser.setRole(Role.USER);
-                    }
-
-                    if (layoutController instanceof AdminLayoutController adminLayoutController) {
-                        adminLayoutController.goDashboard();
-                    }
-                }
-            });
+            prepareDialogForMode(dialog.controller(), user, isEdit);
+            configureDialogCallbacks(dialog.controller(), user, isEdit, isEditingCurrentUser, originalRole);
 
             dialog.stage().setMinWidth(460);
-            dialog.stage().setMinHeight(360);
+            dialog.stage().setResizable(false);
             dialog.stage().showAndWait();
 
-            loadData();
+            refreshAfterDialog();
 
         } catch (Exception e) {
             log.error("Failed to open user form", e);
+        }
+    }
+
+    // Keep create/edit setup explicit so openForm() stays focused on orchestration.
+    private void prepareDialogForMode(UserFormController controller, User user, boolean isEdit) {
+        if (isEdit) {
+            controller.prepareForEdit(user);
+            return;
+        }
+        controller.prepareForCreate();
+    }
+
+    private void configureDialogCallbacks(UserFormController controller,
+            User user,
+            boolean isEdit,
+            boolean isEditingCurrentUser,
+            Role originalRole) {
+        controller.setOnSuccess(() -> {
+            String key = isEdit ? "user.edit.success" : "user.add.success";
+            showSuccess(I18n.get(key));
+
+            if (shouldDowngradeCurrentSessionRole(user, isEditingCurrentUser, originalRole)) {
+                downgradeCurrentSessionRole();
+                navigateToDashboardIfAdminLayout();
+            }
+        });
+        controller.setOnNoChange(() -> showSuccess(I18n.get("user.update.nochange")));
+    }
+
+    private void refreshAfterDialog() {
+        loadData();
+        // Re-apply current UI filters so table results stay consistent with the
+        // visible filter controls after dialog closes.
+        onSearch();
+    }
+
+    private boolean isCurrentSessionUser(User user) {
+        return user != null && Objects.equals(user.getId(), Session.getCurrentUserId());
+    }
+
+    private boolean shouldDowngradeCurrentSessionRole(User user,
+            boolean isEditingCurrentUser,
+            Role originalRole) {
+        return user != null
+                && isEditingCurrentUser
+                && originalRole == Role.ADMIN
+                && user.getRole() == Role.USER;
+    }
+
+    private void downgradeCurrentSessionRole() {
+        User sessionUser = Session.getUser();
+        if (sessionUser != null) {
+            sessionUser.setRole(Role.USER);
+        }
+    }
+
+    private void navigateToDashboardIfAdminLayout() {
+        if (layoutController instanceof AdminLayoutController adminLayoutController) {
+            adminLayoutController.goDashboard();
         }
     }
 
@@ -339,25 +405,14 @@ public class UserController implements LayoutAware {
     }
 
     private void showSuccess(String text) {
-        message.setText(text);
-        message.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
-        message.getStyleClass().add(MESSAGE_SUCCESS);
-        message.setVisible(true);
-        message.setManaged(true);
-        scheduleHide();
+        if (layoutController != null) {
+            layoutController.showNoticeSuccess(text);
+        }
     }
 
     private void showError(String text) {
-        message.setText(text);
-        message.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
-        message.getStyleClass().add(MESSAGE_ERROR);
-        message.setVisible(true);
-        message.setManaged(true);
-        scheduleHide();
-    }
-
-    private void scheduleHide() {
-        hideMessageTransition.stop();
-        hideMessageTransition.playFromStart();
+        if (layoutController != null) {
+            layoutController.showNoticeError(text);
+        }
     }
 }

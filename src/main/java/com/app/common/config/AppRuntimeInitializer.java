@@ -1,32 +1,55 @@
 package com.app.common.config;
 
+import com.app.common.exception.AppException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.sqlite.mc.SQLiteMCWxAES256Config;
+
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.DriverManager;
+import java.sql.Statement;
+import java.util.Arrays;
+import java.util.Properties;
 
 public final class AppRuntimeInitializer {
 
     private static final Logger log = LoggerFactory.getLogger(AppRuntimeInitializer.class);
+    private static final byte[] APP_DB_KEY_CONTEXT = "bdma-db-key-v1".getBytes(StandardCharsets.UTF_8);
+    private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+    private static final int DB_KEY_ITERATIONS = 65536;
+    private static final int DB_KEY_LENGTH_BITS = 256;
 
     private AppRuntimeInitializer() {
     }
 
     public static void initialize() {
-        String appDir = AppPaths.appDir();
-
         ensureBaseDirectories();
-        ensureDatabaseFile();
-        configureSqlite();
+        // App context (device ID) must be initialized before key derivation
+        initializeAppContext();
         forceLoadSqliteDriver();
-        initializeAppContext(appDir);
-
+        ensureDatabaseFile();
+        byte[] dbKey = deriveDbKey();
+        AppContext.setDbKey(dbKey);
+        // Transparently encrypt any pre-existing plain-text database on first upgrade
+        migrateToEncryptedIfNeeded(dbKey);
+        configureSqlite();
     }
 
     private static void ensureBaseDirectories() {
         ensureDir(AppPaths.appDir());
         ensureDir(AppPaths.configDir());
-        ensureDir(AppPaths.tmpDir());
+        ensureDir(AppPaths.appTmpDir());
+        ensureDir(AppPaths.sqliteTmpDir());
     }
 
     private static void ensureDir(String path) {
@@ -42,25 +65,25 @@ public final class AppRuntimeInitializer {
             if (!dbFile.exists() && dbFile.createNewFile()) {
                 log.info("Database file created: {}", dbFile.getAbsolutePath());
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             log.error("Failed to create DB file: {}", dbFile.getAbsolutePath(), e);
         }
     }
 
     private static void configureSqlite() {
-        System.setProperty("org.sqlite.tmpdir", AppPaths.tmpDir());
+        System.setProperty("org.sqlite.tmpdir", AppPaths.sqliteTmpDir());
     }
 
     private static void forceLoadSqliteDriver() {
         try {
             Class.forName("org.sqlite.JDBC");
-        } catch (Exception e) {
-            log.error("Failed to load SQLite driver", e);
+        } catch (ClassNotFoundException e) {
+            throw new AppException("Failed to load SQLite driver", e);
         }
     }
 
-    private static void initializeAppContext(String appDir) {
-        DeviceIdManager deviceIdManager = new DeviceIdManager(appDir);
+    private static void initializeAppContext() {
+        DeviceIdManager deviceIdManager = new DeviceIdManager();
         AppContext.setDeviceId(deviceIdManager.getDeviceId());
 
         String version = AppRuntimeInitializer.class.getPackage().getImplementationVersion();
@@ -69,6 +92,105 @@ public final class AppRuntimeInitializer {
         }
         AppContext.setVersion(version);
 
-        log.info("App started — version: {}, deviceId: {}", AppContext.getVersion(), AppContext.getDeviceId());
+        // Populate MDC as soon as runtime context is available so startup logs on
+        // the launcher thread carry device and version information.
+        LogContext.init();
+
+        log.info("Machine-based device ID resolved");
+        log.info("App started - version: {}", AppContext.getVersion());
+    }
+
+    // Derive a 32-byte database key from the persisted device ID. The device ID
+    // acts as a stable per-install salt so the database remains recoverable as
+    // long as config/device.id is preserved.
+    private static byte[] deriveDbKey() {
+        char[] deviceIdChars = AppContext.getDeviceId().toCharArray();
+        byte[] deviceIdSalt = AppContext.getDeviceId().getBytes(StandardCharsets.UTF_8);
+        try {
+            SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            PBEKeySpec spec = new PBEKeySpec(deviceIdChars, deriveDbKeySalt(deviceIdSalt), DB_KEY_ITERATIONS,
+                    DB_KEY_LENGTH_BITS);
+            byte[] key = factory.generateSecret(spec).getEncoded();
+            spec.clearPassword();
+            return key;
+        } catch (GeneralSecurityException e) {
+            throw new AppException("Failed to derive database key", e);
+        } finally {
+            Arrays.fill(deviceIdChars, '\0');
+            Arrays.fill(deviceIdSalt, (byte) 0);
+        }
+    }
+
+    // Keep the salt deterministic per installation without storing an extra
+    // file by hashing the app context label together with the persisted device
+    // ID bytes.
+    private static byte[] deriveDbKeySalt(byte[] deviceIdBytes) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(APP_DB_KEY_CONTEXT);
+            return digest.digest(deviceIdBytes);
+        } catch (GeneralSecurityException e) {
+            throw new AppException("Failed to derive database key salt", e);
+        }
+    }
+
+    // Convert bytes to lowercase hex, matching SQLite3MultipleCiphers' expected
+    // raw-key format.
+    static String toHexString(byte[] bytes) {
+        StringBuilder hex = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            hex.append(HEX_DIGITS[(b >>> 4) & 0x0F]);
+            hex.append(HEX_DIGITS[b & 0x0F]);
+        }
+        return hex.toString();
+    }
+
+    // Build the PRAGMA statement from a validated raw key because SQLite PRAGMA
+    // rekey cannot be parameterized with PreparedStatement.
+    private static String buildRekeyPragma(byte[] keyBytes) {
+        String hexKey = toHexString(keyBytes);
+        if (!hexKey.matches("[0-9a-f]+")) {
+            throw new AppException("Derived database key contains invalid characters");
+        }
+        return "PRAGMA rekey = 'raw:" + hexKey + "'";
+    }
+
+    // Returns true only if the file exists, has at least 16 bytes, and its
+    // header matches the plain SQLite magic string — meaning it is not yet
+    // encrypted.
+    private static boolean isPlainSqliteFile(File dbFile) {
+        if (!dbFile.exists() || dbFile.length() < 16) {
+            return false;
+        }
+        byte[] magic = "SQLite format 3\000".getBytes(StandardCharsets.US_ASCII);
+        byte[] header = new byte[16];
+        try (FileInputStream fis = new FileInputStream(dbFile)) {
+            return fis.read(header) == 16 && Arrays.equals(header, magic);
+        } catch (IOException e) {
+            log.warn("Could not read database header for encryption check: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    // Encrypt plain-text databases in place using the derived key so subsequent
+    // connections can open them with the configured cipher settings.
+    private static void migrateToEncryptedIfNeeded(byte[] dbKey) {
+        File dbFile = AppPaths.dataFile();
+        if (!isPlainSqliteFile(dbFile)) {
+            return;
+        }
+
+        String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
+
+        // Open the plain database using AES-256 cipher config but without a key,
+        // then apply PRAGMA rekey to encrypt it with the derived raw key.
+        Properties migrationProps = SQLiteMCWxAES256Config.getDefault().build().toProperties();
+        try (Connection conn = DriverManager.getConnection(url, migrationProps);
+                Statement stmt = conn.createStatement()) {
+            stmt.execute(buildRekeyPragma(dbKey));
+            log.info("Existing database encrypted with AES-256");
+        } catch (SQLException e) {
+            throw new AppException("Failed to encrypt database " + dbFile.getAbsolutePath(), e);
+        }
     }
 }

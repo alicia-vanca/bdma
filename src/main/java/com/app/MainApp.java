@@ -10,10 +10,12 @@ import com.app.common.helper.SpringContextHolder;
 import com.app.common.i18n.I18n;
 import com.app.common.theme.ThemeManager;
 import com.app.common.ui.NavigationService;
+import com.app.common.ui.StageUtils;
 import com.app.common.ui.ViewLoader;
 import com.app.common.ui.ViewPaths;
 import com.app.file.service.DataFolderManager;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
@@ -24,9 +26,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+
 public class MainApp extends Application {
 
     private static final Logger log = LoggerFactory.getLogger(MainApp.class);
+
+    public static final int SINGLE_INSTANCE_PORT = 54321;
+
+    // S1450: assigned in acquireSingleInstanceLock() at runtime, cannot be final
+    @SuppressWarnings("java:S1450")
+    private static ServerSocket instanceSocket;
 
     private ConfigurableApplicationContext springContext;
     private DataFolderManager dataFolderManager;
@@ -46,6 +59,12 @@ public class MainApp extends Application {
 
     public static void main(String[] args) {
         LogbackConfigInitializer.initialize();
+
+        if (!acquireSingleInstanceLock()) {
+            log.warn("App is already running. Bringing existing window to front.");
+            signalExistingInstance();
+            System.exit(0);
+        }
         launch(args);
     }
 
@@ -64,6 +83,7 @@ public class MainApp extends Application {
     @Override
     public void start(Stage stage) {
         setPrimaryStage(stage);
+        StageUtils.applyAppIcon(primaryStage);
         LogContext.init();
         I18n.loadSavedLocale();
 
@@ -79,18 +99,20 @@ public class MainApp extends Application {
 
     @Override
     public void stop() {
-        if (dataFolderManager != null)
-            dataFolderManager.shutdown();
         if (springContext != null)
             springContext.close();
+        if (dataFolderManager != null)
+            dataFolderManager.shutdown();
         log.info("App stopped");
     }
 
     public static void showLogin() {
-        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 400, 300);
+        primaryStage.setResizable(false);
+        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 400, 350);
     }
 
     public static void showAdmin() {
+        primaryStage.setResizable(true);
         loadAndNavigate(ViewPaths.ADMIN_LAYOUT, "BDMA", 1200, 800);
     }
 
@@ -121,6 +143,50 @@ public class MainApp extends Application {
             log.warn("App error loading scene: {}", fxml, e);
         } catch (RuntimeException e) {
             log.error("Failed to load scene: {}", fxml, e);
+        }
+    }
+
+    private static boolean acquireSingleInstanceLock() {
+        try {
+            instanceSocket = new ServerSocket(SINGLE_INSTANCE_PORT, 1,
+                    InetAddress.getByName("127.0.0.1"));
+
+            Thread listenerThread = new Thread(() -> {
+                while (!instanceSocket.isClosed()) {
+                    try {
+                        Socket incoming = instanceSocket.accept();
+                        incoming.close();
+                        Platform.runLater(MainApp::bringToFront);
+                    } catch (IOException e) {
+                        if (!instanceSocket.isClosed()) {
+                            log.warn("Single instance listener error", e);
+                        }
+                    }
+                }
+            }, "single-instance-listener");
+            listenerThread.setDaemon(true);
+            listenerThread.start();
+
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static void signalExistingInstance() {
+        try (Socket socket = new Socket("127.0.0.1", SINGLE_INSTANCE_PORT)) {
+            log.info("Signal sent to existing instance.");
+        } catch (IOException e) {
+            log.warn("Could not signal existing instance", e);
+        }
+    }
+
+    private static void bringToFront() {
+        if (primaryStage != null) {
+            primaryStage.setIconified(false);
+            primaryStage.toFront();
+            primaryStage.requestFocus();
+            log.info("Brought existing window to front.");
         }
     }
 }

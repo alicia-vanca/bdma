@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<StackPane xmlns="http://javafx.com/javafx/21"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.setting.controller.StorageController"
+           stylesheets="@/css/admin.css"
+           styleClass="content">
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+
+    <VBox spacing="15">
+
+        <!-- Title -->
+        <Label text="%setting.storage.title" styleClass="title"/>
+
+        <!-- Save Folder Box -->
+        <VBox styleClass="folder-box" spacing="10">
+            <padding>
+                <Insets top="16" right="16" bottom="16" left="16"/>
+            </padding>
+            <Label text="%setting.storage.save.title" styleClass="section-label"/>
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <TextField fx:id="txtSavePath"
+                           promptText="%setting.storage.placeholder"
+                           editable="false"
+                           styleClass="input"
+                           HBox.hgrow="ALWAYS"/>
+                <Button text="%setting.storage.btn.choose" onAction="#onSelectSaveFolder" styleClass="btn-secondary"/>
+                <Button text="%common.save" onAction="#onSaveSaveFolder" styleClass="btn-primary"/>
+            </HBox>
+            <Label fx:id="lblSaveStatus" text=""/>
+        </VBox>
+
+        <!-- Backup Folder Box -->
+        <VBox styleClass="folder-box" spacing="10">
+            <padding>
+                <Insets top="16" right="16" bottom="16" left="16"/>
+            </padding>
+            <Label text="%setting.storage.backup.title" styleClass="section-label"/>
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <TextField fx:id="txtBackupPath"
+                           promptText="%setting.storage.placeholder"
+                           editable="false"
+                           styleClass="input"
+                           HBox.hgrow="ALWAYS"/>
+                <Button text="%setting.storage.btn.choose" onAction="#onSelectBackupFolder" styleClass="btn-secondary"/>
+                <Button text="%common.save" onAction="#onSaveBackupFolder" styleClass="btn-primary"/>
+            </HBox>
+            <Label fx:id="lblBackupStatus" text=""/>
+        </VBox>
+
+    </VBox>
+</StackPane>

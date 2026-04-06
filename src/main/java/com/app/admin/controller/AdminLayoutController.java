@@ -3,17 +3,22 @@ package com.app.admin.controller;
 import com.app.MainApp;
 import com.app.common.i18n.I18n;
 import com.app.common.session.Session;
-import com.app.common.theme.ThemeManager;
-import com.app.common.ui.BaseLayoutController;
-import com.app.common.ui.ViewLoader;
-import com.app.common.ui.ViewPaths;
+import com.app.common.ui.*;
+import com.app.setting.service.UserSettingService;
 import com.app.update.controller.UpdateController;
+import com.app.user.controller.UserFormController;
 import com.app.user.controller.UserInfoController;
+import javafx.animation.PauseTransition;
+import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
+import javafx.geometry.Point2D;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.MenuButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,81 +28,106 @@ import java.util.List;
 @Component
 public class AdminLayoutController extends BaseLayoutController {
 
-    private static final String THEME_BTN_ACTIVE = "theme-btn-active";
-
     private static final Logger log = LoggerFactory.getLogger(AdminLayoutController.class);
+    private static final String MESSAGE_ERROR = "message-error";
+    private static final String MESSAGE_SUCCESS = "message-success";
 
     private final UpdateController updateController;
+
+    private final UserSettingService userSettingService;
 
     @FXML
     private StackPane contentArea;
     @FXML
-    private Button btnCheckUpdate;
+    private Label labelGreeting;
     @FXML
-    private Label labelUpdateStatus;
-    @FXML
-    private MenuButton userMenu;
+    private Button btnSettings;
     @FXML
     private Button btnDashboard;
     @FXML
     private Button btnUser;
     @FXML
-    private Button btnEnglish;
+    private Button btnAppSetting;
     @FXML
-    private Button btnVietnamese;
+    private Button btnStorageSetting;
     @FXML
-    private Button btnLightTheme;
+    private Button btnDataBackupSetting;
     @FXML
-    private Button btnDarkTheme;
+    private Label noticeLabel;
+    @FXML
+    private VBox appSettingMenu;
+    @FXML
+    private StackPane root;
 
-    public AdminLayoutController(ViewLoader viewLoader, UpdateController updateController) {
+
+    private SettingsPopupHelper settingsPopupHelper;
+    private final PauseTransition hideNoticeTransition = new PauseTransition(Duration.seconds(3));
+
+    public AdminLayoutController(ViewLoader viewLoader, UpdateController updateController, UserSettingService userSettingService) {
         super(viewLoader);
         this.updateController = updateController;
+        this.userSettingService = userSettingService;
     }
-
-    // ── BaseLayoutController impl ───────────────────────────────────────────
 
     @Override
     protected StackPane getContentArea() {
         return contentArea;
     }
 
+    @Override
     protected List<Button> getMenuButtons() {
         // Dashboard is visible to all roles, so always include it in the active-state
         // list.
-        return List.of(btnDashboard, btnUser);
+        return List.of(btnDashboard, btnUser, btnAppSetting);
     }
-
-    protected List<Button> getLangButtons() {
-        return List.of(btnEnglish, btnVietnamese);
-    }
-
-    // ── Init ────────────────────────────────────────────────────────────────
 
     @FXML
     public void initialize() {
-        // Wire update callbacks once so header controls always reflect updater state.
-        updateController.setOnCheckStart(() -> btnCheckUpdate.setDisable(true));
-        updateController.setOnCheckEnd(() -> btnCheckUpdate.setDisable(false));
-        updateController.setOnStatusChange(msg -> labelUpdateStatus.setText(msg));
+        // Keep header buttons responsive while update checks are running.
+        updateController.setOnCheckStart(() -> btnSettings.setDisable(true));
+        updateController.setOnCheckEnd(() -> btnSettings.setDisable(false));
+        updateController.setOnStatusChange(msg -> log.info("Update status: {}", msg));
+
+        noticeLabel.setVisible(false);
+        hideNoticeTransition.setOnFinished(e -> noticeLabel.setVisible(false));
 
         // Set greeting early because this template is shared by both admin and
         // non-admin users.
-        userMenu.setText(I18n.get("top.hello", Session.getUser().getUsername()));
+        labelGreeting.setText(I18n.get("top.hello", Session.getUser().getUsername()));
 
-        // Process role-specific tab visibility before choosing default content.
+        settingsPopupHelper = new SettingsPopupHelper(
+                "admin",
+                btnSettings,
+                userSettingService,
+                this::reloadUI,
+                this::onCheckUpdateManual,
+                this::onUserInfo);
+        settingsPopupHelper.initialize();
+
+        appSettingMenu.minWidthProperty().bind(btnAppSetting.widthProperty());
+        appSettingMenu.prefWidthProperty().bind(btnAppSetting.widthProperty());
+        appSettingMenu.maxWidthProperty().bind(btnAppSetting.widthProperty());
+        btnStorageSetting.minWidthProperty().bind(appSettingMenu.widthProperty());
+        btnStorageSetting.prefWidthProperty().bind(appSettingMenu.widthProperty());
+        btnStorageSetting.maxWidthProperty().bind(appSettingMenu.widthProperty());
+        btnDataBackupSetting.minWidthProperty().bind(appSettingMenu.widthProperty());
+        btnDataBackupSetting.prefWidthProperty().bind(appSettingMenu.widthProperty());
+        btnDataBackupSetting.maxWidthProperty().bind(appSettingMenu.widthProperty());
+        appSettingMenu.setManaged(false);
+        appSettingMenu.setMouseTransparent(true);
+
+        root.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+            Object target = e.getTarget();
+            if (target instanceof Node node
+                    && !isWithin(node, btnAppSetting)
+                    && !isWithin(node, appSettingMenu)) {
+                hideAppSettingMenu();
+            }
+        });
+
         configureTabsByRole();
         openDefaultTab();
-
-        // Preserve active language marker after UI init/reload.
-        String lang = I18n.getLocale().getLanguage();
-        setActiveButton(getLangButtons(), "vi".equals(lang) ? btnVietnamese : btnEnglish);
-
-        // Keep theme toggle state consistent with persisted theme.
-        updateThemeButtons();
     }
-
-    // ── Menu handlers ───────────────────────────────────────────────────────
 
     @FXML
     public void goDashboard() {
@@ -118,11 +148,23 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @FXML
+    public void goAppSetting() {
+        if (!Session.isAdmin()) return;
+        toggleAppSettingMenu();
+    }
+
+    @FXML
     private void onUserInfo() {
-        // Route "Information" menu to the same user/profile tab behavior for
-        // consistency.
-        setActiveButton(getMenuButtons(), btnUser);
-        openMyProfile();
+        // Open account settings as a dialog from the header action so users can
+        // inspect identity info and change password without leaving the current page.
+        DialogHelper.DialogResult<UserFormController> dialog = DialogHelper.openWithController(
+                ViewPaths.USER_ACCOUNT_DIALOG,
+                I18n.get("user.account.title"));
+        dialog.controller().prepareForAccount(Session.getUser());
+        dialog.controller().setOnSuccess(() -> showNoticeSuccess(I18n.get("user.account.password.updated.success")));
+        dialog.controller().setOnNoChange(() -> showNoticeSuccess(I18n.get("user.update.nochange")));
+        dialog.stage().setResizable(false);
+        dialog.stage().showAndWait();
     }
 
     @FXML
@@ -136,8 +178,48 @@ public class AdminLayoutController extends BaseLayoutController {
         updateController.onCheckUpdateManual();
     }
 
-    private void openMyProfile() {
+    @FXML
+    private void openSettingsPopup() {
+        settingsPopupHelper.togglePopup();
+    }
 
+    @FXML
+    public void toggleAppSettingMenu(ActionEvent event) {
+        toggleAppSettingMenu();
+    }
+
+    private void toggleAppSettingMenu() {
+        boolean isVisible = appSettingMenu.isVisible();
+        if (!isVisible) {
+            appSettingMenu.applyCss();
+            appSettingMenu.autosize();
+            positionAppSettingMenu();
+        }
+
+        appSettingMenu.setVisible(!isVisible);
+        appSettingMenu.setMouseTransparent(isVisible);
+        if (!isVisible) {
+            appSettingMenu.toFront();
+        }
+    }
+
+    @FXML
+    public void goStorageSetting(ActionEvent event) {
+        if (!Session.isAdmin()) return;
+        hideAppSettingMenu();
+        setContent(loadView(ViewPaths.STORAGE_SETTING));
+        setActiveButton(getMenuButtons(), btnAppSetting);
+    }
+
+    @FXML
+    public void goDataBackupSetting(ActionEvent event) {
+        if (!Session.isAdmin()) return;
+        hideAppSettingMenu();
+        setContent(loadView(ViewPaths.DATA_BACKUP_SETTING));
+        setActiveButton(getMenuButtons(), btnAppSetting);
+    }
+
+    private void openMyProfile() {
         // Request typed controller result to keep navigation casting checked and
         // explicit.
         var result = loadViewWithController(ViewPaths.USER_INFO, UserInfoController.class);
@@ -154,61 +236,68 @@ public class AdminLayoutController extends BaseLayoutController {
         setContent(result.node());
     }
 
-    // Both tabs are visible to all roles; goUser() loads different content
-    // depending on role.
-    private void configureTabsByRole() {
-        // No tabs are hidden — content differs by role, not visibility.
+    @Override
+    public void showNoticeSuccess(String text) {
+        noticeLabel.setText(text);
+        noticeLabel.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
+        noticeLabel.getStyleClass().add(MESSAGE_SUCCESS);
+        noticeLabel.setVisible(true);
+        noticeLabel.toFront();
+        hideNoticeTransition.stop();
+        hideNoticeTransition.playFromStart();
     }
 
-    // All roles land on the dashboard by default; delegate to goDashboard to avoid
-    // duplicating logic.
+    @Override
+    public void showNoticeError(String text) {
+        noticeLabel.setText(text);
+        noticeLabel.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
+        noticeLabel.getStyleClass().add(MESSAGE_ERROR);
+        noticeLabel.setVisible(true);
+        noticeLabel.toFront();
+        hideNoticeTransition.stop();
+        hideNoticeTransition.playFromStart();
+    }
+
+    private void configureTabsByRole() {
+        boolean isAdmin = Session.isAdmin();
+        btnAppSetting.setVisible(isAdmin);
+        btnAppSetting.setManaged(isAdmin);
+    }
+
     private void openDefaultTab() {
         goDashboard();
     }
 
-    @FXML
-    private void switchToEnglish() {
-        // Reload layout after language switch so shared header tabs and body text
-        // update together.
-        I18n.setLocale(java.util.Locale.forLanguageTag("en"));
-        reloadUI();
-        setActiveButton(getLangButtons(), btnEnglish);
+    @Override
+    protected Button getButtonForModule(String fxml) {
+        // Map each module's FXML path to its sidebar nav button so reloadUI() can
+        // restore the correct active-button highlight after a language change reload.
+        return switch (fxml) {
+            case ViewPaths.USER_LIST, ViewPaths.USER_INFO -> btnUser;
+            case ViewPaths.STORAGE_SETTING, ViewPaths.DATA_BACKUP_SETTING -> btnAppSetting;
+            default -> null;
+        };
     }
 
-    @FXML
-    private void switchToVietnamese() {
-        // Reload layout after language switch so shared header tabs and body text
-        // update together.
-        I18n.setLocale(java.util.Locale.forLanguageTag("vi"));
-        reloadUI();
-        setActiveButton(getLangButtons(), btnVietnamese);
+    private void hideAppSettingMenu() {
+        appSettingMenu.setVisible(false);
+        appSettingMenu.setMouseTransparent(true);
     }
 
-    @FXML
-    private void switchToLightTheme() {
-        // Apply theme immediately to the current shared shell and active body module.
-        ThemeManager.setTheme(ThemeManager.THEME_LIGHT);
-        ThemeManager.apply(MainApp.getScene());
-        updateThemeButtons();
+    private void positionAppSettingMenu() {
+        Point2D buttonBottomLeft = btnAppSetting.localToScene(0, btnAppSetting.getHeight());
+        Point2D rootPoint = root.sceneToLocal(buttonBottomLeft);
+        appSettingMenu.relocate(rootPoint.getX(), rootPoint.getY() + 4);
     }
 
-    @FXML
-    private void switchToDarkTheme() {
-        // Apply theme immediately to the current shared shell and active body module.
-        ThemeManager.setTheme(ThemeManager.THEME_DARK);
-        ThemeManager.apply(MainApp.getScene());
-        updateThemeButtons();
-    }
-
-    private void updateThemeButtons() {
-        // Only one theme toggle should be active so current mode is obvious to users.
-        boolean isDark = ThemeManager.THEME_DARK.equals(ThemeManager.getTheme());
-        btnDarkTheme.getStyleClass().removeAll(THEME_BTN_ACTIVE);
-        btnLightTheme.getStyleClass().removeAll(THEME_BTN_ACTIVE);
-        if (isDark) {
-            btnDarkTheme.getStyleClass().add(THEME_BTN_ACTIVE);
-        } else {
-            btnLightTheme.getStyleClass().add(THEME_BTN_ACTIVE);
+    private boolean isWithin(Node node, Node container) {
+        Node current = node;
+        while (current != null) {
+            if (current == container) {
+                return true;
+            }
+            current = current.getParent();
         }
+        return false;
     }
 }

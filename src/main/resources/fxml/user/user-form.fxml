@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.scene.control.*?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.VBox?>
-<VBox spacing="18"
+<VBox spacing="10"
       alignment="CENTER"
       prefWidth="420"
-      prefHeight="320"
       minWidth="420"
       xmlns="http://javafx.com/javafx/21"
       xmlns:fx="http://javafx.com/fxml/1"
@@ -14,14 +16,64 @@
       stylesheets="@/css/admin.css"
       styleClass="form">
 
-    <Label text="%user.form.title" styleClass="title"/>
+    <Region styleClass="popup-spacer"/>
 
-    <TextField fx:id="txtUsername" promptText="%user.username" styleClass="input"/>
+    <Label fx:id="lblTitle" styleClass="title"/>
 
-    <PasswordField fx:id="txtPassword" promptText="%user.password.hint" styleClass="input"/>
+    <Region styleClass="popup-header-spacer"/>
 
-    <ComboBox fx:id="cbRole" promptText="%user.role.select"
-              maxWidth="1.7976931348623157E308"/>
+    <GridPane hgap="12" vgap="12" maxWidth="1.7976931348623157E308">
+        <columnConstraints>
+            <ColumnConstraints minWidth="110"/>
+            <ColumnConstraints hgrow="ALWAYS"/>
+        </columnConstraints>
+
+        <Label text="%user.username.label" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+        <TextField fx:id="txtUsername"
+                   promptText="%user.username"
+                   styleClass="input"
+                   GridPane.rowIndex="0"
+                   GridPane.columnIndex="1"/>
+        <Label fx:id="lblUsername"
+               visible="false"
+               managed="false"
+               styleClass="account-readonly-value"
+               GridPane.rowIndex="0"
+               GridPane.columnIndex="1"/>
+
+        <Label text="%user.role.label" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+        <ComboBox fx:id="cbRole"
+                  promptText="%user.role.select"
+                  maxWidth="1.7976931348623157E308"
+                  GridPane.rowIndex="1"
+                  GridPane.columnIndex="1"/>
+        <Label fx:id="lblRole"
+               visible="false"
+               managed="false"
+               styleClass="account-readonly-value"
+               GridPane.rowIndex="1"
+               GridPane.columnIndex="1"/>
+
+        <Label fx:id="lblPasswordCaption"
+               text="%user.password.label"
+               GridPane.rowIndex="2"
+               GridPane.columnIndex="0"/>
+        <PasswordField fx:id="txtPassword"
+                       promptText="%user.password.hint"
+                       styleClass="input"
+                       GridPane.rowIndex="2"
+                       GridPane.columnIndex="1"/>
+
+        <Label fx:id="lblPasswordConfirmCaption"
+               text="%user.password.confirm.label"
+               GridPane.rowIndex="3"
+               GridPane.columnIndex="0"/>
+        <PasswordField fx:id="txtPasswordConfirm"
+                       promptText="%user.password.confirm.hint"
+                       styleClass="input"
+                       GridPane.rowIndex="3"
+                       GridPane.columnIndex="1"/>
+    </GridPane>
 
     <Label fx:id="lblError" visible="false" styleClass="message-error"/>
 
@@ -30,4 +82,5 @@
         <Button text="%common.cancel" onAction="#onCancel" styleClass="btn-secondary"/>
     </HBox>
 
+    <Region styleClass="popup-spacer"/>
 </VBox>
