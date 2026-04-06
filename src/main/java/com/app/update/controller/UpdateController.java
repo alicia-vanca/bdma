@@ -1,6 +1,8 @@
 package com.app.update.controller;
 
+import com.app.MainApp;
 import com.app.common.i18n.I18n;
+import com.app.common.ui.StageUtils;
 import com.app.update.model.UpdateInfo;
 import com.app.update.service.UpdateService;
 import javafx.application.Platform;
@@ -8,6 +10,9 @@ import javafx.concurrent.Task;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.stage.Stage;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,6 +106,7 @@ public class UpdateController {
 
     private void showUpdateDialog(UpdateInfo info) {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        configureAlert(alert);
         alert.setTitle(I18n.get("update.title"));
         alert.setHeaderText(I18n.get("update.header", info.latestVersion()));
         alert.setContentText(I18n.get("update.content"));
@@ -137,6 +143,7 @@ public class UpdateController {
                 log.info("Installer downloaded: {}", installer.getAbsolutePath());
 
                 Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                configureAlert(alert);
                 alert.setTitle(I18n.get("update.install.ready"));
                 alert.setHeaderText(I18n.get("update.install.success"));
                 alert.setContentText(I18n.get("update.install.content"));
@@ -155,5 +162,24 @@ public class UpdateController {
         ));
 
         new Thread(task).start();
+    }
+
+    private void configureAlert(Alert alert) {
+        alert.initOwner(MainApp.getPrimaryStage());
+        alert.setGraphic(createLogoGraphic());
+        alert.setOnShown(event -> {
+            Stage stage = (Stage) alert.getDialogPane().getScene().getWindow();
+            StageUtils.applyAppIcon(stage);
+        });
+    }
+
+    private ImageView createLogoGraphic() {
+        Image image = new Image(getClass().getResourceAsStream("/image/logo.png"));
+        ImageView imageView = new ImageView(image);
+        imageView.setFitWidth(48);
+        imageView.setFitHeight(48);
+        imageView.setPreserveRatio(true);
+        imageView.setSmooth(true);
+        return imageView;
     }
 }

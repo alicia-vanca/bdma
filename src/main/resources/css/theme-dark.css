@@ -174,6 +174,35 @@
     -fx-border-color: -primary;
 }
 
+/* ===== CHECKBOX ===== */
+.check-box {
+    -fx-text-fill: -text-color;
+}
+
+.check-box .text {
+    -fx-fill: -text-color;
+}
+
+.check-box .box {
+    -fx-background-color: -input-bg;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+}
+
+.check-box:selected .mark {
+    -fx-background-color: white;
+}
+
+.check-box:selected .box {
+    -fx-background-color: -primary;
+    -fx-border-color: -primary;
+}
+
+.check-box:hover .box {
+    -fx-border-color: -primary;
+}
+
 .button.btn-update {
     -fx-background-color: #334155;
     -fx-text-fill: -text-color;

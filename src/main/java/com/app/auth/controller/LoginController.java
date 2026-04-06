@@ -8,6 +8,7 @@ import com.app.common.session.Session;
 import com.app.common.ui.SettingsPopupHelper;
 import com.app.common.ui.ViewLoader;
 import com.app.common.ui.ViewPaths;
+import com.app.setting.service.UserSettingService;
 import com.app.update.controller.UpdateController;
 import com.app.user.model.User;
 import com.app.user.service.UserService;
@@ -37,12 +38,16 @@ public class LoginController {
 
     private final UserService userService;
     private final UpdateController updateController;
+    private final UserSettingService userSettingService;
 
     private SettingsPopupHelper settingsPopupHelper;
 
-    public LoginController(UserService userService, UpdateController updateController) {
+    public LoginController(UserService userService,
+                           UpdateController updateController,
+                           UserSettingService userSettingService) {
         this.userService = userService;
         this.updateController = updateController;
+        this.userSettingService = userSettingService;
     }
 
     @FXML
@@ -88,6 +93,7 @@ public class LoginController {
         if (user != null) {
             log.info("User '{}' logged in successfully", usernameText);
             Session.setUser(user);
+            userSettingService.applyRuntimeSettings(user.getId());
             MainApp.showAdmin();
         } else {
             log.warn("Failed login attempt for username '{}'", usernameText);

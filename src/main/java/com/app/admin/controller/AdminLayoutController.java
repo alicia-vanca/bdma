@@ -148,12 +148,6 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @FXML
-    public void goAppSetting() {
-        if (!Session.isAdmin()) return;
-        toggleAppSettingMenu();
-    }
-
-    @FXML
     private void onUserInfo() {
         // Open account settings as a dialog from the header action so users can
         // inspect identity info and change password without leaving the current page.
