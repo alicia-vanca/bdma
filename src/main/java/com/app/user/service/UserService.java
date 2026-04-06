@@ -31,8 +31,11 @@ public class UserService {
     // or underscore
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]{3,19}$");
 
-    public UserService(UserRepository userRepository) {
+    private final Session session;
+
+    public UserService(UserRepository userRepository, Session session) {
         this.userRepository = userRepository;
+        this.session = session;
     }
 
     public User login(String username, String password) {
@@ -148,7 +151,7 @@ public class UserService {
     }
 
     public void delete(Long id) {
-        if (id.equals(Session.getCurrentUserId())) {
+        if (id.equals(session.getCurrentUserId())) {
             throw new CannotDeleteSelfException();
         }
         userRepository.deleteById(id);

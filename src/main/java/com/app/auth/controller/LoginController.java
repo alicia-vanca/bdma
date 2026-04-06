@@ -36,15 +36,16 @@ public class LoginController {
     @FXML
     private Button btnSettings;
 
+    private final Session session;
     private final UserService userService;
     private final UpdateController updateController;
     private final UserSettingService userSettingService;
 
     private SettingsPopupHelper settingsPopupHelper;
 
-    public LoginController(UserService userService,
-                           UpdateController updateController,
+    public LoginController(Session session, UserService userService, UpdateController updateController,
                            UserSettingService userSettingService) {
+        this.session = session;
         this.userService = userService;
         this.updateController = updateController;
         this.userSettingService = userSettingService;
@@ -92,7 +93,7 @@ public class LoginController {
 
         if (user != null) {
             log.info("User '{}' logged in successfully", usernameText);
-            Session.setUser(user);
+            session.setUser(user);
             userSettingService.applyRuntimeSettings(user.getId());
             MainApp.showAdmin();
         } else {

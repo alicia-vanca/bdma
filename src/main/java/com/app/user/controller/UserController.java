@@ -60,6 +60,7 @@ public class UserController implements LayoutAware {
 
     private final UserService userService;
     private final ViewLoader viewLoader;
+    private final Session session;
 
     private List<User> allUsers = new ArrayList<>();
     private List<User> filteredUsers = new ArrayList<>();
@@ -77,9 +78,10 @@ public class UserController implements LayoutAware {
     private String savedSearchText = "";
     private String savedRoleFilter = null; // null = use locale-default "All"
 
-    public UserController(UserService userService, ViewLoader viewLoader) {
+    public UserController(UserService userService, ViewLoader viewLoader, Session session) {
         this.userService = userService;
         this.viewLoader = viewLoader;
+        this.session = session;
     }
 
     // ── LayoutAware ─────────────────────────────────────────────────────────
@@ -93,7 +95,7 @@ public class UserController implements LayoutAware {
 
     @FXML
     public void initialize() {
-        if (!Session.isAdmin()) {
+        if (!session.isAdmin()) {
             return;
         }
         currentView = root;
@@ -363,7 +365,7 @@ public class UserController implements LayoutAware {
     }
 
     private boolean isCurrentSessionUser(User user) {
-        return user != null && Objects.equals(user.getId(), Session.getCurrentUserId());
+        return user != null && Objects.equals(user.getId(), session.getCurrentUserId());
     }
 
     private boolean shouldDowngradeCurrentSessionRole(User user,
@@ -376,7 +378,7 @@ public class UserController implements LayoutAware {
     }
 
     private void downgradeCurrentSessionRole() {
-        User sessionUser = Session.getUser();
+        User sessionUser = session.getUser();
         if (sessionUser != null) {
             sessionUser.setRole(Role.USER);
         }

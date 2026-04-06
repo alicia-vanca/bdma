@@ -16,8 +16,78 @@ import javafx.scene.layout.VBox;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 public class SettingsPopupController {
+
+    /**
+     * Encapsulates UI-side actions triggered by settings changes.
+     *
+     * Keeping these callbacks grouped preserves a small constructor surface while
+     * making optional actions explicit.
+     */
+    public static final class Actions {
+        private final Runnable reloadUiAction;
+        private final Runnable prepareReloadAction;
+        private final Runnable refreshPopupAction;
+        private final Runnable hidePopupAction;
+        private final Runnable onCheckUpdateAction;
+        private final Runnable onInformationAction;
+
+        public Actions(
+                Runnable reloadUiAction,
+                Runnable prepareReloadAction,
+                Runnable refreshPopupAction,
+                Runnable hidePopupAction,
+                Runnable onCheckUpdateAction,
+                Runnable onInformationAction) {
+            this.reloadUiAction = Objects.requireNonNull(reloadUiAction, "reloadUiAction must not be null");
+            this.prepareReloadAction = Objects.requireNonNull(prepareReloadAction,
+                    "prepareReloadAction must not be null");
+            this.refreshPopupAction = Objects.requireNonNull(refreshPopupAction, "refreshPopupAction must not be null");
+            this.hidePopupAction = Objects.requireNonNull(hidePopupAction, "hidePopupAction must not be null");
+            this.onCheckUpdateAction = onCheckUpdateAction;
+            this.onInformationAction = onInformationAction;
+        }
+
+        public void reloadUi() {
+            reloadUiAction.run();
+        }
+
+        public void prepareReload() {
+            prepareReloadAction.run();
+        }
+
+        public void refreshPopup() {
+            refreshPopupAction.run();
+        }
+
+        public void hidePopup() {
+            hidePopupAction.run();
+        }
+
+        public boolean hasCheckUpdateAction() {
+            return onCheckUpdateAction != null;
+        }
+
+        public void runCheckUpdateAction() {
+            if (onCheckUpdateAction != null) {
+                onCheckUpdateAction.run();
+            }
+        }
+
+        public boolean hasInformationAction() {
+            return onInformationAction != null;
+        }
+
+        public void runInformationAction() {
+            if (onInformationAction != null) {
+                onInformationAction.run();
+            }
+        }
+    }
+
+    private final Session session;
 
     private static final String ACTIVE_BUTTON = "active-button";
     private static final String LANG_EN = "en";
@@ -53,28 +123,15 @@ public class SettingsPopupController {
     private Button btnUpdate;
 
     private final UserSettingService userSettingService;
-    private final Runnable reloadUiAction;
-    private final Runnable prepareReloadAction;
-    private final Runnable refreshPopupAction;
-    private final Runnable hidePopupAction;
-    private final Runnable onCheckUpdateAction;
-    private final Runnable onInformationAction;
+    private final Actions actions;
 
     public SettingsPopupController(
+            Session session,
             UserSettingService userSettingService,
-            Runnable reloadUiAction,
-            Runnable prepareReloadAction,
-            Runnable refreshPopupAction,
-            Runnable hidePopupAction,
-            Runnable onCheckUpdateAction,
-            Runnable onInformationAction) {
-        this.userSettingService = userSettingService;
-        this.reloadUiAction = reloadUiAction;
-        this.prepareReloadAction = prepareReloadAction;
-        this.refreshPopupAction = refreshPopupAction;
-        this.hidePopupAction = hidePopupAction;
-        this.onCheckUpdateAction = onCheckUpdateAction;
-        this.onInformationAction = onInformationAction;
+            Actions actions) {
+        this.session = Objects.requireNonNull(session, "session must not be null");
+        this.userSettingService = Objects.requireNonNull(userSettingService, "userSettingService must not be null");
+        this.actions = Objects.requireNonNull(actions, "actions must not be null");
     }
 
     @FXML
@@ -120,8 +177,9 @@ public class SettingsPopupController {
     }
 
     private void setupActions() {
-        boolean hasInfoAction = onInformationAction != null;
-        boolean hasUpdateAction = onCheckUpdateAction != null;
+        // Render only actions that are available for the current screen context.
+        boolean hasInfoAction = actions.hasInformationAction();
+        boolean hasUpdateAction = actions.hasCheckUpdateAction();
         boolean hasAnyAction = hasInfoAction || hasUpdateAction;
 
         lblActions.setManaged(hasAnyAction);
@@ -134,8 +192,8 @@ public class SettingsPopupController {
         if (hasInfoAction) {
             btnInfo.setText(I18n.get("top.info"));
             btnInfo.setOnAction(e -> {
-                onInformationAction.run();
-                hidePopupAction.run();
+                actions.runInformationAction();
+                actions.hidePopup();
             });
         }
 
@@ -144,35 +202,39 @@ public class SettingsPopupController {
         if (hasUpdateAction) {
             btnUpdate.setText(I18n.get("top.update"));
             btnUpdate.setOnAction(e -> {
-                onCheckUpdateAction.run();
-                hidePopupAction.run();
+                actions.runCheckUpdateAction();
+                actions.hidePopup();
             });
         }
     }
 
     private void switchLanguageIfNeeded(String languageTag) {
-        if (languageTag.equals(I18n.getLocale().getLanguage())) return;
+        // Persist language preference before reloading so the next scene uses the new
+        // locale.
+        if (languageTag.equals(I18n.getLocale().getLanguage()))
+            return;
         Language language = LANG_EN.equals(languageTag) ? Language.EN : Language.VI;
         saveUserConfig(null, language);
 
-        prepareReloadAction.run();
+        actions.prepareReload();
         I18n.setLocale(Locale.forLanguageTag(languageTag));
-        reloadUiAction.run();
+        actions.reloadUi();
     }
 
     private void switchTheme(String theme) {
+        // Apply theme immediately and refresh popup styling to keep controls in sync.
         Theme themeEnum = ThemeManager.THEME_DARK.equals(theme) ? Theme.DARK : Theme.LIGHT;
         saveUserConfig(themeEnum, null);
         ThemeManager.setTheme(theme);
         ThemeManager.apply(MainApp.getScene());
-        refreshPopupAction.run();
+        actions.refreshPopup();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void saveUserConfig(Theme theme, Language language) {
         try {
-            Long userId = Session.getUser().getId();
+            Long userId = session.getUser().getId();
             if (theme != null) {
                 userSettingService.saveTheme(userId, theme);
             }
@@ -180,7 +242,7 @@ public class SettingsPopupController {
                 userSettingService.saveLanguage(userId, language);
             }
         } catch (Exception e) {
-            //  Do not block the UI if the database save fails
+            // Do not block the UI if the database save fails
         }
     }
 
