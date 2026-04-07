@@ -25,6 +25,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+@SuppressWarnings("squid:S2209")
 @Component
 public class AdminLayoutController extends BaseLayoutController {
 
@@ -33,8 +34,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private static final String MESSAGE_SUCCESS = "message-success";
 
     private final UpdateController updateController;
-
     private final UserSettingService userSettingService;
+    private final Session session;
 
     @FXML
     private StackPane contentArea;
@@ -59,14 +60,14 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private StackPane root;
 
-
     private SettingsPopupHelper settingsPopupHelper;
     private final PauseTransition hideNoticeTransition = new PauseTransition(Duration.seconds(3));
 
-    public AdminLayoutController(ViewLoader viewLoader, UpdateController updateController, UserSettingService userSettingService) {
+    public AdminLayoutController(ViewLoader viewLoader, UpdateController updateController, UserSettingService userSettingService, Session session) {
         super(viewLoader);
         this.updateController = updateController;
         this.userSettingService = userSettingService;
+        this.session = session;
     }
 
     @Override
@@ -93,7 +94,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
         // Set greeting early because this template is shared by both admin and
         // non-admin users.
-        labelGreeting.setText(I18n.get("top.hello", Session.getUser().getUsername()));
+        labelGreeting.setText(I18n.get("top.hello", session.getUser().getUsername()));
 
         settingsPopupHelper = new SettingsPopupHelper(
                 "admin",
@@ -140,7 +141,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private void goUser() {
         // Reuse the same tab entry point and only change loaded content by role.
         setActiveButton(getMenuButtons(), btnUser);
-        if (Session.isAdmin()) {
+        if (session.isAdmin()) {
             setContent(loadView(ViewPaths.USER_LIST));
         } else {
             openMyProfile();
@@ -154,7 +155,7 @@ public class AdminLayoutController extends BaseLayoutController {
         DialogHelper.DialogResult<UserFormController> dialog = DialogHelper.openWithController(
                 ViewPaths.USER_ACCOUNT_DIALOG,
                 I18n.get("user.account.title"));
-        dialog.controller().prepareForAccount(Session.getUser());
+        dialog.controller().prepareForAccount(session.getUser());
         dialog.controller().setOnSuccess(() -> showNoticeSuccess(I18n.get("user.account.password.updated.success")));
         dialog.controller().setOnNoChange(() -> showNoticeSuccess(I18n.get("user.update.nochange")));
         dialog.stage().setResizable(false);
@@ -163,7 +164,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     public void logout() {
-        Session.clear();
+        session.clear();
         MainApp.showLogin();
     }
 
@@ -199,7 +200,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     public void goStorageSetting(ActionEvent event) {
-        if (!Session.isAdmin()) return;
+        if (!session.isAdmin())
+            return;
         hideAppSettingMenu();
         setContent(loadView(ViewPaths.STORAGE_SETTING));
         setActiveButton(getMenuButtons(), btnAppSetting);
@@ -207,7 +209,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     public void goDataBackupSetting(ActionEvent event) {
-        if (!Session.isAdmin()) return;
+        if (!session.isAdmin())
+            return;
         hideAppSettingMenu();
         setContent(loadView(ViewPaths.DATA_BACKUP_SETTING));
         setActiveButton(getMenuButtons(), btnAppSetting);
@@ -224,8 +227,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
         UserInfoController controller = result.controller();
         // Hide Back only for regular users — admins navigate back via the tab row.
-        controller.setShowBack(Session.isAdmin());
-        controller.setUser(Session.getUser());
+        controller.setShowBack(session.isAdmin());
+        controller.setUser(session.getUser());
 
         setContent(result.node());
     }
@@ -253,7 +256,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private void configureTabsByRole() {
-        boolean isAdmin = Session.isAdmin();
+        boolean isAdmin = session.isAdmin();
         btnAppSetting.setVisible(isAdmin);
         btnAppSetting.setManaged(isAdmin);
     }

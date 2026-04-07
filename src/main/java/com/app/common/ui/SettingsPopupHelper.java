@@ -1,4 +1,8 @@
+
 package com.app.common.ui;
+
+import com.app.common.helper.SpringContextHolder;
+import com.app.common.session.Session;
 
 import com.app.MainApp;
 import com.app.common.i18n.I18n;
@@ -34,11 +38,11 @@ public class SettingsPopupHelper {
     private Popup settingsPopup;
 
     public SettingsPopupHelper(String stateKey,
-                               Button anchorButton,
-                               UserSettingService userSettingService,   // ← nullable
-                               Runnable reloadUiAction,
-                               Runnable onCheckUpdateAction,
-                               Runnable onInformationAction) {
+            Button anchorButton,
+            UserSettingService userSettingService, // ← nullable
+            Runnable reloadUiAction,
+            Runnable onCheckUpdateAction,
+            Runnable onInformationAction) {
         this.stateKey = stateKey;
         this.anchorButton = anchorButton;
         this.userSettingService = userSettingService;
@@ -140,13 +144,16 @@ public class SettingsPopupHelper {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource(ViewPaths.SETTINGS_POPUP), I18n.getBundle());
             loader.setController(new SettingsPopupController(
-                    userSettingService,        // ← thêm vào
-                    reloadUiAction,
-                    this::prepareForReloadIfOpen,
-                    this::refreshIfOpen,
-                    this::hidePopup,
-                    onCheckUpdateAction,
-                    onInformationAction));
+                    SpringContextHolder.getBean(Session.class),
+                    userSettingService != null ? userSettingService
+                            : SpringContextHolder.getBean(UserSettingService.class),
+                    new SettingsPopupController.Actions(
+                            reloadUiAction,
+                            this::prepareForReloadIfOpen,
+                            this::refreshIfOpen,
+                            this::hidePopup,
+                            onCheckUpdateAction,
+                            onInformationAction)));
 
             VBox panel = loader.load();
             if (MainApp.getScene() != null) {

@@ -2,31 +2,35 @@ package com.app.common.session;
 
 import com.app.common.enums.Role;
 import com.app.user.model.User;
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
 
+/**
+ * Session bean for storing the current user context.
+ */
+@Component
+@Scope("singleton")
 public class Session {
 
-    private Session() {
+    private User currentUser;
+
+    public void setUser(User user) {
+        this.currentUser = user;
     }
 
-    private static User currentUser;
-
-    public static void setUser(User user) {
-        currentUser = user;
-    }
-
-    public static User getUser() {
+    public User getUser() {
         return currentUser;
     }
 
-    public static void clear() {
+    public void clear() {
         currentUser = null;
     }
 
-    public static boolean isAdmin() {
+    public boolean isAdmin() {
         return currentUser != null && currentUser.getRole() == Role.ADMIN;
     }
 
-    public static Long getCurrentUserId() {
+    public Long getCurrentUserId() {
         if (currentUser == null) {
             return 0L;
         }
