@@ -343,7 +343,7 @@ public class AdminLayoutController extends BaseLayoutController {
                     result.getAccountUserId(),
                     result.getHardwareId(),
                     result.getMatchedWhitelistId());
-            showNoticeSuccess(I18n.get("device.connected.saved", result.getDevice().getDeviceName()));
+            showNoticeSuccess(I18n.get("device.connected.saved", resolveValidatedDeviceName(result)));
             return;
         }
 
@@ -358,7 +358,7 @@ public class AdminLayoutController extends BaseLayoutController {
                 I18n.get("device.save.header"),
                 I18n.get(
                         "device.save.content",
-                        result.getDevice().getDeviceName(),
+                        resolveValidatedDeviceName(result),
                         result.getMatchedModelName()));
 
         ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
@@ -375,6 +375,22 @@ public class AdminLayoutController extends BaseLayoutController {
                 result.getHardwareId(),
                 result.getMatchedWhitelistId());
         showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
+    }
+
+    // Prefer the persisted device name when it exists, otherwise fall back to the
+    // validated account/device identifiers the UI already shows and saves.
+    private String resolveValidatedDeviceName(DeviceValidationResult result) {
+        if (result.getDevice() != null && result.getDevice().getDeviceName() != null
+                && !result.getDevice().getDeviceName().isBlank()) {
+            return result.getDevice().getDeviceName();
+        }
+        if (result.getAccountUserId() != null && !result.getAccountUserId().isBlank()) {
+            return result.getAccountUserId();
+        }
+        if (result.getHardwareId() != null && !result.getHardwareId().isBlank()) {
+            return result.getHardwareId();
+        }
+        return result.getSerial();
     }
 
     private void openDefaultTab() {
