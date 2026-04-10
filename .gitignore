@@ -46,6 +46,7 @@ bin/
 ### AI/Agent Instruction Files ###
 AGENTS.md
 .github/copilot-instructions.md
+.github/instructions/code-style.instructions.md
 
 ### Mac OS ###
 .DS_Store

@@ -13,8 +13,18 @@
     -fx-border-color: -border-color;
 }
 
+/* Use an explicit header height because label padding alone does not resize the header row. */
+.table-view .column-header-background,
+.table-view .filler,
+.table-view .column-header {
+    -fx-pref-height: 35;
+    -fx-min-height: 35;
+}
+
 .table-view .table-cell {
+    -fx-alignment: CENTER-LEFT;
     -fx-border-color: transparent -border-color transparent transparent;
+    -fx-padding: 0 12;
 }
 
 .table-view .column-header {
@@ -35,6 +45,11 @@
 
 .table-row-cell:selected {
     -fx-background-color: -table-selected;
+}
+
+.combo-box.page-size-combo .arrow-button {
+    -fx-padding: 0 10 0 0;
+    -fx-pref-width: 15;
 }
 
 /* TEXT */
@@ -65,7 +80,15 @@
     -fx-text-fill: white;
 }
 
+.btn-edit:hover {
+    -fx-background-color: #2471a3;
+}
+
 .btn-delete {
     -fx-background-color: #c0392b;
     -fx-text-fill: white;
+}
+
+.btn-delete:hover {
+    -fx-background-color: #a93226;
 }

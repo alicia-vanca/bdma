@@ -1,41 +1,52 @@
 package com.app.admin.controller;
 
 import com.app.MainApp;
+import com.app.common.config.LogContext;
 import com.app.common.i18n.I18n;
 import com.app.common.session.Session;
 import com.app.common.ui.*;
+import com.app.device.model.DeviceValidationResult;
+import com.app.device.model.ValidatedDevice;
+import com.app.device.service.DeviceValidationService;
 import com.app.setting.service.UserSettingService;
 import com.app.update.controller.UpdateController;
 import com.app.user.controller.UserFormController;
 import com.app.user.controller.UserInfoController;
-import javafx.animation.PauseTransition;
+import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.geometry.Point2D;
 import javafx.scene.Node;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 @SuppressWarnings("squid:S2209")
 @Component
 public class AdminLayoutController extends BaseLayoutController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminLayoutController.class);
-    private static final String MESSAGE_ERROR = "message-error";
-    private static final String MESSAGE_SUCCESS = "message-success";
-
     private final UpdateController updateController;
     private final UserSettingService userSettingService;
     private final Session session;
+    private final DeviceValidationService deviceValidationService;
 
     @FXML
     private StackPane contentArea;
@@ -54,20 +65,28 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private Button btnDataBackupSetting;
     @FXML
-    private Label noticeLabel;
+    private VBox noticeContainer;
     @FXML
     private VBox appSettingMenu;
     @FXML
     private StackPane root;
 
     private SettingsPopupHelper settingsPopupHelper;
-    private final PauseTransition hideNoticeTransition = new PauseTransition(Duration.seconds(3));
+    private NoticeStackHelper noticeHelper;
+    private final Set<String> connectedSerialsSnapshot = new HashSet<>();
+    private ScheduledExecutorService deviceWatchExecutor;
+    private volatile boolean adbMissingLogged;
 
-    public AdminLayoutController(ViewLoader viewLoader, UpdateController updateController, UserSettingService userSettingService, Session session) {
+    public AdminLayoutController(ViewLoader viewLoader,
+            UpdateController updateController,
+            UserSettingService userSettingService,
+            Session session,
+            DeviceValidationService deviceValidationService) {
         super(viewLoader);
         this.updateController = updateController;
         this.userSettingService = userSettingService;
         this.session = session;
+        this.deviceValidationService = deviceValidationService;
     }
 
     @Override
@@ -89,9 +108,6 @@ public class AdminLayoutController extends BaseLayoutController {
         updateController.setOnCheckEnd(() -> btnSettings.setDisable(false));
         updateController.setOnStatusChange(msg -> log.info("Update status: {}", msg));
 
-        noticeLabel.setVisible(false);
-        hideNoticeTransition.setOnFinished(e -> noticeLabel.setVisible(false));
-
         // Set greeting early because this template is shared by both admin and
         // non-admin users.
         labelGreeting.setText(I18n.get("top.hello", session.getUser().getUsername()));
@@ -104,6 +120,7 @@ public class AdminLayoutController extends BaseLayoutController {
                 this::onCheckUpdateManual,
                 this::onUserInfo);
         settingsPopupHelper.initialize();
+        noticeHelper = new NoticeStackHelper(noticeContainer);
 
         appSettingMenu.minWidthProperty().bind(btnAppSetting.widthProperty());
         appSettingMenu.prefWidthProperty().bind(btnAppSetting.widthProperty());
@@ -128,6 +145,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
         configureTabsByRole();
         openDefaultTab();
+        startDeviceWatcher();
     }
 
     @FXML
@@ -164,6 +182,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     public void logout() {
+        stopDeviceWatcher();
         session.clear();
         MainApp.showLogin();
     }
@@ -235,30 +254,127 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @Override
     public void showNoticeSuccess(String text) {
-        noticeLabel.setText(text);
-        noticeLabel.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
-        noticeLabel.getStyleClass().add(MESSAGE_SUCCESS);
-        noticeLabel.setVisible(true);
-        noticeLabel.toFront();
-        hideNoticeTransition.stop();
-        hideNoticeTransition.playFromStart();
+        noticeHelper.showSuccess(text);
     }
 
     @Override
     public void showNoticeError(String text) {
-        noticeLabel.setText(text);
-        noticeLabel.getStyleClass().removeAll(MESSAGE_ERROR, MESSAGE_SUCCESS);
-        noticeLabel.getStyleClass().add(MESSAGE_ERROR);
-        noticeLabel.setVisible(true);
-        noticeLabel.toFront();
-        hideNoticeTransition.stop();
-        hideNoticeTransition.playFromStart();
+        noticeHelper.showError(text);
     }
 
     private void configureTabsByRole() {
         boolean isAdmin = session.isAdmin();
         btnAppSetting.setVisible(isAdmin);
         btnAppSetting.setManaged(isAdmin);
+    }
+
+    private void startDeviceWatcher() {
+        if (deviceWatchExecutor != null && !deviceWatchExecutor.isShutdown()) {
+            return;
+        }
+
+        ThreadFactory factory = r -> {
+            Thread t = new Thread(r, "camera-listener");
+            t.setDaemon(true);
+            return t;
+        };
+
+        deviceWatchExecutor = Executors.newSingleThreadScheduledExecutor(factory);
+        deviceWatchExecutor.scheduleWithFixedDelay(this::pollDeviceConnections, 0, 3, TimeUnit.SECONDS);
+    }
+
+    private void stopDeviceWatcher() {
+        if (deviceWatchExecutor == null) {
+            return;
+        }
+
+        deviceWatchExecutor.shutdownNow();
+        deviceWatchExecutor = null;
+        connectedSerialsSnapshot.clear();
+    }
+
+    private void pollDeviceConnections() {
+        LogContext.init();
+        try {
+            List<String> currentSerials = deviceValidationService.listConnectedSerials();
+            Set<String> current = new HashSet<>(currentSerials);
+
+            for (String serial : current) {
+                if (!connectedSerialsSnapshot.contains(serial)) {
+                    validateAndHandleConnectedSerial(serial);
+                }
+            }
+
+            connectedSerialsSnapshot.clear();
+            connectedSerialsSnapshot.addAll(current);
+            adbMissingLogged = false;
+        } catch (Exception e) {
+            String message = e.getMessage() == null ? "" : e.getMessage();
+            if (message.contains("ADB binary not found")) {
+                if (!adbMissingLogged) {
+                    adbMissingLogged = true;
+                    log.warn("Device watcher is disabled until adb.exe is bundled: {}", e.getMessage());
+                }
+                return;
+            }
+            log.warn("Device watcher poll failed: {}", e.getMessage());
+        } finally {
+            LogContext.clear();
+        }
+    }
+
+    private void validateAndHandleConnectedSerial(String serial) {
+        try {
+            DeviceValidationResult result = deviceValidationService.validateConnectedDevice(serial);
+            if (!result.isValid()) {
+                return;
+            }
+
+            Platform.runLater(() -> handleValidatedResult(result));
+        } catch (Exception e) {
+            log.warn("Device validation failed for serial {}: {}", serial, e.getMessage());
+        }
+    }
+
+    private void handleValidatedResult(DeviceValidationResult result) {
+        if (result.isAlreadySaved()) {
+            // Update last_seen_at for already saved devices
+            deviceValidationService.saveValidatedDevice(
+                    result.getAccountUserId(),
+                    result.getHardwareId(),
+                    result.getMatchedWhitelistId());
+            showNoticeSuccess(I18n.get("device.connected.saved", result.getDevice().getDeviceName()));
+            return;
+        }
+
+        if (session.isAdmin()) {
+            showSaveDeviceConfirmation(result);
+        }
+    }
+
+    private void showSaveDeviceConfirmation(DeviceValidationResult result) {
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("device.save.title"),
+                I18n.get("device.save.header"),
+                I18n.get(
+                        "device.save.content",
+                        result.getDevice().getDeviceName(),
+                        result.getMatchedModelName()));
+
+        ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
+        ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
+        AlertHelper.setButtons(confirm, yesButton, noButton);
+
+        Optional<ButtonType> chosen = confirm.showAndWait();
+        if (chosen.isEmpty() || chosen.get() != yesButton) {
+            return;
+        }
+
+        ValidatedDevice saved = deviceValidationService.saveValidatedDevice(
+                result.getAccountUserId(),
+                result.getHardwareId(),
+                result.getMatchedWhitelistId());
+        showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
     }
 
     private void openDefaultTab() {

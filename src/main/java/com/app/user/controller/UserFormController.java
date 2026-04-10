@@ -175,26 +175,13 @@ public class UserFormController {
             return;
         }
 
-        // 1) special characters
-        if (userService.containsInvalidCharacters(username)) {
-            showError(I18n.get("user.username.invalid.chars"));
+        // 1) minimum length check
+        if (username.length() < UserService.USERNAME_MIN_LENGTH) {
+            showError(I18n.get("user.username.invalid"));
             return;
         }
 
-        // 2) first character must be a letter
-        if (!userService.startsWithLetter(username)) {
-            showError(I18n.get("user.username.invalid.start"));
-            return;
-        }
-
-        // 3) length checks
-        if (username.length() < UserService.USERNAME_MIN_LENGTH
-                || username.length() > UserService.USERNAME_MAX_LENGTH) {
-            showError(I18n.get("user.username.invalid.length"));
-            return;
-        }
-
-        // 4) username exists checks
+        // 2) username exists check
         if (userService.usernameExists(username)) {
             showError(I18n.get("user.username.exists"));
             return;

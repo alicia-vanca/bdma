@@ -44,7 +44,7 @@ public class LoginController {
     private SettingsPopupHelper settingsPopupHelper;
 
     public LoginController(Session session, UserService userService, UpdateController updateController,
-                           UserSettingService userSettingService) {
+            UserSettingService userSettingService) {
         this.session = session;
         this.userService = userService;
         this.updateController = updateController;
