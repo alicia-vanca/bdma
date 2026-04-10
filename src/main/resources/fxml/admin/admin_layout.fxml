@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
@@ -7,19 +6,15 @@
            xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.app.admin.controller.AdminLayoutController"
            styleClass="root">
-
     <BorderPane>
-
         <top>
             <VBox styleClass="header-shell" spacing="8">
                 <padding>
                     <Insets top="10" right="15" bottom="10" left="15"/>
                 </padding>
-
                 <HBox alignment="CENTER_LEFT" spacing="10" styleClass="top-bar">
                     <Label text="BDMA" styleClass="header-title"/>
                     <Region HBox.hgrow="ALWAYS"/>
-
                     <HBox spacing="8" alignment="CENTER_RIGHT" styleClass="top-right-actions">
                         <Label fx:id="labelGreeting" styleClass="greeting-label"/>
                         <Button fx:id="btnSettings"
@@ -32,33 +27,26 @@
                                 styleClass="btn-logout"/>
                     </HBox>
                 </HBox>
-
                 <HBox spacing="10" styleClass="tabs-row">
                     <Button text="%menu.dashboard"
                             fx:id="btnDashboard"
                             onAction="#goDashboard"
                             styleClass="menu-tab-btn"/>
-
                     <Button text="%menu.user"
                             fx:id="btnUser"
                             onAction="#goUser"
                             styleClass="menu-tab-btn"/>
-
                     <Button text="%settings.title"
                             fx:id="btnAppSetting"
                             onAction="#toggleAppSettingMenu"
                             styleClass="menu-tab-btn"/>
-
                 </HBox>
             </VBox>
         </top>
-
         <center>
             <StackPane fx:id="contentArea" styleClass="content-shell"/>
         </center>
-
     </BorderPane>
-
     <VBox fx:id="appSettingMenu"
           managed="false"
           mouseTransparent="true"
@@ -76,15 +64,14 @@
                 maxWidth="Infinity"
                 styleClass="dropdown-item"/>
     </VBox>
-
-    <Label fx:id="noticeLabel"
-           visible="false"
-           mouseTransparent="true"
-           styleClass="global-notice,message-success"
-           StackPane.alignment="BOTTOM_CENTER">
+    <VBox fx:id="noticeContainer"
+          spacing="8"
+          alignment="BOTTOM_CENTER"
+          fillWidth="false"
+          mouseTransparent="true"
+          StackPane.alignment="BOTTOM_CENTER">
         <StackPane.margin>
             <Insets top="0" right="0" bottom="40" left="0"/>
         </StackPane.margin>
-    </Label>
-
+    </VBox>
 </StackPane>

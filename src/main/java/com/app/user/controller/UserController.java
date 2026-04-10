@@ -5,6 +5,7 @@ import com.app.common.enums.Role;
 import com.app.common.exception.CannotDeleteSelfException;
 import com.app.common.i18n.I18n;
 import com.app.common.session.Session;
+import com.app.common.ui.AlertHelper;
 import com.app.common.ui.BaseLayoutController;
 import com.app.common.ui.DialogHelper;
 import com.app.common.ui.LayoutAware;
@@ -16,6 +17,7 @@ import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
@@ -57,6 +59,8 @@ public class UserController implements LayoutAware {
     private Button btnNext;
     @FXML
     private Label lblPageInfo;
+    @FXML
+    private ComboBox<Integer> cbPageSize;
 
     private final UserService userService;
     private final ViewLoader viewLoader;
@@ -65,7 +69,9 @@ public class UserController implements LayoutAware {
     private List<User> allUsers = new ArrayList<>();
     private List<User> filteredUsers = new ArrayList<>();
 
-    private static final int PAGE_SIZE = 10;
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final List<Integer> PAGE_SIZE_THRESHOLDS = List.of(10, 25, 50, 100);
+    private int pageSize = DEFAULT_PAGE_SIZE;
     private int currentPageIndex = 0;
 
     private BaseLayoutController layoutController;
@@ -102,6 +108,7 @@ public class UserController implements LayoutAware {
         setupRoleComboBox();
         setupFilterListeners();
         setupTableColumns();
+        setupPageSizeComboBox();
         addActionColumn();
         loadData();
         restoreFilterState();
@@ -131,7 +138,7 @@ public class UserController implements LayoutAware {
 
     private void setupTableColumns() {
         colSTT.setCellValueFactory(c -> new SimpleIntegerProperty(
-                currentPageIndex * PAGE_SIZE + table.getItems().indexOf(c.getValue()) + 1));
+                currentPageIndex * pageSize + table.getItems().indexOf(c.getValue()) + 1));
 
         colUsername.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getUsername()));
         colUsername.setCellFactory(col -> new TableCell<>() {
@@ -159,6 +166,19 @@ public class UserController implements LayoutAware {
         });
 
         colRole.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getRole().toString()));
+    }
+
+    private void setupPageSizeComboBox() {
+        cbPageSize.getItems().setAll(PAGE_SIZE_THRESHOLDS);
+        cbPageSize.setValue(DEFAULT_PAGE_SIZE);
+        cbPageSize.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue == null || Objects.equals(newValue, pageSize)) {
+                return;
+            }
+            pageSize = newValue;
+            currentPageIndex = 0;
+            setupPagination();
+        });
     }
 
     private void restoreFilterState() {
@@ -232,10 +252,12 @@ public class UserController implements LayoutAware {
 
             private final Button btnEdit = new Button(I18n.get("common.edit"));
             private final Button btnDelete = new Button(I18n.get("common.delete"));
+            private final HBox actions = new HBox(10, btnEdit, btnDelete);
 
             {
-                btnEdit.setStyle("-fx-background-color:#2980b9; -fx-text-fill:white;");
-                btnDelete.setStyle("-fx-background-color:#c0392b; -fx-text-fill:white;");
+                btnEdit.getStyleClass().add("btn-edit");
+                btnDelete.getStyleClass().add("btn-delete");
+                actions.setAlignment(Pos.CENTER_LEFT);
 
                 btnEdit.setOnAction(e -> openForm(getTableView().getItems().get(getIndex())));
                 btnDelete.setOnAction(e -> onDeleteClicked(getTableView().getItems().get(getIndex())));
@@ -244,16 +266,21 @@ public class UserController implements LayoutAware {
             @Override
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                setGraphic(empty ? null : new HBox(10, btnEdit, btnDelete));
+                setGraphic(empty ? null : actions);
             }
         });
     }
 
     private void onDeleteClicked(User user) {
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-        confirm.setTitle(I18n.get("common.confirm"));
-        confirm.setHeaderText(null);
-        confirm.setContentText(I18n.get("user.delete.confirm"));
+        if (isCurrentSessionUser(user)) {
+            showError(I18n.get("user.delete.self.error"));
+            return;
+        }
+
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("common.confirm"),
+                null,
+                I18n.get("user.delete.confirm"));
 
         confirm.showAndWait()
                 .filter(type -> type == ButtonType.OK)
@@ -285,8 +312,8 @@ public class UserController implements LayoutAware {
     }
 
     private void updateTablePage() {
-        int from = currentPageIndex * PAGE_SIZE;
-        int to = Math.min(from + PAGE_SIZE, filteredUsers.size());
+        int from = currentPageIndex * pageSize;
+        int to = Math.min(from + pageSize, filteredUsers.size());
 
         table.setItems(FXCollections.observableArrayList(
                 from < to ? filteredUsers.subList(from, to) : List.of()));
@@ -299,7 +326,7 @@ public class UserController implements LayoutAware {
     }
 
     private int getPageCount() {
-        return Math.max((int) Math.ceil((double) filteredUsers.size() / PAGE_SIZE), 1);
+        return Math.max((int) Math.ceil((double) filteredUsers.size() / pageSize), 1);
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────

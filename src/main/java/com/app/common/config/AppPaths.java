@@ -26,6 +26,10 @@ public final class AppPaths {
         return APP_DIR + "/tmp/app";
     }
 
+    public static String adbTmpDir() {
+        return APP_DIR + "/tmp/adb";
+    }
+
     public static String sqliteTmpDir() {
         return APP_DIR + "/tmp/sqlite";
     }

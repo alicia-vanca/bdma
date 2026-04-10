@@ -1,8 +1,7 @@
 package com.app.update.controller;
 
-import com.app.MainApp;
 import com.app.common.i18n.I18n;
-import com.app.common.ui.StageUtils;
+import com.app.common.ui.AlertHelper;
 import com.app.update.model.UpdateInfo;
 import com.app.update.service.UpdateService;
 import javafx.application.Platform;
@@ -10,9 +9,6 @@ import javafx.concurrent.Task;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.stage.Stage;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +38,8 @@ public class UpdateController {
     // ── Public API ───────────────────────────────────────────────────────────
 
     public void checkOnStartup() {
-        if (!updateService.shouldCheckThisWeek()) return;
+        if (!updateService.shouldCheckThisWeek())
+            return;
         updateService.saveCheckDate();
 
         Task<UpdateInfo> task = new Task<>() {
@@ -54,10 +51,12 @@ public class UpdateController {
 
         task.setOnSucceeded(e -> {
             UpdateInfo info = task.getValue();
-            if (!info.hasUpdate()) return;
+            if (!info.hasUpdate())
+                return;
 
             String skipped = updateService.getSkippedVersion();
-            if (info.latestVersion().equals(skipped)) return;
+            if (info.latestVersion().equals(skipped))
+                return;
 
             Platform.runLater(() -> showUpdateDialog(info));
         });
@@ -66,7 +65,8 @@ public class UpdateController {
     }
 
     public void onCheckUpdateManual() {
-        if (onCheckStart != null) onCheckStart.run();
+        if (onCheckStart != null)
+            onCheckStart.run();
         updateStatus(I18n.get("update.checking"));
 
         Task<UpdateInfo> task = new Task<>() {
@@ -79,7 +79,8 @@ public class UpdateController {
         task.setOnSucceeded(e -> {
             UpdateInfo info = task.getValue();
             Platform.runLater(() -> {
-                if (onCheckEnd != null) onCheckEnd.run();
+                if (onCheckEnd != null)
+                    onCheckEnd.run();
                 if (!info.hasUpdate()) {
                     updateStatus(I18n.get("update.latest"));
                 } else {
@@ -90,7 +91,8 @@ public class UpdateController {
         });
 
         task.setOnFailed(e -> Platform.runLater(() -> {
-            if (onCheckEnd != null) onCheckEnd.run();
+            if (onCheckEnd != null)
+                onCheckEnd.run();
             updateStatus(I18n.get("update.failed"));
             log.warn("Update check failed", task.getException());
         }));
@@ -101,20 +103,27 @@ public class UpdateController {
     // ── Private ──────────────────────────────────────────────────────────────
 
     private void updateStatus(String msg) {
-        if (onStatusChange != null) onStatusChange.accept(msg);
+        if (onStatusChange != null)
+            onStatusChange.accept(msg);
     }
 
     private void showUpdateDialog(UpdateInfo info) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        configureAlert(alert);
-        alert.setTitle(I18n.get("update.title"));
-        alert.setHeaderText(I18n.get("update.header", info.latestVersion()));
-        alert.setContentText(I18n.get("update.content"));
+        Alert alert = AlertHelper.createConfirmation(
+                I18n.get("update.title"),
+                I18n.get("update.header", info.latestVersion()),
+                I18n.get("update.content"));
 
         ButtonType btnUpdate = new ButtonType(I18n.get("update.btn.update"));
         ButtonType btnSkip = new ButtonType(I18n.get("update.btn.skip"));
         ButtonType btnLater = new ButtonType(I18n.get("update.btn.later"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(btnUpdate, btnSkip, btnLater);
+        AlertHelper.setButtons(alert, btnUpdate, btnSkip, btnLater);
+        alert.setOnShown(event -> {
+            // Preventing JavaFX from separating cancel-type buttons into a different group.
+            var buttonBarNode = alert.getDialogPane().lookup(".button-bar");
+            if (buttonBarNode instanceof ButtonBar buttonBar) {
+                buttonBar.setButtonOrder(ButtonBar.BUTTON_ORDER_NONE);
+            }
+        });
 
         alert.showAndWait().ifPresent(result -> {
             if (result == btnUpdate) {
@@ -142,11 +151,10 @@ public class UpdateController {
                 File installer = task.getValue();
                 log.info("Installer downloaded: {}", installer.getAbsolutePath());
 
-                Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                configureAlert(alert);
-                alert.setTitle(I18n.get("update.install.ready"));
-                alert.setHeaderText(I18n.get("update.install.success"));
-                alert.setContentText(I18n.get("update.install.content"));
+                Alert alert = AlertHelper.createInformation(
+                        I18n.get("update.install.ready"),
+                        I18n.get("update.install.success"),
+                        I18n.get("update.install.content"));
                 alert.showAndWait();
 
                 new ProcessBuilder(installer.getAbsolutePath()).start();
@@ -157,29 +165,8 @@ public class UpdateController {
             }
         }));
 
-        task.setOnFailed(e -> Platform.runLater(() ->
-                log.error("Failed to download installer", task.getException())
-        ));
+        task.setOnFailed(e -> Platform.runLater(() -> log.error("Failed to download installer", task.getException())));
 
         new Thread(task).start();
-    }
-
-    private void configureAlert(Alert alert) {
-        alert.initOwner(MainApp.getPrimaryStage());
-        alert.setGraphic(createLogoGraphic());
-        alert.setOnShown(event -> {
-            Stage stage = (Stage) alert.getDialogPane().getScene().getWindow();
-            StageUtils.applyAppIcon(stage);
-        });
-    }
-
-    private ImageView createLogoGraphic() {
-        Image image = new Image(getClass().getResourceAsStream("/image/logo.png"));
-        ImageView imageView = new ImageView(image);
-        imageView.setFitWidth(48);
-        imageView.setFitHeight(48);
-        imageView.setPreserveRatio(true);
-        imageView.setSmooth(true);
-        return imageView;
     }
 }
