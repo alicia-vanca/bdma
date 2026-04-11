@@ -29,9 +29,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Properties;
 
 public class MainApp extends Application {
 
@@ -73,7 +75,9 @@ public class MainApp extends Application {
     @Override
     public void init() {
         AppRuntimeInitializer.initialize();
-        springContext = SpringApplication.run(SpringBootApp.class);
+        SpringApplication application = new SpringApplication(SpringBootApp.class);
+        application.setDefaultProperties(loadBundledApplicationProperties());
+        springContext = application.run();
 
         GlobalExceptionHandler handler = springContext.getBean(GlobalExceptionHandler.class);
         Thread.setDefaultUncaughtExceptionHandler(handler);
@@ -189,6 +193,26 @@ public class MainApp extends Application {
         } catch (IOException e) {
             log.warn("Could not signal existing instance", e);
         }
+    }
+
+    private Properties loadBundledApplicationProperties() {
+        Properties properties = new Properties();
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        if (classLoader == null) {
+            classLoader = MainApp.class.getClassLoader();
+        }
+
+        try (InputStream inputStream = classLoader.getResourceAsStream("application.properties")) {
+            if (inputStream != null) {
+                properties.load(inputStream);
+            } else {
+                log.warn("Bundled application.properties was not found on the classpath");
+            }
+        } catch (IOException e) {
+            log.warn("Could not read bundled application.properties", e);
+        }
+
+        return properties;
     }
 
     private static void bringToFront() {
