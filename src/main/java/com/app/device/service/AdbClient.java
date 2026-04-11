@@ -5,13 +5,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -66,14 +70,14 @@ public class AdbClient {
 
     public boolean fileExists(String serial, String path) {
         String output = runAdb("-s", serial, ADB_SHELL, "ls", "-1", path);
-        String trimmed = output.trim();
+        String trimmed = output.trim().toLowerCase();
         if (trimmed.isBlank()) {
             return false;
         }
 
-        return !(containsIgnoreCase(trimmed, "no such file")
-                || containsIgnoreCase(trimmed, "cannot access")
-                || containsIgnoreCase(trimmed, "not found"));
+        return !(trimmed.contains("no such file")
+                || trimmed.contains("cannot access")
+                || trimmed.contains("not found"));
     }
 
     public String readTextFile(String serial, String path) {
@@ -127,15 +131,5 @@ public class AdbClient {
             Thread.currentThread().interrupt();
             throw new AppException("Failed to run adb command: " + String.join(" ", command), e);
         }
-    }
-
-    private boolean containsIgnoreCase(String source, String target) {
-        int max = source.length() - target.length();
-        for (int index = 0; index <= max; index++) {
-            if (source.regionMatches(true, index, target, 0, target.length())) {
-                return true;
-            }
-        }
-        return false;
     }
 }
