@@ -1,6 +1,7 @@
 package com.app.auth.controller;
 
 import com.app.MainApp;
+import com.app.auth.service.LoginService;
 import com.app.common.css.CssLoader;
 import com.app.common.helper.SpringContextHolder;
 import com.app.common.i18n.I18n;
@@ -40,15 +41,17 @@ public class LoginController {
     private final UserService userService;
     private final UpdateController updateController;
     private final UserSettingService userSettingService;
+    private final LoginService loginService; // Triggers background sync after login
 
     private SettingsPopupHelper settingsPopupHelper;
 
     public LoginController(Session session, UserService userService, UpdateController updateController,
-            UserSettingService userSettingService) {
+                           UserSettingService userSettingService, LoginService loginService) {
         this.session = session;
         this.userService = userService;
         this.updateController = updateController;
         this.userSettingService = userSettingService;
+        this.loginService = loginService;
     }
 
     @FXML
@@ -93,8 +96,17 @@ public class LoginController {
 
         if (user != null) {
             log.info("User '{}' logged in successfully", usernameText);
+
+            // Initialize session for the authenticated user
             session.setUser(user);
+
+            // Apply user-specific runtime settings
             userSettingService.applyRuntimeSettings(user.getId());
+
+            // Trigger background sync without blocking UI
+            loginService.onLoginSuccess();
+
+            // Navigate to main screen
             MainApp.showAdmin();
         } else {
             log.warn("Failed login attempt for username '{}'", usernameText);

@@ -17,7 +17,7 @@ public class AppConfigService {
 
     private AppConfig config;
 
-    public AppConfig loadOrCreate() {
+    public void loadOrCreate() {
         File file = AppPaths.appConfigFile();
         if (!file.exists()) {
             log.info("app-config.json not found, creating default...");
@@ -26,13 +26,16 @@ public class AppConfigService {
         } else {
             try {
                 config = objectMapper.readValue(file, AppConfig.class);
+                boolean normalized = normalizeConfig(config);
+                if (normalized) {
+                    persist(config);
+                }
                 log.info("app-config.json loaded.");
             } catch (IOException e) {
                 log.error("Failed to read app-config.json, using default.", e);
                 config = new AppConfig();
             }
         }
-        return config;
     }
 
     public void save(AppConfig updated) {
@@ -50,6 +53,22 @@ public class AppConfigService {
     public AppConfig getConfig() {
         if (config == null) loadOrCreate();
         return config;
+    }
+
+    private boolean normalizeConfig(AppConfig cfg) {
+        boolean changed = false;
+
+        if (cfg.getStorage() == null) {
+            cfg.setStorage(new AppConfig.Storage());
+            changed = true;
+        }
+
+        if (cfg.getBodyCam() == null) {
+            cfg.setBodyCam(new AppConfig.BodyCam());
+            changed = true;
+        }
+
+        return changed;
     }
 
     private void persist(AppConfig cfg) {

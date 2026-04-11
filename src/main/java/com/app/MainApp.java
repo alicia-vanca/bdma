@@ -14,6 +14,8 @@ import com.app.common.ui.StageUtils;
 import com.app.common.ui.ViewLoader;
 import com.app.common.ui.ViewPaths;
 import com.app.file.service.DataFolderManager;
+import com.app.sync.service.BackupService;
+import com.app.sync.worker.BackupWorker;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Parent;
@@ -78,6 +80,14 @@ public class MainApp extends Application {
 
         dataFolderManager = springContext.getBean(DataFolderManager.class);
         dataFolderManager.init();
+
+        BackupWorker backupWorker = springContext.getBean(BackupWorker.class);
+        Thread backupThread = new Thread(backupWorker, "backup-worker");
+        backupThread.setDaemon(true);
+        backupThread.start();
+
+        BackupService backupService = springContext.getBean(BackupService.class);
+        backupService.init();
     }
 
     @Override

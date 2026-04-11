@@ -8,10 +8,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 public class FolderSecurityService {
 
     private static final Logger log = LoggerFactory.getLogger(FolderSecurityService.class);
+
+    private static final String MSG_LOCK_INTERRUPTED = "Lock interrupted";
+
+    private static final String MSG_LOCK_FAILED = "Lock failed";
 
     private final Path parentPath;
     private final String unlockedFolderName;
@@ -31,7 +36,7 @@ public class FolderSecurityService {
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
-    public void ensureExists() {
+    public synchronized void ensureExists() {
         if (unlockedPath.toFile().exists() || lockedPath.toFile().exists()) return;
 
         try {
@@ -42,23 +47,47 @@ public class FolderSecurityService {
         }
     }
 
-    public void ensureUnlocked() {
+    public synchronized void ensureUnlocked() {
         if (isLocked()) unlock();
     }
 
-    public void ensureLocked() {
-        if (!isLocked()) lock();
+    public synchronized void ensureLocked() {
+        if (!isLocked()) {
+            lock();
+            return;
+        }
+
+        try {
+            unlockLockedPathForMaintenance();
+            reconcileDuplicateUnlockedFolder();
+            applyLockedAttributes();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error(MSG_LOCK_INTERRUPTED, e);
+        } catch (IOException e) {
+            log.error(MSG_LOCK_FAILED, e);
+        }
     }
 
-    public boolean isLocked() {
+    public synchronized boolean isLocked() {
         return lockedPath.toFile().exists();
     }
 
     // ── Lock / Unlock ────────────────────────────────────────────────────────
 
-    public void lock() {
+    public synchronized void lock() {
         if (lockedPath.toFile().exists()) {
-            log.debug("Already locked");
+            try {
+                unlockLockedPathForMaintenance();
+                reconcileDuplicateUnlockedFolder();
+                applyLockedAttributes();
+                log.debug("Already locked");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error(MSG_LOCK_INTERRUPTED, e);
+            } catch (IOException e) {
+                log.error(MSG_LOCK_FAILED, e);
+            }
             return;
         }
 
@@ -74,27 +103,26 @@ public class FolderSecurityService {
                 return;
             }
 
-            runCommand("cmd", "/c", "attrib", "+h", "+s", lockedPath.toString());
-            applyDeleteProtection(lockedPath.toString());
+            applyLockedAttributes();
             log.info("Data folder locked: {}", lockedPath);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Lock interrupted", e);
+            log.error(MSG_LOCK_INTERRUPTED, e);
         } catch (IOException e) {
-            log.error("Lock failed", e);
+            log.error(MSG_LOCK_FAILED, e);
         }
     }
 
-    public void unlock() {
+    public synchronized void unlock() {
         if (!lockedPath.toFile().exists()) {
             log.debug("Already unlocked");
             return;
         }
 
         try {
-            runCommand("cmd", "/c", "attrib", "-h", "-s", lockedPath.toString());
-            removeDeleteProtection(lockedPath.toString());
+            unlockLockedPathForMaintenance();
+            reconcileDuplicateUnlockedFolder();
 
             int renameCode = runCommand("cmd", "/c", "ren", lockedPath.getFileName().toString(), unlockedFolderName);
             if (renameCode != 0 || !unlockedPath.toFile().exists()) {
@@ -113,6 +141,67 @@ public class FolderSecurityService {
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
+
+    private void unlockLockedPathForMaintenance() throws IOException, InterruptedException {
+        runCommand("cmd", "/c", "attrib", "-h", "-s", lockedPath.toString());
+        removeDeleteProtection(lockedPath.toString());
+    }
+
+    private void applyLockedAttributes() throws IOException, InterruptedException {
+        runCommand("cmd", "/c", "attrib", "+h", "+s", lockedPath.toString());
+        applyDeleteProtection(lockedPath.toString());
+    }
+
+    private void reconcileDuplicateUnlockedFolder() throws IOException {
+        if (!Files.exists(unlockedPath) || !Files.exists(lockedPath)) {
+            return;
+        }
+
+        log.warn("Detected duplicate storage folders, merging {} into {}", unlockedPath, lockedPath);
+        mergeDirectory(unlockedPath, lockedPath);
+        deleteDirectory(unlockedPath);
+    }
+
+    private void mergeDirectory(Path source, Path target) throws IOException {
+        if (!Files.exists(source)) {
+            return;
+        }
+
+        Files.createDirectories(target);
+
+        try (var entries = Files.list(source)) {
+            for (Path entry : entries.toList()) {
+                Path targetEntry = target.resolve(entry.getFileName().toString());
+                if (Files.isDirectory(entry)) {
+                    mergeDirectory(entry, targetEntry);
+                } else {
+                    Path parent = targetEntry.getParent();
+                    if (parent != null) {
+                        Files.createDirectories(parent);
+                    }
+                    Files.move(entry, targetEntry, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    private void deleteDirectory(Path dir) throws IOException {
+        if (!Files.exists(dir)) {
+            return;
+        }
+
+        try (var entries = Files.list(dir)) {
+            for (Path entry : entries.toList()) {
+                if (Files.isDirectory(entry)) {
+                    deleteDirectory(entry);
+                } else {
+                    Files.deleteIfExists(entry);
+                }
+            }
+        }
+
+        Files.deleteIfExists(dir);
+    }
 
     private void applyDeleteProtection(String path) {
         try {

@@ -7,18 +7,19 @@ import org.sqlite.mc.SQLiteMCWxAES256Config;
 
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Properties;
 
 public final class AppRuntimeInitializer {
@@ -28,6 +29,8 @@ public final class AppRuntimeInitializer {
     private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
     private static final int DB_KEY_ITERATIONS = 65536;
     private static final int DB_KEY_LENGTH_BITS = 256;
+    private static final String DB_ENCRYPTION_ENABLED_PROPERTY = "app.db.encryption.enabled";
+    private static final String DB_ENCRYPTION_ENABLED_ENV = "APP_DB_ENCRYPTION_ENABLED";
 
     private AppRuntimeInitializer() {
     }
@@ -38,11 +41,17 @@ public final class AppRuntimeInitializer {
         initializeAppContext();
         forceLoadSqliteDriver();
         ensureDatabaseFile();
+        boolean dbEncryptionEnabled = resolveDbEncryptionEnabled();
         byte[] dbKey = deriveDbKey();
-        AppContext.setDbKey(dbKey);
-        // Transparently encrypt any pre-existing plain-text database on first upgrade
-        migrateToEncryptedIfNeeded(dbKey);
+        AppContext.setDbEncryptionEnabled(dbEncryptionEnabled);
+        AppContext.setDbKey(dbEncryptionEnabled ? dbKey : null);
+        if (dbEncryptionEnabled) {
+            migrateToEncryptedIfNeeded(dbKey);
+        } else {
+            migrateToPlaintextIfNeeded(dbKey);
+        }
         configureSqlite();
+        log.info("Database encryption is {}", dbEncryptionEnabled ? "enabled" : "disabled");
     }
 
     private static void ensureBaseDirectories() {
@@ -146,6 +155,10 @@ public final class AppRuntimeInitializer {
         return hex.toString();
     }
 
+    static String toRawKey(byte[] bytes) {
+        return "raw:" + toHexString(bytes);
+    }
+
     // Build the PRAGMA statement from a validated raw key because SQLite PRAGMA
     // rekey cannot be parameterized with PreparedStatement.
     private static String buildRekeyPragma(byte[] keyBytes) {
@@ -173,6 +186,10 @@ public final class AppRuntimeInitializer {
         }
     }
 
+    private static boolean isEncryptedSqliteFile(File dbFile) {
+        return dbFile.exists() && dbFile.length() >= 16 && !isPlainSqliteFile(dbFile);
+    }
+
     // Encrypt plain-text databases in place using the derived key so subsequent
     // connections can open them with the configured cipher settings.
     private static void migrateToEncryptedIfNeeded(byte[] dbKey) {
@@ -187,11 +204,82 @@ public final class AppRuntimeInitializer {
         // then apply PRAGMA rekey to encrypt it with the derived raw key.
         Properties migrationProps = SQLiteMCWxAES256Config.getDefault().build().toProperties();
         try (Connection conn = DriverManager.getConnection(url, migrationProps);
-                Statement stmt = conn.createStatement()) {
+             Statement stmt = conn.createStatement()) {
             stmt.execute(buildRekeyPragma(dbKey));
             log.info("Existing database encrypted with AES-256");
         } catch (SQLException e) {
             throw new AppException("Failed to encrypt database " + dbFile.getAbsolutePath(), e);
         }
+    }
+
+    private static void migrateToPlaintextIfNeeded(byte[] dbKey) {
+        File dbFile = AppPaths.dataFile();
+        if (!isEncryptedSqliteFile(dbFile)) {
+            return;
+        }
+
+        String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
+        Properties migrationProps = SQLiteMCWxAES256Config.getDefault()
+                .withKey(toRawKey(dbKey))
+                .build()
+                .toProperties();
+        try (Connection conn = DriverManager.getConnection(url, migrationProps);
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA rekey = ''");
+            log.info("Existing database decrypted to plain-text");
+        } catch (SQLException e) {
+            throw new AppException("Failed to decrypt database " + dbFile.getAbsolutePath(), e);
+        }
+    }
+
+    private static boolean resolveDbEncryptionEnabled() {
+        String value = System.getProperty(DB_ENCRYPTION_ENABLED_PROPERTY);
+        if (value != null && !value.isBlank()) {
+            return parseDbEncryptionEnabled(value, "system property");
+        }
+
+        value = System.getenv(DB_ENCRYPTION_ENABLED_ENV);
+        if (value != null && !value.isBlank()) {
+            return parseDbEncryptionEnabled(value, "environment variable");
+        }
+
+        Properties properties = loadApplicationProperties();
+        value = properties.getProperty(DB_ENCRYPTION_ENABLED_PROPERTY);
+        if (value != null && !value.isBlank()) {
+            return parseDbEncryptionEnabled(value, "application.properties");
+        }
+
+        return true;
+    }
+
+    private static Properties loadApplicationProperties() {
+        Properties properties = new Properties();
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        if (classLoader == null) {
+            classLoader = AppRuntimeInitializer.class.getClassLoader();
+        }
+
+        try (InputStream inputStream = classLoader.getResourceAsStream("application.properties")) {
+            if (inputStream != null) {
+                properties.load(inputStream);
+            }
+        } catch (IOException e) {
+            log.warn("Could not read application.properties: {}", e.getMessage());
+        }
+        return properties;
+    }
+
+    private static boolean parseDbEncryptionEnabled(String value, String source) {
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if ("true".equals(normalized)) {
+            return true;
+        }
+        if ("false".equals(normalized)) {
+            return false;
+        }
+
+        log.warn("Invalid {} value '{}' for {}. Falling back to enabled.", source, value,
+                DB_ENCRYPTION_ENABLED_PROPERTY);
+        return true;
     }
 }

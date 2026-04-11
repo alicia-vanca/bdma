@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.Callable;
 
 /**
  * Manages a protected data folder and a temporary working folder.
@@ -63,34 +65,38 @@ public class DataFolderManager {
     // ── File operations ──────────────────────────────────────────────────────
 
     public File openFileToTemp(String fileName) throws IOException {
-        ensureDataReady();
-        ensureDir(tempDir);
-
-        File dest = new File(tempDir, fileName);
-        dataSecurity.ensureUnlocked();
         try {
-            Files.copy(new File(dataDir, fileName).toPath(), dest.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            dataSecurity.ensureLocked();
-        }
+            return withDataDirUnlocked(() -> {
+                ensureDir(tempDir);
 
-        log.info("Opened {} to temp", fileName);
-        return dest;
+                File dest = new File(tempDir, fileName);
+                Files.copy(new File(dataDir, fileName).toPath(), dest.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING);
+                log.info("Opened {} to temp", fileName);
+                return dest;
+            });
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Failed to open file to temp: " + fileName, e);
+        }
     }
 
     public void saveFileFromTemp(String fileName) throws IOException {
-        ensureDataReady();
-
-        dataSecurity.ensureUnlocked();
         try {
-            Files.copy(new File(tempDir, fileName).toPath(), new File(dataDir, fileName).toPath(),
-                    StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            dataSecurity.ensureLocked();
+            withDataDirUnlocked(() -> {
+                File target = new File(dataDir, fileName);
+                ensureParentDir(target);
+                Files.copy(new File(tempDir, fileName).toPath(), target.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING);
+                log.info("Saved {} from temp to data", fileName);
+                return null;
+            });
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Failed to save file from temp: " + fileName, e);
         }
-
-        log.info("Saved {} from temp to data", fileName);
     }
 
     // ── Accessors ────────────────────────────────────────────────────────────
@@ -109,6 +115,48 @@ public class DataFolderManager {
 
     public boolean isBackupDirConfigured() {
         return backupDir != null;
+    }
+
+    public String toRelativeDataPath(String absolutePath) throws IOException {
+        ensureDataReady();
+
+        Path basePath = dataDir.toPath().toAbsolutePath().normalize();
+        Path targetPath = Path.of(absolutePath).toAbsolutePath().normalize();
+
+        if (!targetPath.startsWith(basePath)) {
+            throw new IOException("Path is outside data directory: " + absolutePath);
+        }
+
+        return basePath.relativize(targetPath).toString();
+    }
+
+    public synchronized <T> T withDataDirUnlocked(Callable<T> action) throws Exception {
+        ensureDataReady();
+        dataSecurity.ensureUnlocked();
+        try {
+            ensureDir(dataDir);
+            return action.call();
+        } finally {
+            dataSecurity.ensureLocked();
+        }
+    }
+
+    public synchronized <T> T withDataAndBackupUnlocked(Callable<T> action) throws Exception {
+        if (backupDir == null || backupSecurity == null) {
+            throw new IOException("Backup directory is not configured yet.");
+        }
+        ensureDataReady();
+
+        dataSecurity.ensureUnlocked();
+        backupSecurity.ensureUnlocked();
+        try {
+            ensureDir(dataDir);
+            ensureDir(backupDir);
+            return action.call();
+        } finally {
+            dataSecurity.ensureLocked();
+            backupSecurity.ensureLocked();
+        }
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
@@ -142,6 +190,13 @@ public class DataFolderManager {
     private void ensureDir(File dir) {
         if (!dir.exists() && !dir.mkdirs()) {
             log.error("Failed to create directory: {}", dir.getAbsolutePath());
+        }
+    }
+
+    private void ensureParentDir(File file) {
+        File parent = file.getParentFile();
+        if (parent != null) {
+            ensureDir(parent);
         }
     }
 
@@ -181,46 +236,36 @@ public class DataFolderManager {
     }
 
     public void backupFromSave(String fileName) throws IOException {
-        if (backupDir == null || backupSecurity == null) {
-            throw new IOException("Backup directory is not configured yet.");
-        }
-        ensureDataReady();
-
-        // Temporarily unlock both fields to allow copying
-        dataSecurity.ensureUnlocked();
-        backupSecurity.ensureUnlocked();
         try {
-            Files.copy(
-                    new File(dataDir, fileName).toPath(),
-                    new File(backupDir, fileName).toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-            );
-            log.info("Backed up {} from save to backup", fileName);
-        } finally {
-            dataSecurity.ensureLocked();
-            backupSecurity.ensureLocked();
+            withDataAndBackupUnlocked(() -> {
+                File source = new File(dataDir, fileName);
+                File target = new File(backupDir, fileName);
+                ensureParentDir(target);
+                Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                log.info("Backed up {} from save to backup", fileName);
+                return null;
+            });
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Failed to back up file: " + fileName, e);
         }
     }
 
     public void restoreFromBackup(String fileName) throws IOException {
-        if (backupDir == null || backupSecurity == null) {
-            throw new IOException("Backup directory is not configured yet.");
-        }
-        ensureDataReady();
-
-        // Temporarily unlock both fields to allow restoring
-        backupSecurity.ensureUnlocked();
-        dataSecurity.ensureUnlocked();
         try {
-            Files.copy(
-                    new File(backupDir, fileName).toPath(),
-                    new File(dataDir, fileName).toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-            );
-            log.info("Restored {} from backup to save", fileName);
-        } finally {
-            backupSecurity.ensureLocked();
-            dataSecurity.ensureLocked();
+            withDataAndBackupUnlocked(() -> {
+                File source = new File(backupDir, fileName);
+                File target = new File(dataDir, fileName);
+                ensureParentDir(target);
+                Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                log.info("Restored {} from backup to save", fileName);
+                return null;
+            });
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Failed to restore file: " + fileName, e);
         }
     }
 }
