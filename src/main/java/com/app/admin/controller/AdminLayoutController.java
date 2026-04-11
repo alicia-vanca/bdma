@@ -8,6 +8,8 @@ import com.app.common.ui.*;
 import com.app.device.model.DeviceValidationResult;
 import com.app.device.model.ValidatedDevice;
 import com.app.device.service.DeviceValidationService;
+import com.app.sync.model.SyncContext;
+import com.app.sync.queue.DeviceQueue;
 import com.app.setting.service.UserSettingService;
 import com.app.update.controller.UpdateController;
 import com.app.user.controller.UserFormController;
@@ -47,6 +49,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final UserSettingService userSettingService;
     private final Session session;
     private final DeviceValidationService deviceValidationService;
+    private final DeviceQueue deviceQueue;
 
     @FXML
     private StackPane contentArea;
@@ -81,12 +84,14 @@ public class AdminLayoutController extends BaseLayoutController {
             UpdateController updateController,
             UserSettingService userSettingService,
             Session session,
-            DeviceValidationService deviceValidationService) {
+            DeviceValidationService deviceValidationService,
+            DeviceQueue deviceQueue) {
         super(viewLoader);
         this.updateController = updateController;
         this.userSettingService = userSettingService;
         this.session = session;
         this.deviceValidationService = deviceValidationService;
+        this.deviceQueue = deviceQueue;
     }
 
     @Override
@@ -374,6 +379,7 @@ public class AdminLayoutController extends BaseLayoutController {
                 result.getAccountUserId(),
                 result.getHardwareId(),
                 result.getMatchedWhitelistId());
+        deviceQueue.add(result.getSerial(), new SyncContext(session.getUser().getUsername(), session.isAdmin()));
         showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
     }
 

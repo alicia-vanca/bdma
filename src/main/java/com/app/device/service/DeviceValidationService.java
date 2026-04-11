@@ -11,11 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,10 +32,10 @@ public class DeviceValidationService {
     private final String requiredDeviceDataFolder;
 
     public DeviceValidationService(AdbClient adbClient,
-            ModelWhitelistRepository whitelistRepository,
-            ValidatedDeviceRepository validatedDeviceRepository,
-            @Value("${device.validation.config-cson-path}") String configCsonPath,
-            @Value("${device.validation.required-device-data-folder}") String requiredDeviceDataFolder) {
+                                   ModelWhitelistRepository whitelistRepository,
+                                   ValidatedDeviceRepository validatedDeviceRepository,
+                                   @Value("${device.validation.config-cson-path}") String configCsonPath,
+                                   @Value("${device.validation.required-device-data-folder}") String requiredDeviceDataFolder) {
         this.adbClient = adbClient;
         this.whitelistRepository = whitelistRepository;
         this.validatedDeviceRepository = validatedDeviceRepository;
@@ -78,9 +74,9 @@ public class DeviceValidationService {
             return DeviceValidationResult.invalid(serial, "Cannot read device properties");
         }
 
-        String hardwareId = normalizeValue(props.get(SERIAL_PROPERTY));
+        String hardwareId = sanitizeValue(props.get(SERIAL_PROPERTY));
         if (hardwareId.isBlank()) {
-            hardwareId = serial;
+            hardwareId = sanitizeValue(serial);
         }
 
         List<ModelWhitelist> whitelists = whitelistRepository.findAllActiveWithRules();
@@ -128,7 +124,7 @@ public class DeviceValidationService {
     }
 
     private Optional<ModelWhitelist> findMatchedWhitelist(List<ModelWhitelist> whitelists,
-            Map<String, String> props) {
+                                                          Map<String, String> props) {
         for (ModelWhitelist whitelist : whitelists) {
             if (isWhitelistMatched(whitelist, props)) {
                 return Optional.of(whitelist);
@@ -144,8 +140,8 @@ public class DeviceValidationService {
         }
 
         for (ModelWhitelistRule rule : rules) {
-            String actual = normalizeValue(props.get(rule.getPropKey()));
-            String expected = normalizeValue(rule.getExpectedValue());
+            String actual = sanitizeValue(props.get(rule.getPropKey()));
+            String expected = sanitizeValue(rule.getExpectedValue());
             if (!expected.equals(actual)) {
                 return false;
             }
@@ -173,10 +169,6 @@ public class DeviceValidationService {
             return sanitizeValue(matcher.group(1));
         }
         return "";
-    }
-
-    private String normalizeValue(String value) {
-        return sanitizeValue(value).toLowerCase();
     }
 
     private String sanitizeValue(String value) {

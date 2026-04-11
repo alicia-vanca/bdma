@@ -58,4 +58,25 @@ public class ValidatedDeviceRepository {
         return findByHardwareId(hardwareId)
                 .orElse(new ValidatedDevice(null, deviceName, hardwareId, whitelistId, null, null));
     }
+
+    public Optional<Long> findDeviceIdByName(String deviceName) {
+        String sql = """
+                    SELECT id
+                    FROM validated_device
+                    WHERE device_name = ?
+                    LIMIT 1
+                """;
+
+        try {
+            return Optional.ofNullable(
+                    jdbcTemplate.queryForObject(sql, Long.class, deviceName)
+            );
+        } catch (EmptyResultDataAccessException e) {
+            return Optional.empty();
+        }
+    }
+
+    public boolean isAllowed(String serial) {
+        return findByHardwareId(serial).isPresent();
+    }
 }
