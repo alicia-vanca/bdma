@@ -3,33 +3,26 @@
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
-<StackPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.app.auth.controller.LoginController"
+<StackPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.app.auth.login.controllers.LoginController"
            styleClass="root">
-
     <VBox spacing="10" alignment="CENTER" styleClass="login-card">
         <padding>
             <Insets top="10" right="40" bottom="40" left="40"/>
         </padding>
-
         <HBox spacing="10" alignment="CENTER_RIGHT">
             <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup"
                 styleClass="icon-btn"/>
         </HBox>
-
         <Label text="%login.title" styleClass="title">
             <VBox.margin>
                 <Insets bottom="20"/>
             </VBox.margin>
         </Label>
-
         <VBox spacing="10">
             <TextField fx:id="username" promptText="%login.username" styleClass="input"/>
             <PasswordField fx:id="password" promptText="%login.password" styleClass="input"/>
         </VBox>
-
         <Label fx:id="message" styleClass="message-error"/>
-
         <Button text="%login.button" onAction="#handleLogin" styleClass="login-btn"/>
-
     </VBox>
 </StackPane>

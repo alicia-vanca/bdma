@@ -1,0 +1,76 @@
+.form {
+    -fx-background-color: -card-bg;
+}
+
+.settings-split-layout {
+    -fx-hgap: 16;
+}
+
+.settings-split-left {
+    -fx-min-width: 0;
+    -fx-padding: 0 10 0 0;
+}
+
+.settings-split-right {
+    -fx-min-width: 0;
+    -fx-padding: 0 0 0 16;
+    -fx-border-width: 0 0 0 1;
+    -fx-border-color: -border-color;
+}
+
+.settings-split-separator {
+    -fx-border-width: 0.5;
+    -fx-border-color: -border-color;
+}
+
+.settings-dialog-scroll {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-fit-to-width: true;
+}
+
+.settings-dialog-scroll>.viewport {
+    -fx-background-color: transparent;
+}
+
+.settings-dialog-scroll>.corner {
+    -fx-background-color: transparent;
+}
+
+.settings-card {
+    -fx-padding: 16;
+}
+
+.settings-inline-row {
+    -fx-fill-height: true;
+}
+
+.settings-inline-label {
+    -fx-min-width: 100;
+    -fx-pref-width: 100;
+}
+
+.settings-button-row-fixed {
+    -fx-min-width: 200;
+    -fx-pref-width: 200;
+    -fx-max-width: 200;
+}
+
+.settings-dialog-container .settings-segment-btn {
+    -fx-min-width: 100;
+    -fx-pref-width: 100;
+    -fx-max-width: 100;
+    -fx-padding: 4 10;
+}
+
+.settings-dialog-container .settings-action-btn {
+    -fx-padding: 4 10;
+}
+
+.settings-inner-separator {
+    -fx-padding: 4 0;
+}
+
+.settings-form-row {
+    -fx-alignment: CENTER_LEFT;
+}
