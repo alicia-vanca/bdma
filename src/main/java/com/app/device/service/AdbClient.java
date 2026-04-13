@@ -70,7 +70,7 @@ public class AdbClient {
 
     public boolean fileExists(String serial, String path) {
         String output = runAdb("-s", serial, ADB_SHELL, "ls", "-1", path);
-        String trimmed = output.trim().toLowerCase();
+        String trimmed = output.trim();
         if (trimmed.isBlank()) {
             return false;
         }

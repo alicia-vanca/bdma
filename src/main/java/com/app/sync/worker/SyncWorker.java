@@ -5,6 +5,7 @@ import com.app.file.service.DataFolderManager;
 import com.app.sync.model.FileInfo;
 import com.app.sync.model.SyncContext;
 import com.app.sync.queue.DeviceQueue;
+import com.app.sync.service.AdbService;
 import com.app.sync.service.SyncService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,7 @@ public class SyncWorker implements Runnable {
     private final SyncService service;
     private final DataFolderManager dataFolderManager;
     private final AppConfigService appConfigService;
+    private final String adbPath;
 
     private record LocalFile(String path, String type) {
     }
@@ -49,11 +51,13 @@ public class SyncWorker implements Runnable {
     public SyncWorker(DeviceQueue queue,
                       SyncService service,
                       DataFolderManager dataFolderManager,
-                      AppConfigService appConfigService) {
+                      AppConfigService appConfigService,
+                      AdbService adbService) {
         this.queue = queue;
         this.service = service;
         this.dataFolderManager = dataFolderManager;
         this.appConfigService = appConfigService;
+        this.adbPath = adbService.getAdbPath();
     }
 
     @Override
@@ -134,9 +138,7 @@ public class SyncWorker implements Runnable {
             service.saveFile(uId, dId,
                     name(remotePath), local.path(),
                     size, info.createDate(), local.type());
-
             synced.add(local.path());
-
             if (autoDelete) {
                 deleteRemoteFile(serial, remotePath);
             }
@@ -147,8 +149,9 @@ public class SyncWorker implements Runnable {
 
     private List<String> findFiles(String serial, String root) {
         List<String> result = new ArrayList<>();
+        if (adbPath == null) return result;
         try {
-            List<String> cmd = new ArrayList<>(List.of("adb", "-s", serial, SHELL, "find"));
+            List<String> cmd = new ArrayList<>(List.of(adbPath, "-s", serial, SHELL, "find"));
             TYPES.forEach(t -> cmd.add(root + "/" + t));
             cmd.add("-type");
             cmd.add("f");
@@ -178,11 +181,9 @@ public class SyncWorker implements Runnable {
                              List<PendingFile> failed,
                              Set<String> synced,
                              boolean autoDelete) {
-
         List<PendingFile> remaining = new ArrayList<>(failed);
 
         for (int i = 1; i <= MAX_RETRY; i++) {
-
             if (remaining.isEmpty() || !alive(serial)) {
                 break;
             }
@@ -225,9 +226,7 @@ public class SyncWorker implements Runnable {
         service.saveFile(uId, dId,
                 name(pf.remotePath()), pf.localPath(),
                 pf.size(), pf.info().createDate(), pf.type());
-
         synced.add(pf.localPath());
-
         if (autoDelete) {
             deleteRemoteFile(serial, pf.remotePath());
         }
@@ -289,7 +288,8 @@ public class SyncWorker implements Runnable {
 
     private String getExternalStorage(String serial) {
         try {
-            Process p = new ProcessBuilder("adb", "-s", serial, SHELL, "ls /storage")
+            if (adbPath == null) return null;
+            Process p = new ProcessBuilder(adbPath, "-s", serial, SHELL, "ls /storage")
                     .redirectErrorStream(true)
                     .start();
 
@@ -310,7 +310,8 @@ public class SyncWorker implements Runnable {
 
     private long getRemoteSize(String serial, String remote) {
         try {
-            Process p = new ProcessBuilder("adb", "-s", serial,
+            if (adbPath == null) return -1;
+            Process p = new ProcessBuilder(adbPath, "-s", serial,
                     SHELL, "stat -c %s '" + remote + "'")
                     .redirectErrorStream(true)
                     .start();
@@ -330,12 +331,11 @@ public class SyncWorker implements Runnable {
 
     private boolean pullFile(String serial, String remote, String local) {
         try {
-            Process p = new ProcessBuilder("adb", "-s", serial, "pull", remote, local)
+            if (adbPath == null) return false;
+            Process p = new ProcessBuilder(adbPath, "-s", serial, "pull", remote, local)
                     .redirectErrorStream(true)
                     .start();
-
             return p.waitFor() == 0;
-
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
@@ -346,7 +346,8 @@ public class SyncWorker implements Runnable {
 
     private boolean deleteRemoteFile(String serial, String remote) {
         try {
-            Process p = new ProcessBuilder("adb", "-s", serial, SHELL, "rm", "-f", remote)
+            if (adbPath == null) return false;
+            Process p = new ProcessBuilder(adbPath, "-s", serial, SHELL, "rm", "-f", remote)
                     .redirectErrorStream(true)
                     .start();
 
@@ -362,7 +363,8 @@ public class SyncWorker implements Runnable {
 
     private boolean alive(String serial) {
         try {
-            Process p = new ProcessBuilder("adb", "-s", serial, "get-state")
+            if (adbPath == null) return false;
+            Process p = new ProcessBuilder(adbPath, "-s", serial, "get-state")
                     .redirectErrorStream(true)
                     .start();
 

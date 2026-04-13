@@ -5,8 +5,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,6 +21,45 @@ import java.util.List;
 public class AdbService {
 
     private static final Logger log = LoggerFactory.getLogger(AdbService.class);
+    private String adbPath;
+
+    public AdbService() {
+        this.adbPath = findAdbInResources();
+        if (adbPath == null) {
+            log.error("Embedded ADB not found in resources: adb/adb.exe");
+        } else {
+            log.info("ADB found at: {}", adbPath);
+        }
+    }
+
+    private String findAdbInResources() {
+        try {
+            URL resourceUrl = getClass().getClassLoader().getResource("adb/adb.exe");
+
+            if (resourceUrl == null) {
+                resourceUrl = getClass().getClassLoader().getResource("adb");
+                if (resourceUrl != null) {
+                    File adbFile = new File(URLDecoder.decode(resourceUrl.getPath(), StandardCharsets.UTF_8) + File.separator + "adb.exe");
+                    if (adbFile.exists()) {
+                        return adbFile.getAbsolutePath();
+                    }
+                }
+                return null;
+            }
+
+            File adbFile = new File(URLDecoder.decode(resourceUrl.getPath(), StandardCharsets.UTF_8));
+            if (adbFile.exists() && adbFile.canExecute()) {
+                return adbFile.getAbsolutePath();
+            }
+        } catch (Exception e) {
+            log.debug("Unable to resolve embedded adb", e);
+        }
+        return null;
+    }
+
+    public String getAdbPath() {
+        return adbPath;
+    }
 
     /**
      * Returns a list of serial numbers for devices in "device" state.
@@ -27,8 +70,13 @@ public class AdbService {
 
         List<String> serials = new ArrayList<>();
 
+        if (adbPath == null) {
+            log.error("ADB path is null - cannot retrieve devices");
+            return serials;
+        }
+
         try {
-            Process p = new ProcessBuilder("adb", "devices")
+            Process p = new ProcessBuilder(adbPath, "devices")
                     .redirectErrorStream(true)
                     .start();
 
