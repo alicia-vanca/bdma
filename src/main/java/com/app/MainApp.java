@@ -1,21 +1,23 @@
 package com.app;
 
-import com.app.common.config.AppRuntimeInitializer;
-import com.app.common.config.LogContext;
-import com.app.common.config.LogbackConfigInitializer;
-import com.app.common.css.CssLoader;
-import com.app.common.exception.AppException;
-import com.app.common.exception.GlobalExceptionHandler;
-import com.app.common.helper.SpringContextHolder;
-import com.app.common.i18n.I18n;
-import com.app.common.theme.ThemeManager;
-import com.app.common.ui.NavigationService;
-import com.app.common.ui.StageUtils;
-import com.app.common.ui.ViewLoader;
-import com.app.common.ui.ViewPaths;
-import com.app.file.service.DataFolderManager;
-import com.app.sync.service.BackupService;
-import com.app.sync.worker.BackupWorker;
+import com.app.common.configs.AppRuntimeInitializer;
+import com.app.common.configs.LogContext;
+import com.app.common.configs.LogbackConfigInitializer;
+import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.ViewPaths;
+import com.app.common.exceptions.AppException;
+import com.app.common.exceptions.GlobalExceptionHandler;
+import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.helpers.CssLoader;
+import com.app.common.helpers.NavigationHelper;
+import com.app.common.helpers.SpringContextHolder;
+import com.app.common.helpers.ViewLoader;
+import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.theme.ThemeManager;
+import com.app.common.utils.StageUtil;
+
+import com.app.common.modules.databackup.services.DataBackupService;
+import com.app.common.modules.databackup.workers.DataBackupWorker;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Parent;
@@ -38,15 +40,16 @@ import java.util.Properties;
 public class MainApp extends Application {
 
     private static final Logger log = LoggerFactory.getLogger(MainApp.class);
-
-    public static final int SINGLE_INSTANCE_PORT = 54321;
+    private static final Object SINGLE_INSTANCE_MONITOR = new Object();
 
     // S1450: assigned in acquireSingleInstanceLock() at runtime, cannot be final
     @SuppressWarnings("java:S1450")
     private static ServerSocket instanceSocket;
+    private static boolean singleInstanceChecked;
+    private static boolean singleInstanceOwner;
 
     private ConfigurableApplicationContext springContext;
-    private DataFolderManager dataFolderManager;
+    private FolderManagerService folderManagerService;
 
     @Getter
     private static Stage primaryStage;
@@ -64,9 +67,8 @@ public class MainApp extends Application {
     public static void main(String[] args) {
         LogbackConfigInitializer.initialize();
 
-        if (!acquireSingleInstanceLock()) {
+        if (!ensureSingleInstanceOrSignal()) {
             log.warn("App is already running. Bringing existing window to front.");
-            signalExistingInstance();
             System.exit(0);
         }
         launch(args);
@@ -74,6 +76,10 @@ public class MainApp extends Application {
 
     @Override
     public void init() {
+        if (!ensureSingleInstanceOrSignal()) {
+            return;
+        }
+
         AppRuntimeInitializer.initialize();
         SpringApplication application = new SpringApplication(SpringBootApp.class);
         application.setDefaultProperties(loadBundledApplicationProperties());
@@ -82,22 +88,27 @@ public class MainApp extends Application {
         GlobalExceptionHandler handler = springContext.getBean(GlobalExceptionHandler.class);
         Thread.setDefaultUncaughtExceptionHandler(handler);
 
-        dataFolderManager = springContext.getBean(DataFolderManager.class);
-        dataFolderManager.init();
-
-        BackupWorker backupWorker = springContext.getBean(BackupWorker.class);
+        folderManagerService = springContext.getBean(FolderManagerService.class);
+        folderManagerService.init();
+        DataBackupWorker backupWorker = springContext.getBean(DataBackupWorker.class);
         Thread backupThread = new Thread(backupWorker, "backup-worker");
         backupThread.setDaemon(true);
         backupThread.start();
 
-        BackupService backupService = springContext.getBean(BackupService.class);
+        DataBackupService backupService = springContext.getBean(DataBackupService.class);
         backupService.init();
     }
 
     @Override
     public void start(Stage stage) {
+        if (!singleInstanceOwner) {
+            log.info("Skipping startup for duplicate launch.");
+            Platform.exit();
+            return;
+        }
+
         setPrimaryStage(stage);
-        StageUtils.applyAppIcon(primaryStage);
+        StageUtil.applyAppIcon(primaryStage);
         LogContext.init();
         I18n.loadSavedLocale();
 
@@ -113,10 +124,11 @@ public class MainApp extends Application {
 
     @Override
     public void stop() {
+        releaseSingleInstanceLock();
         if (springContext != null)
             springContext.close();
-        if (dataFolderManager != null)
-            dataFolderManager.shutdown();
+        if (folderManagerService != null)
+            folderManagerService.shutdown();
         log.info("App stopped");
     }
 
@@ -133,14 +145,14 @@ public class MainApp extends Application {
     private static void loadAndNavigate(String fxml, String title, int w, int h) {
         try {
             ViewLoader viewLoader = SpringContextHolder.getBean(ViewLoader.class);
-            var result = viewLoader.loadOrThrowWithController(fxml, null);
+            var result = viewLoader.loadViewOrThrow(fxml);
 
             Parent root = (Parent) result.node();
 
             if (ViewPaths.LOGIN.equals(fxml)) {
-                NavigationService.goToLogin(root);
+                NavigationHelper.goToLogin(root);
             } else {
-                NavigationService.goToAdmin(root);
+                NavigationHelper.goToAdmin(root);
             }
 
             primaryStage.setTitle(title);
@@ -162,7 +174,7 @@ public class MainApp extends Application {
 
     private static boolean acquireSingleInstanceLock() {
         try {
-            instanceSocket = new ServerSocket(SINGLE_INSTANCE_PORT, 1,
+            instanceSocket = new ServerSocket(AppConstants.SINGLE_INSTANCE_PORT, 1,
                     InetAddress.getByName("127.0.0.1"));
 
             Thread listenerThread = new Thread(() -> {
@@ -187,8 +199,41 @@ public class MainApp extends Application {
         }
     }
 
+    // Guard startup in both main() and the JavaFX lifecycle so packaged launches
+    // still enforce the single-instance contract.
+    private static boolean ensureSingleInstanceOrSignal() {
+        synchronized (SINGLE_INSTANCE_MONITOR) {
+            if (singleInstanceChecked) {
+                return singleInstanceOwner;
+            }
+
+            singleInstanceChecked = true;
+            singleInstanceOwner = acquireSingleInstanceLock();
+            if (!singleInstanceOwner) {
+                signalExistingInstance();
+            }
+            return singleInstanceOwner;
+        }
+    }
+
+    private static void releaseSingleInstanceLock() {
+        synchronized (SINGLE_INSTANCE_MONITOR) {
+            if (instanceSocket != null) {
+                try {
+                    instanceSocket.close();
+                } catch (IOException e) {
+                    log.warn("Failed to release single instance lock", e);
+                } finally {
+                    instanceSocket = null;
+                }
+            }
+            singleInstanceChecked = false;
+            singleInstanceOwner = false;
+        }
+    }
+
     private static void signalExistingInstance() {
-        try (Socket socket = new Socket("127.0.0.1", SINGLE_INSTANCE_PORT)) {
+        try (Socket socket = new Socket("127.0.0.1", AppConstants.SINGLE_INSTANCE_PORT)) {
             log.info("Signal sent to existing instance.");
         } catch (IOException e) {
             log.warn("Could not signal existing instance", e);
