@@ -79,8 +79,8 @@ public class SyncWorker implements Runnable {
             if (deviceId == null || userId == null)
                 return;
 
-            boolean autoDelete = appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC)
-                    .equalsIgnoreCase("true");
+            String isAutoDeleteStr = appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC);
+            boolean autoDelete = "true".equalsIgnoreCase(isAutoDeleteStr);
 
             Set<String> synced = service.loadSyncedPaths(deviceId);
 

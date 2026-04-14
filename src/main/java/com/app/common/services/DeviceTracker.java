@@ -14,6 +14,7 @@ import java.io.InputStreamReader;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class DeviceTracker implements Runnable {
@@ -27,6 +28,9 @@ public class DeviceTracker implements Runnable {
 
     private final Set<String> currentDevices = new HashSet<>();
     private volatile boolean running = true;
+    // Holds the active adb track-devices process so stop() can destroy it
+    // immediately.
+    private final AtomicReference<Process> activeProcess = new AtomicReference<>();
 
     public DeviceTracker(DeviceSyncQueue queue,
             ValidatedDeviceRepository validatedDeviceRepository,
@@ -49,15 +53,27 @@ public class DeviceTracker implements Runnable {
         }
     }
 
+    // Signals the tracker to stop and destroys the active adb process so the
+    // OS-level process exits instead of being abandoned in the task manager.
+    public void stop() {
+        running = false;
+        Process p = activeProcess.getAndSet(null);
+        if (p != null) {
+            p.destroyForcibly();
+        }
+    }
+
     private void track() {
+        Process p = null;
         try {
-            Process p = adbClient.startAdbProcess("track-devices");
+            p = adbClient.startAdbProcess("track-devices");
+            activeProcess.set(p);
 
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(p.getInputStream()))) {
 
                 String line;
-                while ((line = reader.readLine()) != null) {
+                while (running && (line = reader.readLine()) != null) {
                     if (!line.isBlank()) {
                         sleep(200);
                         handle(getDevices());
@@ -66,7 +82,14 @@ public class DeviceTracker implements Runnable {
             }
 
         } catch (Exception e) {
-            sleep(2000);
+            if (running) {
+                sleep(2000);
+            }
+        } finally {
+            activeProcess.compareAndSet(p, null);
+            if (p != null) {
+                p.destroyForcibly();
+            }
         }
     }
 

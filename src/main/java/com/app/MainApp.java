@@ -40,10 +40,13 @@ import java.util.Properties;
 public class MainApp extends Application {
 
     private static final Logger log = LoggerFactory.getLogger(MainApp.class);
+    private static final Object SINGLE_INSTANCE_MONITOR = new Object();
 
     // S1450: assigned in acquireSingleInstanceLock() at runtime, cannot be final
     @SuppressWarnings("java:S1450")
     private static ServerSocket instanceSocket;
+    private static boolean singleInstanceChecked;
+    private static boolean singleInstanceOwner;
 
     private ConfigurableApplicationContext springContext;
     private FolderManagerService folderManagerService;
@@ -64,9 +67,8 @@ public class MainApp extends Application {
     public static void main(String[] args) {
         LogbackConfigInitializer.initialize();
 
-        if (!acquireSingleInstanceLock()) {
+        if (!ensureSingleInstanceOrSignal()) {
             log.warn("App is already running. Bringing existing window to front.");
-            signalExistingInstance();
             System.exit(0);
         }
         launch(args);
@@ -74,6 +76,10 @@ public class MainApp extends Application {
 
     @Override
     public void init() {
+        if (!ensureSingleInstanceOrSignal()) {
+            return;
+        }
+
         AppRuntimeInitializer.initialize();
         SpringApplication application = new SpringApplication(SpringBootApp.class);
         application.setDefaultProperties(loadBundledApplicationProperties());
@@ -95,6 +101,12 @@ public class MainApp extends Application {
 
     @Override
     public void start(Stage stage) {
+        if (!singleInstanceOwner) {
+            log.info("Skipping startup for duplicate launch.");
+            Platform.exit();
+            return;
+        }
+
         setPrimaryStage(stage);
         StageUtil.applyAppIcon(primaryStage);
         LogContext.init();
@@ -112,6 +124,7 @@ public class MainApp extends Application {
 
     @Override
     public void stop() {
+        releaseSingleInstanceLock();
         if (springContext != null)
             springContext.close();
         if (folderManagerService != null)
@@ -183,6 +196,39 @@ public class MainApp extends Application {
             return true;
         } catch (IOException e) {
             return false;
+        }
+    }
+
+    // Guard startup in both main() and the JavaFX lifecycle so packaged launches
+    // still enforce the single-instance contract.
+    private static boolean ensureSingleInstanceOrSignal() {
+        synchronized (SINGLE_INSTANCE_MONITOR) {
+            if (singleInstanceChecked) {
+                return singleInstanceOwner;
+            }
+
+            singleInstanceChecked = true;
+            singleInstanceOwner = acquireSingleInstanceLock();
+            if (!singleInstanceOwner) {
+                signalExistingInstance();
+            }
+            return singleInstanceOwner;
+        }
+    }
+
+    private static void releaseSingleInstanceLock() {
+        synchronized (SINGLE_INSTANCE_MONITOR) {
+            if (instanceSocket != null) {
+                try {
+                    instanceSocket.close();
+                } catch (IOException e) {
+                    log.warn("Failed to release single instance lock", e);
+                } finally {
+                    instanceSocket = null;
+                }
+            }
+            singleInstanceChecked = false;
+            singleInstanceOwner = false;
         }
     }
 

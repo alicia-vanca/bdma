@@ -27,15 +27,17 @@ public final class AppConstants {
     // ────────────── Language ──────────────
     public static final String LANG_EN = "en";
     public static final String LANG_VI = "vi";
-    public static final String KEY_LANGUAGE = "language";
-    public static final String KEY_THEME = "theme";
 
-    // ────────────── Admin settings ──────────────
-    public static final String KEY_DATA_DIR = "dataDir";
-    public static final String KEY_BACKUP_DIR = "backupDir";
-    public static final String KEY_IS_AUTO_DELETE_AFTER_SYNC = "isAutoDeleteAfterSync";
-    public static final String KEY_IS_START_WITH_WINDOWS = "isStartWithWindows";
-    
+    // ────────────── App configs ──────────────
+    public static final String KEY_DATA_DIR = "dataSync.dataDir";
+    public static final String KEY_BACKUP_DIR = "dataBackup.backupDir";
+    public static final String KEY_IS_AUTO_DELETE_AFTER_SYNC = "dataSync.isAutoDeleteAfterSync";
+    public static final String KEY_IS_START_WITH_WINDOWS = "appConfig.isStartWithWindows";
+    public static final String KEY_LANGUAGE = "appConfig.language";
+    public static final String KEY_THEME = "appConfig.theme";
+    public static final String KEY_LAST_CHECK_DATE = "appUpdate.lastCheckDate";
+    public static final String KEY_SKIPPED_VERSION = "appUpdate.skippedVersion";
+
     public static final String STARTUP_REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     public static final String STARTUP_REG_VALUE = "BDMA";
 
@@ -47,8 +49,6 @@ public final class AppConstants {
 
     // ────────────── Update ──────────────
     public static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
-    public static final String KEY_LAST_CHECK_DATE = "update.lastCheckDate";
-    public static final String KEY_SKIPPED_VERSION = "update.skippedVersion";
     public static final String DATE_FORMAT = "yyyy-MM-dd";
 
     // ────────────── Loggly ──────────────

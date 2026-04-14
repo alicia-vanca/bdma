@@ -101,11 +101,18 @@ public class AdminSettingsDialogService {
             ProcessBuilder pb;
             if (enable) {
                 String exePath = resolveAppExePath();
+                java.io.File exeFile = new java.io.File(exePath);
+                if (!exeFile.exists()) {
+                    log.error("Launcher executable not found at: {}", exePath);
+                    return false;
+                }
+                // Wrap in quotes so Windows handles paths with spaces correctly.
+                String quotedExePath = "\"" + exePath + "\"";
                 pb = new ProcessBuilder(
                         "reg", "add", AppConstants.STARTUP_REG_KEY,
                         "/v", AppConstants.STARTUP_REG_VALUE,
                         "/t", "REG_SZ",
-                        "/d", exePath,
+                        "/d", quotedExePath,
                         "/f");
             } else {
                 pb = new ProcessBuilder(
