@@ -353,3 +353,70 @@
 .context-menu .menu-item:focused {
     -fx-background-color: -table-hover;
 }
+
+/* ===== DASHBOARD ===== */
+.device-panel {
+    -fx-background-color: -card-bg;
+    -fx-border-color: -border-color;
+    -fx-border-width: 0 1 0 0;
+}
+
+.panel-title {
+    -fx-text-fill: #94a3b8;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-padding: 0 0 8 0;
+}
+
+.device-cell-row {
+    -fx-padding: 6 4 6 4;
+}
+
+.device-cell-name {
+    -fx-text-fill: #f1f5f9;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+}
+
+.device-cell-connected {
+    -fx-text-fill: #4ade80;
+    -fx-font-size: 11px;
+}
+
+.device-cell-offline {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 11px;
+}
+
+.device-cell-unvalidated {
+    -fx-text-fill: #fbbf24;
+    -fx-font-size: 11px;
+}
+
+.dot-connected {
+    -fx-fill: #4ade80;
+}
+
+.dot-offline {
+    -fx-fill: #475569;
+}
+
+.dot-unvalidated {
+    -fx-fill: #fbbf24;
+}
+
+.dot-queued {
+    -fx-fill: #fbbf24;
+}
+
+.dot-syncing {
+    -fx-fill: #60a5fa;
+}
+
+.device-cell-queued {
+    -fx-text-fill: #fbbf24;
+}
+
+.device-cell-syncing {
+    -fx-text-fill: #60a5fa;
+}

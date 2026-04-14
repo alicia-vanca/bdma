@@ -1,10 +1,11 @@
 package com.app.auth.service;
 
+import com.app.common.adb.AdbService;
 import com.app.common.session.Session;
 import com.app.device.repository.ValidatedDeviceRepository;
+import com.app.sync.SyncRunner;
 import com.app.sync.model.SyncContext;
 import com.app.sync.queue.DeviceQueue;
-import com.app.sync.service.AdbService;
 import com.app.user.model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,15 +22,18 @@ public class LoginService {
     private final DeviceQueue queue;
     private final AdbService adbService;
     private final ValidatedDeviceRepository validatedDeviceRepository;
+    private final SyncRunner syncRunner;
 
     public LoginService(Session session,
                         DeviceQueue queue,
                         AdbService adbService,
-                        ValidatedDeviceRepository validatedDeviceRepository) {
+                        ValidatedDeviceRepository validatedDeviceRepository,
+                        SyncRunner syncRunner) {
         this.session = session;
         this.queue = queue;
         this.adbService = adbService;
         this.validatedDeviceRepository = validatedDeviceRepository;
+        this.syncRunner = syncRunner;
     }
 
     /**
@@ -53,6 +57,8 @@ public class LoginService {
         );
 
         List<String> connectedSerials = adbService.getConnectedSerials();
+
+        syncRunner.start();
 
         if (connectedSerials.isEmpty()) {
             log.info("Login [{}] — no devices connected.", user.getUsername());

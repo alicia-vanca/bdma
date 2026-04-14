@@ -1,30 +1,26 @@
 package com.app.sync.worker;
 
+import com.app.common.adb.AdbService;
 import com.app.common.config.AppConfigService;
 import com.app.file.service.DataFolderManager;
 import com.app.sync.model.FileInfo;
 import com.app.sync.model.SyncContext;
 import com.app.sync.queue.DeviceQueue;
-import com.app.sync.service.AdbService;
 import com.app.sync.service.SyncService;
+import com.app.sync.tracker.SyncProgressTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 @Component
 public class SyncWorker implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(SyncWorker.class);
 
-    private static final String SHELL = "shell";
     private static final String INTERNAL_ROOT =
             System.getProperty("app.internal.root", "/storage/emulated/0/DCIM");
     private static final String EXTERNAL_SUFFIX =
@@ -40,24 +36,50 @@ public class SyncWorker implements Runnable {
     private final SyncService service;
     private final DataFolderManager dataFolderManager;
     private final AppConfigService appConfigService;
-    private final String adbPath;
+    private final AdbService adbService;
+    private final SyncProgressTracker progressTracker;
 
     private record LocalFile(String path, String type) {
     }
 
+    private record SyncFile(String remotePath, LocalFile local, FileInfo info) {
+    }
+
     private record PendingFile(String remotePath, String localPath, long size, FileInfo info, String type) {
+    }
+
+    private record RetryStats(int passedDelta, int failedDelta) {
+    }
+
+    private enum ProcessResult {
+        SUCCESS,
+        FAILED
+    }
+
+    private final class LookupCache {
+        private final Map<String, Long> deviceIds = new HashMap<>();
+        private final Map<String, Long> userIds = new HashMap<>();
+
+        private Long deviceId(String deviceName) {
+            return deviceIds.computeIfAbsent(deviceName, service::resolveDeviceId);
+        }
+
+        private Long userId(String userName) {
+            return userIds.computeIfAbsent(userName, service::resolveUserId);
+        }
     }
 
     public SyncWorker(DeviceQueue queue,
                       SyncService service,
                       DataFolderManager dataFolderManager,
                       AppConfigService appConfigService,
-                      AdbService adbService) {
+                      AdbService adbService, SyncProgressTracker progressTracker) {
         this.queue = queue;
         this.service = service;
         this.dataFolderManager = dataFolderManager;
         this.appConfigService = appConfigService;
-        this.adbPath = adbService.getAdbPath();
+        this.adbService = adbService;
+        this.progressTracker = progressTracker;
     }
 
     @Override
@@ -85,7 +107,6 @@ public class SyncWorker implements Runnable {
             if (deviceId == null || userId == null) return;
 
             boolean autoDelete = appConfigService.getConfig().getBodyCam().isAutoDelete();
-
             Set<String> synced = service.loadSyncedPaths(deviceId);
 
             List<String> allFiles = new ArrayList<>(findFiles(serial, INTERNAL_ROOT));
@@ -94,132 +115,159 @@ public class SyncWorker implements Runnable {
                 allFiles.addAll(findFiles(serial, ext + EXTERNAL_SUFFIX));
             }
 
-            List<PendingFile> failed = new ArrayList<>();
+            LookupCache lookupCache = new LookupCache();
+            List<SyncFile> syncFiles = collectSyncFiles(ctx, allFiles, synced, lookupCache);
 
-            for (String path : allFiles) {
-                if (!alive(serial)) break;
-                processFile(serial, ctx, path, synced, failed, autoDelete);
+            int total = syncFiles.size();
+            int[] passed = {0};
+            int[] failed = {0};
+
+            progressTracker.markSyncing(serial, total, 0, 0);
+
+            List<PendingFile> failedList = new ArrayList<>();
+
+            for (SyncFile file : syncFiles) {
+                if (Thread.currentThread().isInterrupted() || !alive(serial)) break;
+
+                ProcessResult result = processFile(serial, file, synced, failedList, autoDelete, lookupCache);
+
+                if (result == ProcessResult.FAILED) {
+                    failed[0]++;
+                } else {
+                    passed[0]++;
+                }
+
+                progressTracker.markSyncing(serial, total, passed[0], failed[0]);
             }
 
-            retryFailed(serial, failed, synced, autoDelete);
+            RetryStats retryStats = retryFailed(serial, failedList, synced, autoDelete, lookupCache);
+            if (retryStats.passedDelta() != 0 || retryStats.failedDelta() != 0) {
+                passed[0] += retryStats.passedDelta();
+                failed[0] += retryStats.failedDelta();
+                progressTracker.markSyncing(serial, total, passed[0], failed[0]);
+            }
 
         } finally {
             queue.done(serial);
         }
     }
 
-    private void processFile(String serial,
-                             SyncContext ctx,
-                             String remotePath,
-                             Set<String> synced,
-                             List<PendingFile> failed,
-                             boolean autoDelete) {
+    private ProcessResult processFile(String serial,
+                                      SyncFile file,
+                                      Set<String> synced,
+                                      List<PendingFile> failed,
+                                      boolean autoDelete,
+                                      LookupCache lookupCache) {
+        Long dId = lookupCache.deviceId(file.info().deviceName());
+        Long uId = lookupCache.userId(file.info().userName());
+        if (dId == null || uId == null || synced.contains(file.local().path())) {
+            return ProcessResult.FAILED;
+        }
 
-        FileInfo info = FileInfo.parse(name(remotePath));
-        if (info == null || !ctx.canSync(info.userName())) return;
-
-        Long dId = service.resolveDeviceId(info.deviceName());
-        Long uId = service.resolveUserId(info.userName());
-        if (dId == null || uId == null) return;
-
-        LocalFile local = resolveLocalPath(info, remotePath);
-        if (local == null || synced.contains(local.path())) return;
-
-        long size = getRemoteSize(serial, remotePath);
+        long size = getRemoteSize(serial, file.remotePath());
 
         if (size > LARGE_FILE_THRESHOLD) {
             service.saveLargeFile(uId, dId,
-                    name(remotePath), local.path(),
-                    size, info.createDate(), local.type());
-            return;
+                    name(file.remotePath()), file.local().path(),
+                    size, file.info().createDate(), file.local().type());
+            return ProcessResult.SUCCESS;
         }
 
-        if (pullAndVerify(serial, remotePath, local.path())) {
+        if (pullAndVerify(serial, file.remotePath(), file.local().path(), size)) {
             service.saveFile(uId, dId,
-                    name(remotePath), local.path(),
-                    size, info.createDate(), local.type());
-            synced.add(local.path());
+                    name(file.remotePath()), file.local().path(),
+                    size, file.info().createDate(), file.local().type());
+            synced.add(file.local().path());
             if (autoDelete) {
-                deleteRemoteFile(serial, remotePath);
+                deleteRemoteFile(serial, file.remotePath());
             }
-        } else {
-            failed.add(new PendingFile(remotePath, local.path(), size, info, local.type()));
+            return ProcessResult.SUCCESS;
         }
+
+        failed.add(new PendingFile(file.remotePath(), file.local().path(), size, file.info(), file.local().type()));
+        return ProcessResult.FAILED;
+    }
+
+    private List<SyncFile> collectSyncFiles(SyncContext ctx,
+                                            List<String> allFiles,
+                                            Set<String> synced,
+                                            LookupCache lookupCache) {
+
+        List<SyncFile> syncFiles = new ArrayList<>();
+
+        for (String path : allFiles) {
+            FileInfo info = FileInfo.parse(name(path));
+
+            if (info != null
+                    && ctx.canSync(info.userName())) {
+
+                LocalFile local = resolveLocalPath(info, path);
+
+                if (local != null
+                        && !synced.contains(local.path())
+                        && lookupCache.deviceId(info.deviceName()) != null
+                        && lookupCache.userId(info.userName()) != null) {
+
+                    syncFiles.add(new SyncFile(path, local, info));
+                }
+            }
+        }
+
+        return syncFiles;
     }
 
     private List<String> findFiles(String serial, String root) {
-        List<String> result = new ArrayList<>();
-        if (adbPath == null) return result;
-        try {
-            List<String> cmd = new ArrayList<>(List.of(adbPath, "-s", serial, SHELL, "find"));
-            TYPES.forEach(t -> cmd.add(root + "/" + t));
-            cmd.add("-type");
-            cmd.add("f");
-
-            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                String line;
-                while ((line = r.readLine()) != null) {
-                    if (!line.isBlank() && !line.startsWith("find:")) {
-                        result.add(line.trim());
-                    }
-                }
-            }
-
-            p.waitFor();
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } catch (IOException e) {
-            log.error("find error: {}", root, e);
-        }
-        return result;
+        return adbService.findFiles(serial, root, TYPES);
     }
 
-    private void retryFailed(String serial,
-                             List<PendingFile> failed,
-                             Set<String> synced,
-                             boolean autoDelete) {
+    private RetryStats retryFailed(String serial,
+                                   List<PendingFile> failed,
+                                   Set<String> synced,
+                                   boolean autoDelete,
+                                   LookupCache lookupCache) {
         List<PendingFile> remaining = new ArrayList<>(failed);
+        int recovered = 0;
 
         for (int i = 1; i <= MAX_RETRY; i++) {
-            if (remaining.isEmpty() || !alive(serial)) {
+            if (remaining.isEmpty() || Thread.currentThread().isInterrupted() || !alive(serial)) {
                 break;
             }
 
             List<PendingFile> next = new ArrayList<>();
 
             for (PendingFile pf : remaining) {
-
-                if (!alive(serial)) {
+                if (Thread.currentThread().isInterrupted() || !alive(serial)) {
                     break;
                 }
 
-                if (!retryOneFile(serial, pf, synced, autoDelete)) {
+                if (!retryOneFile(serial, pf, synced, autoDelete, lookupCache)) {
                     next.add(pf);
+                } else {
+                    recovered++;
                 }
             }
 
             remaining = next;
         }
 
-        saveFailedRemaining(remaining);
+        saveFailedRemaining(remaining, lookupCache);
+        return new RetryStats(recovered, -recovered);
     }
 
     private boolean retryOneFile(String serial,
                                  PendingFile pf,
                                  Set<String> synced,
-                                 boolean autoDelete) {
+                                 boolean autoDelete,
+                                 LookupCache lookupCache) {
 
-        Long dId = service.resolveDeviceId(pf.info().deviceName());
-        Long uId = service.resolveUserId(pf.info().userName());
+        Long dId = lookupCache.deviceId(pf.info().deviceName());
+        Long uId = lookupCache.userId(pf.info().userName());
 
         if (dId == null || uId == null) {
             return false;
         }
 
-        if (!pullAndVerify(serial, pf.remotePath(), pf.localPath())) {
+        if (!pullAndVerify(serial, pf.remotePath(), pf.localPath(), pf.size())) {
             return false;
         }
 
@@ -234,9 +282,9 @@ public class SyncWorker implements Runnable {
         return true;
     }
 
-    private void saveFailedRemaining(List<PendingFile> remaining) {
+    private void saveFailedRemaining(List<PendingFile> remaining, LookupCache lookupCache) {
         for (PendingFile pf : remaining) {
-            Long dId = service.resolveDeviceId(pf.info().deviceName());
+            Long dId = lookupCache.deviceId(pf.info().deviceName());
             if (dId != null) {
                 service.saveFailed(dId, pf.localPath());
             }
@@ -255,7 +303,7 @@ public class SyncWorker implements Runnable {
                 parts[parts.length - 3]);
     }
 
-    private boolean pullAndVerify(String serial, String remote, String local) {
+    private boolean pullAndVerify(String serial, String remote, String local, long remoteSize) {
         try {
             return dataFolderManager.withDataDirUnlocked(() -> {
                 File f = new File(local);
@@ -274,107 +322,41 @@ public class SyncWorker implements Runnable {
                 }
 
                 return pullFile(serial, remote, local)
-                        && verifyIntegrity(serial, remote, local);
+                        && verifyIntegrity(remoteSize, local);
             });
         } catch (Exception e) {
             return false;
         }
     }
 
-    private boolean verifyIntegrity(String serial, String remote, String local) {
-        long r = getRemoteSize(serial, remote);
-        return r < 0 || r == new File(local).length();
+    private boolean verifyIntegrity(long remoteSize, String local) {
+        return remoteSize < 0 || remoteSize == new File(local).length();
     }
 
     private String getExternalStorage(String serial) {
-        try {
-            if (adbPath == null) return null;
-            Process p = new ProcessBuilder(adbPath, "-s", serial, SHELL, "ls /storage")
-                    .redirectErrorStream(true)
-                    .start();
-
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                String line;
-                while ((line = r.readLine()) != null) {
-                    if (line.matches("^[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}$")) {
-                        return "/storage/" + line;
-                    }
-                }
-            }
-
-        } catch (Exception e) {
-            return null;
-        }
-        return null;
+        return adbService.getExternalStorage(serial);
     }
 
     private long getRemoteSize(String serial, String remote) {
-        try {
-            if (adbPath == null) return -1;
-            Process p = new ProcessBuilder(adbPath, "-s", serial,
-                    SHELL, "stat -c %s '" + remote + "'")
-                    .redirectErrorStream(true)
-                    .start();
-
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                String line = r.readLine();
-                if (line != null && line.matches("\\d+")) {
-                    return Long.parseLong(line);
-                }
-            }
-
-        } catch (Exception e) {
-            return -1;
-        }
-        return -1;
+        return adbService.getRemoteSize(serial, remote);
     }
 
     private boolean pullFile(String serial, String remote, String local) {
+        // Add timeout to avoid hanging on slow devices
         try {
-            if (adbPath == null) return false;
-            Process p = new ProcessBuilder(adbPath, "-s", serial, "pull", remote, local)
-                    .redirectErrorStream(true)
-                    .start();
-            return p.waitFor() == 0;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            return adbService.pullFile(serial, remote, local);
         } catch (Exception e) {
-            log.error("pull error: {}", remote, e);
+            log.warn("Pull file timeout or error for {} -> {}", remote, local, e);
+            return false;
         }
-        return false;
     }
 
     private boolean deleteRemoteFile(String serial, String remote) {
-        try {
-            if (adbPath == null) return false;
-            Process p = new ProcessBuilder(adbPath, "-s", serial, SHELL, "rm", "-f", remote)
-                    .redirectErrorStream(true)
-                    .start();
-
-            return p.waitFor() == 0;
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        } catch (Exception e) {
-            return false;
-        }
+        return adbService.deleteRemoteFile(serial, remote);
     }
 
     private boolean alive(String serial) {
-        try {
-            if (adbPath == null) return false;
-            Process p = new ProcessBuilder(adbPath, "-s", serial, "get-state")
-                    .redirectErrorStream(true)
-                    .start();
-
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                return "device".equals(r.readLine());
-            }
-
-        } catch (Exception e) {
-            return false;
-        }
+        return adbService.isDeviceAlive(serial);
     }
 
     private String name(String path) {
