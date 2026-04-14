@@ -1,7 +1,6 @@
 package com.app;
 
 import com.app.common.configs.AppRuntimeInitializer;
-import com.app.common.configs.LogContext;
 import com.app.common.configs.LogbackConfigInitializer;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
@@ -109,7 +108,6 @@ public class MainApp extends Application {
 
         setPrimaryStage(stage);
         StageUtil.applyAppIcon(primaryStage);
-        LogContext.init();
         I18n.loadSavedLocale();
 
         setScene(new Scene(new StackPane()));

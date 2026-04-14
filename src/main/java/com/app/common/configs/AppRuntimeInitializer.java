@@ -104,10 +104,6 @@ public final class AppRuntimeInitializer {
         }
         AppContext.setVersion(version);
 
-        // Populate MDC as soon as runtime context is available so startup logs on
-        // the launcher thread carry device and version information.
-        LogContext.init();
-
         log.info("Machine-based device ID resolved");
         log.info("App started - version: {}", AppContext.getVersion());
     }
@@ -226,7 +222,7 @@ public final class AppRuntimeInitializer {
                 .build()
                 .toProperties();
         try (Connection conn = DriverManager.getConnection(url, migrationProps);
-             Statement stmt = conn.createStatement()) {
+                Statement stmt = conn.createStatement()) {
             stmt.execute("PRAGMA rekey = ''");
             log.info("Existing database decrypted to plain-text");
         } catch (SQLException e) {
