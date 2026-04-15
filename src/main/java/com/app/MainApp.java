@@ -172,17 +172,18 @@ public class MainApp extends Application {
 
     private static boolean acquireSingleInstanceLock() {
         try {
-            instanceSocket = new ServerSocket(AppConstants.SINGLE_INSTANCE_PORT, 1,
+            ServerSocket listenerSocket = new ServerSocket(AppConstants.SINGLE_INSTANCE_PORT, 1,
                     InetAddress.getByName("127.0.0.1"));
+            instanceSocket = listenerSocket;
 
             Thread listenerThread = new Thread(() -> {
-                while (!instanceSocket.isClosed()) {
+                while (!listenerSocket.isClosed()) {
                     try {
-                        Socket incoming = instanceSocket.accept();
+                        Socket incoming = listenerSocket.accept();
                         incoming.close();
                         Platform.runLater(MainApp::bringToFront);
                     } catch (IOException e) {
-                        if (!instanceSocket.isClosed()) {
+                        if (!listenerSocket.isClosed()) {
                             log.warn("Single instance listener error", e);
                         }
                     }

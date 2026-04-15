@@ -29,6 +29,8 @@ public final class LogbackConfigInitializer {
 
         System.setProperty("logging.config", "classpath:logback-spring.xml");
         reloadLogbackConfiguration(configUrl);
+
+        AppRuntimeInitializer.resolveAppIdentity();
     }
 
     private static void ensureLogsDirectoryExists() {
