@@ -15,10 +15,6 @@ public final class AppDataPaths {
         return APP_DIR;
     }
 
-    public static String configDir() {
-        return Path.of(APP_DIR, "config").toString();
-    }
-
     public static String logsDir() {
         return Path.of(APP_DIR, "logs").toString();
     }
@@ -37,9 +33,5 @@ public final class AppDataPaths {
 
     public static File dataFile() {
         return Path.of(APP_DIR, "data.db").toFile();
-    }
-
-    public static File logConfigFile() {
-        return Path.of(configDir(), "logback.xml").toFile();
     }
 }
