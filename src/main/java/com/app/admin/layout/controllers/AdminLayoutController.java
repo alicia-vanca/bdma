@@ -1,6 +1,8 @@
 package com.app.admin.layout.controllers;
 
 import com.app.MainApp;
+import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.session.Session;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceSummary;
@@ -14,8 +16,6 @@ import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
-import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
 import com.app.common.services.*;
 import com.app.user.userdetail.controllers.UserInfoController;

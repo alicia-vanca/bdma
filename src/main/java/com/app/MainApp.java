@@ -1,7 +1,6 @@
 package com.app;
 
 import com.app.common.configs.AppRuntimeInitializer;
-import com.app.common.configs.LogContext;
 import com.app.common.configs.LogbackConfigInitializer;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
@@ -109,7 +108,6 @@ public class MainApp extends Application {
 
         setPrimaryStage(stage);
         StageUtil.applyAppIcon(primaryStage);
-        LogContext.init();
         I18n.loadSavedLocale();
 
         setScene(new Scene(new StackPane()));
@@ -174,17 +172,18 @@ public class MainApp extends Application {
 
     private static boolean acquireSingleInstanceLock() {
         try {
-            instanceSocket = new ServerSocket(AppConstants.SINGLE_INSTANCE_PORT, 1,
+            ServerSocket listenerSocket = new ServerSocket(AppConstants.SINGLE_INSTANCE_PORT, 1,
                     InetAddress.getByName("127.0.0.1"));
+            instanceSocket = listenerSocket;
 
             Thread listenerThread = new Thread(() -> {
-                while (!instanceSocket.isClosed()) {
+                while (!listenerSocket.isClosed()) {
                     try {
-                        Socket incoming = instanceSocket.accept();
+                        Socket incoming = listenerSocket.accept();
                         incoming.close();
                         Platform.runLater(MainApp::bringToFront);
                     } catch (IOException e) {
-                        if (!instanceSocket.isClosed()) {
+                        if (!listenerSocket.isClosed()) {
                             log.warn("Single instance listener error", e);
                         }
                     }

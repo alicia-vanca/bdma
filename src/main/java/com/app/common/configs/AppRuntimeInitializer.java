@@ -58,7 +58,6 @@ public final class AppRuntimeInitializer {
 
     private static void ensureBaseDirectories() {
         ensureDir(AppDataPaths.appDir());
-        ensureDir(AppDataPaths.configDir());
         ensureDir(AppDataPaths.appTmpDir());
         ensureDir(AppDataPaths.adbTmpDir());
         ensureDir(AppDataPaths.sqliteTmpDir());
@@ -95,6 +94,15 @@ public final class AppRuntimeInitializer {
     }
 
     private static void initializeAppContext() {
+        resolveAppIdentity();
+        log.info("App started - version: {}", AppContext.getVersion());
+    }
+
+    // Resolves and stores device ID and version early for logging purpose.
+    static void resolveAppIdentity() {
+        if (AppContext.getDeviceId() != null) {
+            return;
+        }
         DeviceIdManager deviceIdManager = new DeviceIdManager();
         AppContext.setDeviceId(deviceIdManager.getDeviceId());
 
@@ -103,13 +111,7 @@ public final class AppRuntimeInitializer {
             version = System.getProperty("app.version", "dev");
         }
         AppContext.setVersion(version);
-
-        // Populate MDC as soon as runtime context is available so startup logs on
-        // the launcher thread carry device and version information.
-        LogContext.init();
-
-        log.info("Machine-based device ID resolved");
-        log.info("App started - version: {}", AppContext.getVersion());
+        log.info("Machine-based device ID and app version resolved");
     }
 
     // Derive a 32-byte database key from the persisted device ID. The device ID
@@ -226,7 +228,7 @@ public final class AppRuntimeInitializer {
                 .build()
                 .toProperties();
         try (Connection conn = DriverManager.getConnection(url, migrationProps);
-             Statement stmt = conn.createStatement()) {
+                Statement stmt = conn.createStatement()) {
             stmt.execute("PRAGMA rekey = ''");
             log.info("Existing database decrypted to plain-text");
         } catch (SQLException e) {
