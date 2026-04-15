@@ -1,7 +1,6 @@
 package com.app.admin.layout.controllers;
 
 import com.app.MainApp;
-import com.app.common.configs.LogContext;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.dtos.DeviceValidationResult;

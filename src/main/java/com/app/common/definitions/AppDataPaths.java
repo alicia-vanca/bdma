@@ -15,10 +15,6 @@ public final class AppDataPaths {
         return APP_DIR;
     }
 
-    public static String configDir() {
-        return Path.of(APP_DIR, "config").toString();
-    }
-
     public static String logsDir() {
         return Path.of(APP_DIR, "logs").toString();
     }

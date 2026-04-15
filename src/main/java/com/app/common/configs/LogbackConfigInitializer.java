@@ -10,8 +10,6 @@ import com.app.common.definitions.AppDataPaths;
 import java.io.File;
 import java.net.URL;
 
-@SuppressWarnings("java:S106") // Logger not yet initialized at this stage
-
 public final class LogbackConfigInitializer {
     private static final org.slf4j.Logger log = LoggerFactory.getLogger(LogbackConfigInitializer.class);
 
@@ -29,6 +27,8 @@ public final class LogbackConfigInitializer {
 
         System.setProperty("logging.config", "classpath:logback-spring.xml");
         reloadLogbackConfiguration(configUrl);
+
+        AppRuntimeInitializer.resolveAppIdentity();
     }
 
     private static void ensureLogsDirectoryExists() {
@@ -45,11 +45,15 @@ public final class LogbackConfigInitializer {
     private static URL getLogbackConfigResource() {
         URL resource = LogbackConfigInitializer.class.getClassLoader().getResource("logback-spring.xml");
         if (resource == null) {
-            resource = Thread.currentThread().getContextClassLoader().getResource("logback-spring.xml");
+            ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+            if (contextClassLoader != null) {
+                resource = contextClassLoader.getResource("logback-spring.xml");
+            }
         }
         return resource;
     }
 
+    @SuppressWarnings("java:S106") // Logger not yet initialized at this stage
     private static void reloadLogbackConfiguration(URL configUrl) {
         try {
             LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
@@ -62,7 +66,8 @@ public final class LogbackConfigInitializer {
             new StatusPrinter2().print(loggerContext);
 
         } catch (Exception e) {
-            log.error("Failed to configure logback", e);
+            System.err.println("Failed to configure logback: " + e.getMessage());
+            e.printStackTrace(System.err);
         }
     }
 }
