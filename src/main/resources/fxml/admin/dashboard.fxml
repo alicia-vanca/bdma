@@ -2,7 +2,7 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.geometry.Insets?>
 <HBox xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.app.admin.controller.DashboardController"
+      fx:controller="com.app.admin.layout.controllers.DashboardController"
       styleClass="content">
 
     <VBox styleClass="device-panel" minWidth="220" maxWidth="220">

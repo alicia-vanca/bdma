@@ -1,10 +1,9 @@
 package com.app.common.services;
 
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
-import com.app.common.modules.session.Session;
-import com.app.common.dtos.SyncContext;
-import com.app.common.repositories.ValidatedDeviceRepository;
-
+import javafx.application.Platform;
+import lombok.Getter;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -14,7 +13,9 @@ import java.io.InputStreamReader;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 @Component
 public class DeviceTracker implements Runnable {
@@ -22,35 +23,54 @@ public class DeviceTracker implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(DeviceTracker.class);
 
     private final DeviceSyncQueue queue;
-    private final ValidatedDeviceRepository validatedDeviceRepository;
-    private final Session session;
     private final AdbClient adbClient;
-
     private final Set<String> currentDevices = new HashSet<>();
+    private final AtomicBoolean started = new AtomicBoolean(false);
     private volatile boolean running = true;
+
+    @Setter
+    @Getter
+    private Runnable onDeviceChanged;
+    @Setter
+    private Consumer<String> onNewSerial;
+
+    private Process trackProcess;
+    private Thread trackerThread;
+
+    private final Object processLock = new Object();
+    private final Object threadLock = new Object();
     // Holds the active adb track-devices process so stop() can destroy it
     // immediately.
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
 
     public DeviceTracker(DeviceSyncQueue queue,
-            ValidatedDeviceRepository validatedDeviceRepository,
-            Session session,
-            AdbClient adbClient) {
+                         AdbClient adbClient) {
         this.queue = queue;
-        this.validatedDeviceRepository = validatedDeviceRepository;
-        this.session = session;
         this.adbClient = adbClient;
     }
 
     @Override
     public void run() {
-        while (running) {
+        if (!started.compareAndSet(false, true)) {
+            log.warn("DeviceTracker is already running; ignore duplicate start");
+            return;
+        }
+
+        setTrackerThread(Thread.currentThread());
+
+        while (running && !Thread.currentThread().isInterrupted()) {
             try {
                 track();
             } catch (Exception e) {
-                sleep(2000);
+                if (running) {
+                    log.warn("Device tracker loop error: {}", e.getMessage());
+                    sleep(2000);
+                }
             }
         }
+
+        clearTrackerThread();
+        started.set(false);
     }
 
     // Signals the tracker to stop and destroys the active adb process so the
@@ -64,14 +84,11 @@ public class DeviceTracker implements Runnable {
     }
 
     private void track() {
-        Process p = null;
         try {
-            p = adbClient.startAdbProcess("track-devices");
-            activeProcess.set(p);
+            Process p = adbClient.startTrackDevicesProcess();
+            setTrackProcess(p);
 
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(p.getInputStream()))) {
-
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                 String line;
                 while (running && (line = reader.readLine()) != null) {
                     if (!line.isBlank()) {
@@ -81,15 +98,14 @@ public class DeviceTracker implements Runnable {
                 }
             }
 
+            p.waitFor();
+
         } catch (Exception e) {
             if (running) {
                 sleep(2000);
             }
         } finally {
-            activeProcess.compareAndSet(p, null);
-            if (p != null) {
-                p.destroyForcibly();
-            }
+            destroyProcess();
         }
     }
 
@@ -104,28 +120,31 @@ public class DeviceTracker implements Runnable {
 
     private void handle(List<String> newDevices) {
         Set<String> newSet = new HashSet<>(newDevices);
+        boolean changed = false;
 
         for (String serial : newSet) {
-            if (!currentDevices.contains(serial)
-                    && validatedDeviceRepository.isAllowed(serial)
-                    && session.getUser() != null) {
+            if (!currentDevices.contains(serial)) {
+                changed = true;
 
-                SyncContext ctx = new SyncContext(
-                        session.getUser().getUsername(),
-                        session.isAdmin());
-
-                queue.add(serial, ctx);
+                if (onNewSerial != null) {
+                    onNewSerial.accept(serial);
+                }
             }
         }
 
         for (String serial : new HashSet<>(currentDevices)) {
             if (!newSet.contains(serial)) {
                 queue.remove(serial);
+                changed = true;
             }
         }
 
         currentDevices.clear();
         currentDevices.addAll(newSet);
+
+        if (changed && onDeviceChanged != null) {
+            Platform.runLater(onDeviceChanged);
+        }
     }
 
     private void sleep(long ms) {
@@ -133,6 +152,47 @@ public class DeviceTracker implements Runnable {
             Thread.sleep(ms);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    public void shutdown() {
+        running = false;
+        destroyProcess();
+        interruptTrackerThread();
+    }
+
+    private void setTrackProcess(Process p) {
+        synchronized (processLock) {
+            this.trackProcess = p;
+        }
+    }
+
+    private void destroyProcess() {
+        synchronized (processLock) {
+            if (trackProcess != null && trackProcess.isAlive()) {
+                trackProcess.destroy();
+            }
+            trackProcess = null;
+        }
+    }
+
+    private void setTrackerThread(Thread t) {
+        synchronized (threadLock) {
+            this.trackerThread = t;
+        }
+    }
+
+    private void interruptTrackerThread() {
+        synchronized (threadLock) {
+            if (trackerThread != null) {
+                trackerThread.interrupt();
+            }
+        }
+    }
+
+    private void clearTrackerThread() {
+        synchronized (threadLock) {
+            trackerThread = null;
         }
     }
 }

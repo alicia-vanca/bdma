@@ -1,17 +1,11 @@
 package com.app.auth.login.services;
 
-import com.app.common.dtos.SyncContext;
 import com.app.common.models.User;
-import com.app.common.repositories.ValidatedDeviceRepository;
-import com.app.common.services.AdbClient;
-import com.app.common.modules.datasync.queues.DeviceSyncQueue;
+import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.session.Session;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @Service
 public class LoginService {
@@ -19,27 +13,14 @@ public class LoginService {
     private static final Logger log = LoggerFactory.getLogger(LoginService.class);
 
     private final Session session;
-    private final DeviceSyncQueue queue;
-    private final AdbClient adbClient;
-    private final ValidatedDeviceRepository validatedDeviceRepository;
+    private final DataSyncRunner syncRunner;
 
     public LoginService(Session session,
-            DeviceSyncQueue queue,
-            AdbClient adbClient,
-            ValidatedDeviceRepository validatedDeviceRepository) {
+                        DataSyncRunner syncRunner) {
         this.session = session;
-        this.queue = queue;
-        this.adbClient = adbClient;
-        this.validatedDeviceRepository = validatedDeviceRepository;
+        this.syncRunner = syncRunner;
     }
 
-    /**
-     * Handles post-login initialization:
-     * - Retrieves authenticated user from session
-     * - Builds SyncContext based on user role
-     * - Enqueues all connected devices for syncing
-     * - Sync is processed asynchronously by workers
-     */
     public void onLoginSuccess() {
 
         User user = session.getUser();
@@ -48,32 +29,10 @@ public class LoginService {
             return;
         }
 
-        SyncContext ctx = new SyncContext(
-                user.getUsername(),
-                session.isAdmin());
-
-        List<String> connectedSerials = adbClient.listConnectedSerials();
-
         syncRunner.start();
 
-        if (connectedSerials.isEmpty()) {
-            log.info("Login [{}] — no devices connected.", user.getUsername());
-            return;
-        }
-
-        int queuedCount = 0;
-
-        for (String serial : connectedSerials) {
-            if (!validatedDeviceRepository.isAllowed(serial)) {
-                continue;
-            }
-            queue.add(serial, ctx);
-            queuedCount++;
-        }
-
-        log.info("Login [{}] [{}] — {} validated device(s) queued for sync.",
+        log.info("Login [{}] [{}] — sync runner started.",
                 user.getUsername(),
-                user.getRole(),
-                queuedCount);
+                user.getRole());
     }
 }

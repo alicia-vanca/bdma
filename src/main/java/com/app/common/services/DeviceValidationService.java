@@ -1,5 +1,6 @@
 package com.app.common.services;
 
+import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.models.ModelWhitelist;
 import com.app.common.models.ModelWhitelistRule;
@@ -11,13 +12,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 public class DeviceValidationService {
@@ -34,17 +32,20 @@ public class DeviceValidationService {
 
     private final String configCsonPath;
     private final String requiredDeviceDataFolder;
+    private final SyncProgressTracker progressTracker;
 
     public DeviceValidationService(AdbClient adbClient,
-            ModelWhitelistRepository whitelistRepository,
-            ValidatedDeviceRepository validatedDeviceRepository,
-            @Value("${device.validation.config-cson-path}") String configCsonPath,
-            @Value("${device.validation.required-device-data-folder}") String requiredDeviceDataFolder) {
+                                   ModelWhitelistRepository whitelistRepository,
+                                   ValidatedDeviceRepository validatedDeviceRepository,
+                                   @Value("${device.validation.config-cson-path}") String configCsonPath,
+                                   @Value("${device.validation.required-device-data-folder}") String requiredDeviceDataFolder,
+                                   SyncProgressTracker progressTracker) {
         this.adbClient = adbClient;
         this.whitelistRepository = whitelistRepository;
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.configCsonPath = configCsonPath;
         this.requiredDeviceDataFolder = requiredDeviceDataFolder;
+        this.progressTracker = progressTracker;
     }
 
     public List<String> listConnectedSerials() {
@@ -183,5 +184,120 @@ public class DeviceValidationService {
                 .trim()
                 .replace("\"", "")
                 .replace("'", "");
+    }
+
+    private static class ConnectedInfo {
+        Set<String> serials = new HashSet<>();
+        Set<String> hardwareIds = new HashSet<>();
+        Map<String, String> hardwareIdToSerial = new HashMap<>();
+    }
+
+    public List<DeviceSummary> listDeviceSummaries() {
+        List<ValidatedDevice> saved = validatedDeviceRepository.findAll();
+
+        ConnectedInfo info = loadConnectedDevices();
+        Set<String> savedHardwareIds = extractSavedHardwareIds(saved);
+
+        List<DeviceSummary> result = buildSavedDevices(saved, info);
+        appendUnvalidatedDevices(result, info, savedHardwareIds);
+
+        return result;
+    }
+
+    private ConnectedInfo loadConnectedDevices() {
+        ConnectedInfo info = new ConnectedInfo();
+
+        try {
+            for (String serial : adbClient.listConnectedSerials()) {
+                info.serials.add(serial);
+
+                Map<String, String> props = adbClient.getProps(serial);
+                String hwId = props.getOrDefault(SERIAL_PROPERTY, "").trim();
+
+                if (!hwId.isBlank()) {
+                    info.hardwareIds.add(hwId);
+                    info.hardwareIdToSerial.put(hwId, serial);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve connected hardware IDs: {}", e.getMessage());
+        }
+
+        return info;
+    }
+
+    private Set<String> extractSavedHardwareIds(List<ValidatedDevice> saved) {
+        return saved.stream()
+                .map(ValidatedDevice::getHardwareId)
+                .collect(Collectors.toSet());
+    }
+
+    private List<DeviceSummary> buildSavedDevices(List<ValidatedDevice> saved, ConnectedInfo info) {
+        return saved.stream()
+                .map(d -> buildSavedDevice(d, info))
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private DeviceSummary buildSavedDevice(ValidatedDevice d, ConnectedInfo info) {
+        boolean connected = info.hardwareIds.contains(d.getHardwareId());
+
+        SyncProgressTracker.SyncProgress progress = resolveProgress(d.getHardwareId(), info);
+
+        return new DeviceSummary(
+                d,
+                d.getHardwareId(),
+                d.getDeviceName(),
+                connected ? DeviceSummary.Status.CONNECTED : DeviceSummary.Status.OFFLINE,
+                progress
+        );
+    }
+
+    private SyncProgressTracker.SyncProgress resolveProgress(String hardwareId, ConnectedInfo info) {
+        SyncProgressTracker.SyncProgress progress = progressTracker.getProgress(hardwareId);
+
+        if (progress.status() == SyncProgressTracker.SyncStatus.IDLE) {
+            String serial = info.hardwareIdToSerial.get(hardwareId);
+            if (serial != null) {
+                return progressTracker.getProgress(serial);
+            }
+        }
+
+        return progress;
+    }
+
+    private void appendUnvalidatedDevices(List<DeviceSummary> result,
+                                          ConnectedInfo info,
+                                          Set<String> savedHardwareIds) {
+
+        for (String serial : info.serials) {
+            Map<String, String> props = adbClient.getProps(serial);
+            String hwId = props.getOrDefault(SERIAL_PROPERTY, serial).trim();
+
+            if (!savedHardwareIds.contains(hwId)) {
+                result.add(buildUnvalidatedDevice(serial));
+            }
+        }
+    }
+
+    private DeviceSummary buildUnvalidatedDevice(String serial) {
+        return new DeviceSummary(
+                null,
+                serial,
+                resolveDisplayName(serial),
+                DeviceSummary.Status.UNVALIDATED,
+                SyncProgressTracker.SyncProgress.idle()
+        );
+    }
+
+    private String resolveDisplayName(String serial) {
+        try {
+            DeviceValidationResult vr = validateConnectedDevice(serial);
+            if (vr.isValid() && !vr.getAccountUserId().isBlank()) {
+                return vr.getAccountUserId();
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve display name for unvalidated serial {}: {}", serial, e.getMessage());
+        }
+        return serial;
     }
 }

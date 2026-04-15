@@ -1,33 +1,28 @@
 package com.app.admin.layout.controllers;
 
 import com.app.MainApp;
-import com.app.common.configs.LogContext;
-import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.session.Session;
-import com.app.common.dtos.DeviceValidationResult;
-import com.app.common.models.ValidatedDevice;
-import com.app.common.services.DeviceValidationService;
-import com.app.common.dtos.SyncContext;
-import com.app.common.modules.datasync.queues.DeviceSyncQueue;
-import com.app.common.services.UserSettingService;
-import com.app.common.definitions.ViewPaths;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
-import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
+import com.app.common.definitions.ViewPaths;
+import com.app.common.dtos.DeviceSummary;
+import com.app.common.dtos.DeviceValidationResult;
+import com.app.common.dtos.SyncContext;
 import com.app.common.helpers.AlertHelper;
-import com.app.common.services.AppNoticeService;
-import com.app.user.userdetail.controllers.UserInfoController;
-import com.app.common.modules.appupdate.controllers.AppUpdateController;
-import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
-
+import com.app.common.models.ValidatedDevice;
+import com.app.common.modules.appupdate.controllers.AppUpdateController;
+import com.app.common.modules.baselayout.controllers.BaseLayoutController;
+import com.app.common.modules.datasync.DataSyncRunner;
+import com.app.common.modules.datasync.queues.DeviceSyncQueue;
+import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.session.Session;
+import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
+import com.app.common.services.*;
+import com.app.user.userdetail.controllers.UserInfoController;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.Label;
+import javafx.scene.Node;
+import javafx.scene.control.*;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
@@ -39,22 +34,27 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 
-@SuppressWarnings({ "squid:S2209", "unused" })
+@SuppressWarnings({"squid:S2209", "unused"})
 @Component
 public class AdminLayoutController extends BaseLayoutController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminLayoutController.class);
+
     private final AppUpdateController appUpdateController;
     private final UserSettingService userSettingService;
     private final Session session;
     private final DeviceValidationService deviceValidationService;
     private final AppNoticeService appNoticeService;
     private final DeviceSyncQueue deviceSyncQueue;
+    private final DeviceTracker deviceTracker;
+    private final DataSyncRunner syncRunner;
+    private final SyncProgressTracker syncProgressTracker;
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @FXML
     private StackPane contentArea;
@@ -67,21 +67,24 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private Button btnUser;
     @FXML
-
     private VBox noticeContainer;
 
     private SettingsPopupHelper settingsPopupHelper;
     private final Set<String> connectedSerialsSnapshot = new HashSet<>();
     private ScheduledExecutorService deviceWatchExecutor;
     private volatile boolean adbMissingLogged;
+    private DashboardController currentDashboardController;
 
     public AdminLayoutController(ViewLoader viewLoader,
-            AppUpdateController appUpdateController,
-            UserSettingService userSettingService,
-            Session session,
-            DeviceValidationService deviceValidationService,
-            AppNoticeService appNoticeService,
-            DeviceSyncQueue deviceSyncQueue) {
+                                 AppUpdateController appUpdateController,
+                                 UserSettingService userSettingService,
+                                 Session session,
+                                 DeviceValidationService deviceValidationService,
+                                 AppNoticeService appNoticeService,
+                                 DeviceSyncQueue deviceSyncQueue,
+                                 SyncProgressTracker syncProgressTracker,
+                                 DeviceTracker deviceTracker,
+                                 DataSyncRunner syncRunner) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
@@ -89,6 +92,9 @@ public class AdminLayoutController extends BaseLayoutController {
         this.deviceValidationService = deviceValidationService;
         this.appNoticeService = appNoticeService;
         this.deviceSyncQueue = deviceSyncQueue;
+        this.deviceTracker = deviceTracker;
+        this.syncRunner = syncRunner;
+        this.syncProgressTracker = syncProgressTracker;
     }
 
     @Override
@@ -128,14 +134,38 @@ public class AdminLayoutController extends BaseLayoutController {
             settingsPopupHelper.initialize();
         }
 
-        startDeviceWatcher();
+        if (deviceTracker.getOnDeviceChanged() == null) {
+            deviceTracker.setOnDeviceChanged(this::refreshDashboardIfActive);
+            deviceTracker.setOnNewSerial(serial -> {
+                try {
+                    DeviceValidationResult result = deviceValidationService.validateConnectedDevice(serial);
+                    if (result.isValid()) {
+                        Platform.runLater(() -> handleValidatedResult(result));
+                    }
+                } catch (Exception e) {
+                    log.warn("Validation failed for serial {}: {}", serial, e.getMessage());
+                }
+            });
+            syncProgressTracker.setOnProgressChanged(this::refreshDashboardIfActive);
+            triggerInitialDeviceCheck();
+        } else {
+            // Reload ngôn ngữ: chỉ update lại ref dashboard controller mới
+            deviceTracker.setOnDeviceChanged(this::refreshDashboardIfActive);
+            syncProgressTracker.setOnProgressChanged(this::refreshDashboardIfActive);
+        }
+
         openDefaultTab();
     }
 
     @FXML
     public void goDashboard() {
-        // Dashboard is accessible to all roles — just load it directly.
-        setContent(loadView(ViewPaths.ADMIN_DASHBOARD));
+        var result = loadViewWithController(ViewPaths.ADMIN_DASHBOARD, DashboardController.class);
+        if (result != null) {
+            currentDashboardController = result.controller();
+            currentDashboardController.setOnValidate(this::handleUnvalidatedDevice);
+            currentDashboardController.setOnSync(this::handleSync);
+            setContent(result.node());
+        }
         setActiveButton(getMenuButtons(), btnDashboard);
     }
 
@@ -166,7 +196,12 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     public void logout() {
-        stopDeviceWatcher();
+        deviceTracker.setOnDeviceChanged(null);
+        deviceTracker.setOnNewSerial(null);
+        deviceTracker.shutdown();
+        deviceSyncQueue.clearAll();
+        syncProgressTracker.clearAll();
+        syncRunner.stop();
         session.clear();
         MainApp.showLogin();
     }
@@ -209,82 +244,17 @@ public class AdminLayoutController extends BaseLayoutController {
         appNoticeService.showError(text);
     }
 
-    private void startDeviceWatcher() {
-        if (deviceWatchExecutor != null && !deviceWatchExecutor.isShutdown()) {
-            return;
-        }
-
-        ThreadFactory factory = r -> {
-            Thread t = new Thread(r, "camera-listener");
-            t.setDaemon(true);
-            return t;
-        };
-
-        deviceWatchExecutor = Executors.newSingleThreadScheduledExecutor(factory);
-        deviceWatchExecutor.scheduleWithFixedDelay(this::pollDeviceConnections, 0, 3, TimeUnit.SECONDS);
-    }
-
-    private void stopDeviceWatcher() {
-        if (deviceWatchExecutor == null) {
-            return;
-        }
-
-        deviceWatchExecutor.shutdownNow();
-        deviceWatchExecutor = null;
-        connectedSerialsSnapshot.clear();
-    }
-
-    private void pollDeviceConnections() {
-        LogContext.init();
-        try {
-            List<String> currentSerials = deviceValidationService.listConnectedSerials();
-            Set<String> current = new HashSet<>(currentSerials);
-
-            for (String serial : current) {
-                if (!connectedSerialsSnapshot.contains(serial)) {
-                    validateAndHandleConnectedSerial(serial);
-                }
-            }
-
-            connectedSerialsSnapshot.clear();
-            connectedSerialsSnapshot.addAll(current);
-            adbMissingLogged = false;
-        } catch (Exception e) {
-            String message = e.getMessage() == null ? "" : e.getMessage();
-            if (message.contains("ADB binary not found")) {
-                if (!adbMissingLogged) {
-                    adbMissingLogged = true;
-                    log.warn("Device watcher is disabled until adb.exe is bundled: {}", e.getMessage());
-                }
-                return;
-            }
-            log.warn("Device watcher poll failed: {}", e.getMessage());
-        } finally {
-            LogContext.clear();
-        }
-    }
-
-    private void validateAndHandleConnectedSerial(String serial) {
-        try {
-            DeviceValidationResult result = deviceValidationService.validateConnectedDevice(serial);
-            if (!result.isValid()) {
-                return;
-            }
-
-            Platform.runLater(() -> handleValidatedResult(result));
-        } catch (Exception e) {
-            log.warn("Device validation failed for serial {}: {}", serial, e.getMessage());
-        }
-    }
-
     private void handleValidatedResult(DeviceValidationResult result) {
         if (result.isAlreadySaved()) {
-            // Update last_seen_at for already saved devices
-            deviceValidationService.saveValidatedDevice(
-                    result.getAccountUserId(),
-                    result.getHardwareId(),
-                    result.getMatchedWhitelistId());
+            ValidatedDevice existing = result.getDevice();
+            if (existing != null) {
+                deviceValidationService.saveValidatedDevice(
+                        existing.getDeviceName(),
+                        result.getHardwareId(),
+                        result.getMatchedWhitelistId());
+            }
             showNoticeSuccess(I18n.get("device.connected.saved", resolveValidatedDeviceName(result)));
+            showSyncConfirmation(result.getSerial(), resolveValidatedDeviceName(result));
             return;
         }
 
@@ -317,6 +287,7 @@ public class AdminLayoutController extends BaseLayoutController {
                 result.getMatchedWhitelistId());
         deviceSyncQueue.add(result.getSerial(), new SyncContext(session.getUser().getUsername(), session.isAdmin()));
         showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
+        refreshDashboardIfActive();
     }
 
     // Prefer the persisted device name when it exists, otherwise fall back to the
@@ -347,5 +318,89 @@ public class AdminLayoutController extends BaseLayoutController {
             case ViewPaths.USER_LIST, ViewPaths.USER_INFO -> btnUser;
             default -> null;
         };
+    }
+
+    private void refreshDashboardIfActive() {
+        if (currentDashboardController != null) {
+            currentDashboardController.refresh();
+        }
+    }
+
+    private boolean isWithin(Node node, Node container) {
+        Node current = node;
+        while (current != null) {
+            if (current == container) return true;
+            current = current.getParent();
+        }
+        return false;
+    }
+
+    private void triggerInitialDeviceCheck() {
+        executor.submit(() -> {
+            try {
+                List<String> serials = deviceValidationService.listConnectedSerials();
+                serials.forEach(this::processDeviceSerialSafely);
+            } catch (Exception e) {
+                log.warn("Initial device check error: {}", e.getMessage());
+            }
+        });
+    }
+
+    private void processDeviceSerialSafely(String serial) {
+        try {
+            DeviceValidationResult result = deviceValidationService.validateConnectedDevice(serial);
+            if (result.isValid()) {
+                Platform.runLater(() -> handleValidatedResult(result));
+            }
+        } catch (Exception e) {
+            log.warn("Initial check failed for serial {}: {}", serial, e.getMessage());
+        }
+    }
+
+    private void handleUnvalidatedDevice(DeviceSummary summary) {
+        try {
+            DeviceValidationResult result = deviceValidationService.validateConnectedDevice(summary.getSerial());
+            if (!result.isValid()) {
+                showNoticeError(I18n.get("device.validation.failed"));
+                return;
+            }
+            if (result.isAlreadySaved()) {
+                showNoticeSuccess(I18n.get("device.connected.saved", resolveValidatedDeviceName(result)));
+                return;
+            }
+            showSaveDeviceConfirmation(result);
+        } catch (Exception e) {
+            log.warn("Failed to validate device {}: {}", summary.getSerial(), e.getMessage());
+            showNoticeError(I18n.get("device.validation.failed"));
+        }
+    }
+
+    private void handleSync(DeviceSummary summary) {
+        if (!summary.isConnected()) {
+            return;
+        }
+        deviceSyncQueue.add(summary.getSerial(), new SyncContext(session.getUser().getUsername(), session.isAdmin()));
+        showNoticeSuccess(I18n.get("device.sync.re-queued", summary.getDisplayName()));
+    }
+
+    private void showSyncConfirmation(String serial, String deviceName) {
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("device.sync.title"),
+                I18n.get("device.sync.header"),
+                I18n.get("device.sync.content", deviceName));
+
+        ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
+        ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
+        AlertHelper.setButtons(confirm, yesButton, noButton);
+
+        Optional<ButtonType> chosen = confirm.showAndWait();
+        if (chosen.isEmpty() || chosen.get() != yesButton) {
+            return;
+        }
+
+        deviceSyncQueue.add(serial, new SyncContext(session.getUser().getUsername(), session.isAdmin()));
+
+        showNoticeSuccess(I18n.get("device.sync.re-queued", deviceName));
+        refreshDashboardIfActive();
     }
 }
