@@ -92,6 +92,7 @@ jobs:
           }
 
           $isPathOfExpression = $appDirMatch.Groups['pathOfSuffixExpression'].Success
+          $pathSeparator = [IO.Path]::DirectorySeparatorChar
           $suffixExpression = if ($isPathOfExpression) {
             $appDirMatch.Groups['pathOfSuffixExpression'].Value
           } else {
@@ -99,7 +100,7 @@ jobs:
           }
 
           $suffixParts = [regex]::Matches($suffixExpression, '"([^"]*)"') | ForEach-Object {
-            $_.Groups[1].Value
+            $_.Groups[1].Value.Replace('/', $pathSeparator)
           }
 
           if ($suffixParts.Count -eq 0) {
@@ -107,9 +108,9 @@ jobs:
           }
 
           if ($isPathOfExpression) {
-            $appDataDir = '$PROFILE\' + (($suffixParts -join '\') -replace '/', '\')
+            $appDataDir = '$PROFILE' + $pathSeparator + ($suffixParts -join $pathSeparator)
           } else {
-            $appDataDir = '$PROFILE' + (($suffixParts -join '') -replace '/', '\')
+            $appDataDir = '$PROFILE' + ($suffixParts -join '')
           }
 
           New-Item -ItemType Directory -Force -Path build\installer | Out-Null
