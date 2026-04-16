@@ -70,7 +70,7 @@ jobs:
             --app-version $version `
             --icon build\package\logo.ico `
             --dest build\dist `
-            --module-path $modulePath `
+            --module-path "$modulePath" `
             --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,java.sql,java.logging" `
             --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
@@ -84,7 +84,7 @@ jobs:
           $outputDir = Join-Path (Get-Location).Path "build\installer"
           $sourceDir = Join-Path (Get-Location).Path "build\dist\BDMA"
           $iconPath = Join-Path (Get-Location).Path "src\main\resources\image\logo.ico"
-          $appPathsSource = Get-Content "src\main\java\com\app\common\config\AppPaths.java" -Raw
+          $appPathsSource = Get-Content "src\main\java\com\app\common\definitions\AppDataPaths.java" -Raw
           $appDirMatch = [regex]::Match($appPathsSource, 'APP_DIR\s*=\s*System\.getProperty\("user\.home"\)\s*\+(?<suffixExpression>.*?);', [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
           if (-not $appDirMatch.Success) {
