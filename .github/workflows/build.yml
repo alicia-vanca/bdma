@@ -85,21 +85,33 @@ jobs:
           $sourceDir = Join-Path (Get-Location).Path "build\dist\BDMA"
           $iconPath = Join-Path (Get-Location).Path "src\main\resources\image\logo.ico"
           $appPathsSource = Get-Content "src\main\java\com\app\common\definitions\AppDataPaths.java" -Raw
-          $appDirMatch = [regex]::Match($appPathsSource, 'APP_DIR\s*=\s*System\.getProperty\("user\.home"\)\s*\+(?<suffixExpression>.*?);', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+          $appDirMatch = [regex]::Match($appPathsSource, 'APP_DIR\s*=\s*(?:Path\.of\(\s*System\.getProperty\("user\.home"\)\s*,\s*(?<pathOfSuffixExpression>.*?)\)\s*\.toString\(\)|System\.getProperty\("user\.home"\)\s*\+\s*(?<concatSuffixExpression>.*?));', [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
           if (-not $appDirMatch.Success) {
-            throw "Could not extract APP_DIR from AppPaths.java"
+            throw "Could not extract APP_DIR from AppDataPaths.java"
           }
 
-          $suffixParts = [regex]::Matches($appDirMatch.Groups['suffixExpression'].Value, '"([^"]*)"') | ForEach-Object {
-            $_.Groups[1].Value
+          $isPathOfExpression = $appDirMatch.Groups['pathOfSuffixExpression'].Success
+          $pathSeparator = [IO.Path]::DirectorySeparatorChar
+          $suffixExpression = if ($isPathOfExpression) {
+            $appDirMatch.Groups['pathOfSuffixExpression'].Value
+          } else {
+            $appDirMatch.Groups['concatSuffixExpression'].Value
+          }
+
+          $suffixParts = [regex]::Matches($suffixExpression, '"([^"]*)"') | ForEach-Object {
+            $_.Groups[1].Value.Replace('/', $pathSeparator)
           }
 
           if ($suffixParts.Count -eq 0) {
-            throw "Could not extract APP_DIR suffix from AppPaths.java"
+            throw "Could not extract APP_DIR suffix from AppDataPaths.java"
           }
 
-          $appDataDir = '$PROFILE' + (($suffixParts -join '') -replace '/', '\\')
+          if ($isPathOfExpression) {
+            $appDataDir = '$PROFILE' + $pathSeparator + ($suffixParts -join $pathSeparator)
+          } else {
+            $appDataDir = '$PROFILE' + ($suffixParts -join '')
+          }
 
           New-Item -ItemType Directory -Force -Path build\installer | Out-Null
 
