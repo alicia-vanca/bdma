@@ -1,3 +1,65 @@
-.label {
-    -fx-text-fill: -text-color;
+.content {
+    -fx-background-color: -card-bg;
+    -fx-border-color: -border-color;
+    -fx-border-width: 1;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
+
+.device-panel {
+    -fx-border-color: -border-color;
+    -fx-border-width: 0 1 0 0;
+}
+
+.panel-title {
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-padding: 0 0 8 0;
+}
+
+.list-view {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.list-cell {
+    -fx-background-color: transparent;
+}
+
+.list-cell:odd {
+    -fx-background-color: derive(-card-bg, -5%);
+}
+
+.list-cell:hover {
+    -fx-background-color: derive(-card-bg, -10%);
+}
+
+.list-cell:selected {
+    -fx-background-color: -primary;
+}
+
+.list-cell:empty,
+.list-cell:empty:odd {
+    -fx-background-color: transparent;
+}
+
+.device-cell-row {
+    -fx-padding: 6 4 6 4;
+}
+
+.device-cell-name {
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+}
+
+.device-cell-connected {
+    -fx-font-size: 11px;
+}
+
+.device-cell-offline {
+    -fx-font-size: 11px;
+}
+
+.device-cell-unvalidated {
+    -fx-font-size: 11px;
 }

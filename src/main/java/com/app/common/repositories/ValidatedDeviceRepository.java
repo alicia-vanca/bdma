@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -77,5 +78,11 @@ public class ValidatedDeviceRepository {
 
     public boolean isAllowed(String serial) {
         return findByHardwareId(serial).isPresent();
+    }
+    
+    public List<ValidatedDevice> findAll() {
+        return jdbcTemplate.query(
+                "SELECT * FROM validated_device ORDER BY last_seen_at DESC",
+                this::mapRow);
     }
 }

@@ -1,16 +1,5 @@
 package com.app.common.services;
 
-import com.app.common.dtos.DeviceValidationResult;
-import com.app.common.models.ModelWhitelist;
-import com.app.common.models.ModelWhitelistRule;
-import com.app.common.models.ValidatedDevice;
-import com.app.common.repositories.ModelWhitelistRepository;
-import com.app.common.repositories.ValidatedDeviceRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +7,18 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import com.app.common.dtos.DeviceValidationResult;
+import com.app.common.models.ModelWhitelist;
+import com.app.common.models.ModelWhitelistRule;
+import com.app.common.models.ValidatedDevice;
+import com.app.common.repositories.ModelWhitelistRepository;
+import com.app.common.repositories.ValidatedDeviceRepository;
 
 @Service
 public class DeviceValidationService {
@@ -91,10 +92,7 @@ public class DeviceValidationService {
 
         List<String> missingFiles = findMissingFiles(serial, Set.of(configCsonPath, requiredDeviceDataFolder));
         if (!missingFiles.isEmpty()) {
-            return DeviceValidationResult.invalidWithMissingFiles(
-                    serial,
-                    "Required files are missing",
-                    missingFiles);
+            return DeviceValidationResult.invalid(serial, "Required files are missing");
         }
 
         String configContent = adbClient.readTextFile(serial, configCsonPath);
@@ -123,8 +121,7 @@ public class DeviceValidationService {
                 whitelist.getId(),
                 whitelist.getModelName(),
                 accountUserId,
-                existingDevice.isPresent(),
-                existingDevice.orElse(null));
+                existingDevice.isPresent());
     }
 
     private Optional<ModelWhitelist> findMatchedWhitelist(List<ModelWhitelist> whitelists,
@@ -184,4 +181,5 @@ public class DeviceValidationService {
                 .replace("\"", "")
                 .replace("'", "");
     }
+
 }
