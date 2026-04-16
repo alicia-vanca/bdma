@@ -1,10 +1,12 @@
 package com.app.common.modules.datasync;
 
-import com.app.common.services.DeviceTracker;
-import com.app.common.modules.datasync.workers.DataSyncWorker;
-import jakarta.annotation.PreDestroy;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
+
+import com.app.common.modules.datasync.workers.DataSyncWorker;
+import com.app.common.services.DeviceTracker;
+
+import jakarta.annotation.PreDestroy;
 
 @Component
 public class DataSyncRunner implements CommandLineRunner {
@@ -38,7 +40,9 @@ public class DataSyncRunner implements CommandLineRunner {
         }
     }
 
-    public synchronized void stop() {
+    // Stop the tracker and interrupt worker threads when Spring context closes.
+    @PreDestroy
+    public void shutdown() {
         tracker.shutdown();
 
         if (trackerThread != null) {
@@ -50,10 +54,5 @@ public class DataSyncRunner implements CommandLineRunner {
             syncThread.interrupt();
             syncThread = null;
         }
-    }
-
-    @PreDestroy
-    public void shutdown() {
-        stop();
     }
 }

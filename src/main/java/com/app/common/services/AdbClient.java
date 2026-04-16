@@ -1,13 +1,8 @@
 package com.app.common.services;
 
-import com.app.common.exceptions.AppException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -16,10 +11,16 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import com.app.common.exceptions.AppException;
 
 @Service
 public class AdbClient {
@@ -123,14 +124,6 @@ public class AdbClient {
         } catch (IOException e) {
             throw new AppException("Failed to start adb process: " + String.join(" ", command), e);
         }
-    }public Process startTrackDevicesProcess() throws IOException {
-        String adbPath = getAdbPath();
-        if (adbPath == null) {
-            throw new IOException("ADB path is null");
-        }
-        return new ProcessBuilder(adbPath, "track-devices")
-                .redirectErrorStream(true)
-                .start();
     }
 
     public List<String> findFiles(String serial, String root, List<String> types) {

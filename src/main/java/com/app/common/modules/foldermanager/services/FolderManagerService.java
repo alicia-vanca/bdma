@@ -150,6 +150,9 @@ public class FolderManagerService {
         return basePath.relativize(targetPath).toString();
     }
 
+    // Unlocks the data folder, runs the action, then re-locks in finally.
+    // If the thread is interrupted while locking, the folder is locked best-effort
+    // and the interrupted flag is restored so callers can detect shutdown.
     public synchronized <T> T withDataDirUnlocked(Callable<T> action) throws Exception {
         ensureDataReady();
         dataSecurity.ensureUnlocked();
@@ -157,7 +160,14 @@ public class FolderManagerService {
             ensureDir(dataDir);
             return action.call();
         } finally {
-            dataSecurity.ensureLocked();
+            boolean wasInterrupted = Thread.interrupted();
+            try {
+                dataSecurity.ensureLocked();
+            } finally {
+                if (wasInterrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
     }
 
@@ -174,8 +184,15 @@ public class FolderManagerService {
             ensureDir(backupDir);
             return action.call();
         } finally {
-            dataSecurity.ensureLocked();
-            backupSecurity.ensureLocked();
+            boolean wasInterrupted = Thread.interrupted();
+            try {
+                dataSecurity.ensureLocked();
+                backupSecurity.ensureLocked();
+            } finally {
+                if (wasInterrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
     }
 

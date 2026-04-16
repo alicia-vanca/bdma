@@ -1,8 +1,7 @@
 package com.app.common.dtos;
 
-
-import com.app.common.models.ValidatedDevice;
 import com.app.common.services.SyncProgressTracker;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
@@ -16,11 +15,12 @@ public class DeviceSummary {
         UNVALIDATED
     }
 
-    private ValidatedDevice device;
     private String serial;
-    private String displayName; // thêm field này
+    private String hardwareId;
+    private String displayName;
     private Status status;
     private SyncProgressTracker.SyncProgress syncProgress;
+    private DeviceValidationResult validationResult;
 
     public boolean isConnected() {
         return status == Status.CONNECTED;
