@@ -1,11 +1,16 @@
 package com.app.common.repositories;
 
+import com.app.common.dtos.FileFilter;
+import com.app.common.dtos.FileView;
 import com.app.common.exceptions.RepositoryException;
 import com.app.common.models.File;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -27,7 +32,7 @@ public class FileRepository {
     public Set<String> loadSyncedPaths(Long deviceId) {
         String sql = """
                     SELECT path FROM files
-                    WHERE device_id = ? AND status IN ('SYNCED', 'BACKUP')
+                    WHERE device_id = ? AND status IN ('SYNCED', 'BACKUP', 'PENDING_LARGE')
                 """;
 
         return new HashSet<>(
@@ -118,5 +123,80 @@ public class FileRepository {
 
     private String name(String path) {
         return path.substring(path.lastIndexOf("\\") + 1);
+    }
+
+    public List<FileView> findByFilter(FileFilter filter) {
+        StringBuilder sql = new StringBuilder("""
+        SELECT f.file_id,
+               f.name,
+               f.device_id,
+               f.user_id,
+               f.file_size,
+               f.status,
+               f.create_date,
+               f.type,
+               u.username,
+               vd.device_name
+        FROM files f
+        LEFT JOIN user u ON f.user_id = u.id
+        LEFT JOIN validated_device vd ON f.device_id = vd.id
+        WHERE 1=1
+    """);
+
+        List<Object> params = new ArrayList<>();
+
+        // device
+        if (filter.getHardwareId() != null) {
+            sql.append(" AND vd.hardware_id = ?");
+            params.add(filter.getHardwareId());
+        }
+
+        // user
+        if (filter.getUserId() != null) {
+            sql.append(" AND f.user_id = ?");
+            params.add(filter.getUserId());
+        }
+
+        // type
+        if (filter.getType() != null) {
+            sql.append(" AND f.type = ?");
+            params.add(filter.getType().toLowerCase()); // tránh mismatch
+        }
+
+        // date from
+        if (filter.getDateFrom() != null) {
+            sql.append(" AND f.create_date >= ?");
+            params.add(filter.getDateFrom().toString());
+        }
+
+        // date to (exclusive)
+        if (filter.getDateTo() != null) {
+            sql.append(" AND f.create_date < ?");
+            params.add(filter.getDateTo().plusDays(1).toString());
+        }
+
+        sql.append(" ORDER BY f.create_date DESC");
+
+        return jdbcTemplate.query(sql.toString(), this::mapRow, params.toArray());
+    }
+
+    // ── Mapping ──────────────────────────────────────────────────────────────
+
+    private FileView mapRow(ResultSet rs, int rowNum) throws SQLException {
+        File f = new File();
+        f.setId(rs.getLong("file_id"));
+        f.setDeviceId(rs.getLong("device_id"));
+        f.setUserId(rs.getLong("user_id"));
+        f.setName(rs.getString("name"));
+        f.setFileSize(rs.getLong("file_size"));
+        f.setType(rs.getString("type"));
+        f.setStatus(rs.getString("status"));
+        f.setCreateDate(rs.getString("create_date"));
+
+        return FileView.from(
+                f,
+                rs.getString("username"),
+                rs.getString("device_name")
+        );
     }
 }

@@ -15,7 +15,6 @@ public class DeviceSummary {
         UNVALIDATED
     }
 
-    private String serial;
     private String hardwareId;
     private String displayName;
     private Status status;

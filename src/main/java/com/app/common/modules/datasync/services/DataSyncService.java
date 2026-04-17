@@ -61,7 +61,7 @@ public class DataSyncService {
     public void saveFile(Long userId, Long deviceId,
             String name, String path,
             long fileSize, String createDate, String type) {
-        fileRepo.insert(new File(null, userId, deviceId, createDate, name, path, fileSize, type, "SYNCED"));
+        fileRepo.insert(new File(null, userId, deviceId, createDate, name, path, fileSize, type, "SYNCED", null));
         dataBackupService.enqueue(path);
     }
 
@@ -72,7 +72,7 @@ public class DataSyncService {
     public void saveLargeFile(Long userId, Long deviceId,
             String name, String path,
             long fileSize, String createDate, String type) {
-        fileRepo.insert(new File(null, userId, deviceId, createDate, name, path, fileSize, type, "PENDING_LARGE"));
+        fileRepo.insert(new File(null, userId, deviceId, createDate, name, path, fileSize, type, "PENDING_LARGE", null));
     }
 
     /**

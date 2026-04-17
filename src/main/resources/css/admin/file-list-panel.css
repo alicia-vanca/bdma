@@ -1,0 +1,60 @@
+/* TABLE */
+.table-view {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+    -fx-table-cell-border-color: -border-color;
+    -fx-table-header-border-color: -border-color;
+}
+
+.table-view .column-header,
+.table-view .filler,
+.table-view .column-header-background {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+}
+
+.table-view .column-header-background,
+.table-view .filler,
+.table-view .column-header {
+    -fx-pref-height: 35;
+    -fx-min-height: 35;
+}
+
+.table-view .table-cell {
+    -fx-alignment: CENTER-LEFT;
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-padding: 0 12;
+}
+
+.table-view .column-header {
+    -fx-border-color: transparent -border-color -border-color transparent;
+}
+
+.table-row-cell {
+    -fx-background-color: -table-bg;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: -table-odd;
+}
+
+.table-row-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: -table-selected;
+}
+
+/* FILTER BAR */
+.filter-bar {
+    -fx-background-color: -card-bg;
+    -fx-border-color: -border-color;
+    -fx-border-width: 0 0 1 0;
+}
+
+/* STATUS BAR */
+.status-label {
+    -fx-text-fill: -text-color;
+    -fx-font-size: 12px;
+}

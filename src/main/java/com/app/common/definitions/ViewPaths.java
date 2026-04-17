@@ -12,6 +12,7 @@ public final class ViewPaths {
     public static final String USER_FORM = "/fxml/admin/usermanagement/user-management-form.fxml";
     public static final String USER_ACCOUNT_DIALOG = USER_FORM;
     public static final String SETTINGS_POPUP = "/fxml/common/settings-popup.fxml";
+    public static final String FILE_LIST_PANEL = "/fxml/admin/file-list-panel.fxml";
 
     private ViewPaths() {
     }

@@ -16,7 +16,7 @@
     <VBox spacing="12" HBox.hgrow="ALWAYS" alignment="TOP_LEFT">
         <padding><Insets top="12" right="12" bottom="12" left="12"/></padding>
         <Label text="%menu.dashboard" styleClass="title"/>
-        <Label text="%dashboard.welcome"/>
+        <StackPane fx:id="fileListContainer" VBox.vgrow="ALWAYS"/>
     </VBox>
 
 </HBox>
