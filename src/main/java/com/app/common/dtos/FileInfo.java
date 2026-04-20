@@ -1,5 +1,7 @@
 package com.app.common.dtos;
 
+import java.util.Set;
+
 /**
  * Parses file names with the following format:
  * DSJ_{deviceName}_{userName}_{yyyyMMdd}_{HHmmss}.ext
@@ -17,6 +19,7 @@ public record FileInfo(
 ) {
 
     private static final String PREFIX = "DSJ_";
+    private static final Set<String> VALID_EXTENSIONS = Set.of("mp4", "mp3", "jpg", "jpeg", "png");
 
     /**
      * Parses a FileInfo from a file name.
@@ -27,10 +30,13 @@ public record FileInfo(
             return null;
 
         try {
-            // Remove file extension
-            String base = fileName.contains(".")
-                    ? fileName.substring(0, fileName.lastIndexOf('.'))
-                    : fileName;
+            // Validate and remove file extension
+            if (!fileName.contains("."))
+                return null;
+            String ext = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+            if (!VALID_EXTENSIONS.contains(ext))
+                return null;
+            String base = fileName.substring(0, fileName.lastIndexOf('.'));
 
             // Validate prefix
             if (!base.startsWith(PREFIX))

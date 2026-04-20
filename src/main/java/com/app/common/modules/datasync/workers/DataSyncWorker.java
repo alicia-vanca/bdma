@@ -15,8 +15,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
+import com.app.common.definitions.enums.FileType;
+
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.*;
 
 @Component
@@ -27,7 +30,6 @@ public class DataSyncWorker implements Runnable {
     private static final String INTERNAL_ROOT = System.getProperty("app.internal.root", "/storage/emulated/0/DCIM");
     private static final String EXTERNAL_SUFFIX = "/Android/data/com.bodycamera.nettysocket/cache";
 
-    private static final List<String> TYPES = List.of("audio", "image", "video", "IMP", "SOS");
 
     private static final int MAX_RETRY = 3;
     private static final long LARGE_FILE_THRESHOLD = 1024L * 1024 * 1024;
@@ -230,7 +232,7 @@ public class DataSyncWorker implements Runnable {
     }
 
     private List<String> findFiles(String serial, String root) {
-        return adbClient.findFiles(serial, root, TYPES);
+        return adbClient.findFiles(serial, root, FileType.toValues());
     }
 
     private RetryStats retryFailed(String serial,
@@ -321,25 +323,42 @@ public class DataSyncWorker implements Runnable {
     private boolean pullAndVerify(String serial, String remote, String local, long remoteSize) {
         try {
             return folderManagerService.withDataDirUnlocked(() -> {
-                File f = new File(local);
-                File parent = f.getParentFile();
+                File file = new File(local);
+                File parent = file.getParentFile();
 
-                if (parent != null && !parent.exists()) {
-                    parent.mkdirs();
-                }
-
-                if (f.exists()) {
+                if (parent != null) {
                     try {
-                        java.nio.file.Files.delete(f.toPath());
+                        Files.createDirectories(parent.toPath());
                     } catch (IOException e) {
-                        log.warn("Delete failed: {}", local, e);
+                        log.warn("Failed to create directory: {}", parent.getAbsolutePath(), e);
+                        return false;
                     }
                 }
 
-                return pullFile(serial, remote, local)
-                        && verifyIntegrity(remoteSize, local);
+                if (file.exists()) {
+                    try {
+                        Files.delete(file.toPath());
+                    } catch (IOException e) {
+                        log.warn("Failed to delete existing file: {}", local, e);
+                        return false;
+                    }
+                }
+
+                if (!pullFile(serial, remote, local)) {
+                    log.warn("Pull file failed: serial={}, remote={}, local={}", serial, remote, local);
+                    return false;
+                }
+
+                if (!verifyIntegrity(remoteSize, local)) {
+                    log.warn("Integrity check failed: local={}, expectedSize={}", local, remoteSize);
+                    return false;
+                }
+
+                return true;
             });
+
         } catch (Exception e) {
+            log.error("pullAndVerify failed: serial={}, remote={}, local={}", serial, remote, local, e);
             return false;
         }
     }

@@ -4,6 +4,8 @@ import java.util.Comparator;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +17,7 @@ import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.session.Session;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.DeviceTracker;
 import com.app.common.services.SyncProgressTracker;
@@ -22,17 +25,12 @@ import com.app.common.services.SyncProgressTracker;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
 import javafx.scene.input.MouseButton;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.SVGPath;
 
 @Component
 @Scope("prototype")
@@ -48,6 +46,7 @@ public class DashboardController extends BaseLayoutController {
     private final DeviceTracker deviceTracker;
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final SyncProgressTracker syncProgressTracker;
+    private final Session session;
     private final ObservableList<DeviceSummary> deviceItems = FXCollections.observableArrayList();
 
     private FileListController fileListController;
@@ -64,11 +63,13 @@ public class DashboardController extends BaseLayoutController {
     public DashboardController(ViewLoader viewLoader,
             DeviceTracker deviceTracker,
             ValidatedDeviceRepository validatedDeviceRepository,
-            SyncProgressTracker syncProgressTracker) {
+            SyncProgressTracker syncProgressTracker,
+            Session session) {
         super(viewLoader);
         this.deviceTracker = deviceTracker;
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.syncProgressTracker = syncProgressTracker;
+        this.session = session;
     }
 
     public void setOnRequestValidate(Consumer<DeviceSummary> callback) {
@@ -95,30 +96,139 @@ public class DashboardController extends BaseLayoutController {
                 super.updateItem(summary, empty);
 
                 if (empty || summary == null) {
-                    setText(null);
                     setGraphic(null);
-                    setOnMouseClicked(null);
                     return;
                 }
 
-                Circle dot = new Circle(5);
-                Label name = new Label(summary.getDisplayName());
-                Label sub = new Label();
-
-                applyStatusStyle(summary, dot, sub);
-
-                name.getStyleClass().add("device-cell-name");
-
-                VBox text = new VBox(2, name, sub);
-                HBox row = new HBox(8, dot, text);
-                row.setAlignment(Pos.CENTER_LEFT);
-                row.getStyleClass().add("device-cell-row");
-
-                setGraphic(row);
-                setText(null);
-                DashboardController.this.setupClickHandler(this, summary);
+                setGraphic(buildRow(summary));
+                setupClickHandler(this, summary);
             }
         });
+    }
+
+    private HBox buildRow(DeviceSummary summary) {
+        Circle dot = new Circle(5);
+
+        Label name = new Label(summary.getDisplayName());
+        name.getStyleClass().add("device-cell-name");
+
+        TextField nameField = createHiddenTextField(summary.getDisplayName());
+
+        Label sub = new Label();
+        applyStatusStyle(summary, dot, sub);
+
+        boolean isAdmin = session.isAdmin();
+        SVGPath icon = createEditIcon(isAdmin);
+
+        if (isAdmin) {
+            setupEditBehavior(summary, name, nameField, icon);
+        }
+
+        StackPane nameBox = new StackPane(name, nameField);
+        nameBox.setAlignment(Pos.CENTER_LEFT);
+        VBox text = new VBox(2, nameBox, sub);
+
+        return buildLayout(dot, text, icon, isAdmin);
+    }
+
+    private TextField createHiddenTextField(String text) {
+        TextField tf = new TextField(text);
+        tf.setVisible(false);
+        tf.setManaged(false);
+        return tf;
+    }
+
+    private SVGPath createEditIcon(boolean isAdmin) {
+        SVGPath icon = new SVGPath();
+        icon.setContent("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z");
+        icon.getStyleClass().add("edit-icon-svg");
+        icon.setPickOnBounds(true);
+        icon.setVisible(isAdmin);
+        icon.setManaged(isAdmin);
+        return icon;
+    }
+
+    private void setupEditBehavior(DeviceSummary summary,
+                                   Label name,
+                                   TextField nameField,
+                                   SVGPath icon) {
+
+        icon.setOnMousePressed(Event::consume);
+
+        icon.setOnMouseClicked(e -> {
+            e.consume();
+            enterEditMode(name, nameField);
+        });
+
+        Runnable commitEdit = createCommitAction(summary, name, nameField);
+
+        nameField.setOnAction(e -> commitEdit.run());
+
+        nameField.focusedProperty().addListener((obs, oldVal, newVal) -> {
+            if (Boolean.FALSE.equals(newVal)) {
+                commitEdit.run();
+            }
+        });
+    }
+
+    private void enterEditMode(Label name, TextField nameField) {
+        nameField.setText(name.getText());
+
+        name.setVisible(false);
+        name.setManaged(false);
+
+        nameField.setVisible(true);
+        nameField.setManaged(true);
+        nameField.requestFocus();
+        nameField.selectAll();
+    }
+
+    private Runnable createCommitAction(DeviceSummary summary,
+                                        Label name,
+                                        TextField nameField) {
+
+        return () -> {
+            String newName = nameField.getText();
+
+            if (newName != null && !newName.isBlank()) {
+                summary.setDisplayName(newName);
+
+                validatedDeviceRepository
+                        .findByHardwareId(summary.getHardwareId())
+                        .map(ValidatedDevice::getId)
+                        .ifPresent(id ->
+                                validatedDeviceRepository.updateDeviceName(id, newName)
+                        );
+
+                name.setText(newName);
+
+                if (fileListController != null) {
+                    fileListController.onSyncCompleted();
+                }
+            }
+
+            exitEditMode(name, nameField);
+        };
+    }
+
+    private void exitEditMode(Label name, TextField nameField) {
+        name.setVisible(true);
+        name.setManaged(true);
+
+        nameField.setVisible(false);
+        nameField.setManaged(false);
+    }
+
+    private HBox buildLayout(Circle dot, VBox text, SVGPath icon, boolean isAdmin) {
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox row = isAdmin
+                ? new HBox(8, dot, text, spacer, icon)
+                : new HBox(8, dot, text);
+
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
     }
 
     // Apply visual styling based on device status: connected (green), offline
@@ -182,7 +292,10 @@ public class DashboardController extends BaseLayoutController {
 
     private void setupClickHandler(ListCell<DeviceSummary> cell, DeviceSummary summary) {
         cell.setOnMouseClicked(event -> {
-            if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
+            if (event.getButton() != MouseButton.PRIMARY) return;
+            fileListController.filterByDevice(summary.getHardwareId());
+
+            if (event.getClickCount() == 2) {
                 if (summary.isUnvalidated() && onRequestValidate != null) {
                     onRequestValidate.accept(summary);
                 } else if (summary.isConnected() && onRequestSync != null) {
@@ -214,10 +327,9 @@ public class DashboardController extends BaseLayoutController {
         refresh();
         loadFileList();
 
-        deviceListView.setOnMouseClicked(event -> {
-            DeviceSummary selected = deviceListView.getSelectionModel().getSelectedItem();
-            if (selected != null && fileListController != null) {
-                fileListController.filterByDevice(selected.getHardwareId());
+        deviceListView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && fileListController != null) {
+                fileListController.filterByDevice(newVal.getHardwareId());
             }
         });
     }
@@ -283,9 +395,12 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void addTransientDevice(DeviceValidationResult result) {
+        String displayName = result.getMatchedModelName() != null
+                ? result.getMatchedModelName()
+                : result.getHardwareId();
         deviceItems.add(new DeviceSummary(
                 result.getHardwareId(),
-                result.getAccountUserId(),
+                displayName,
                 DeviceSummary.Status.UNVALIDATED,
                 SyncProgressTracker.SyncProgress.idle(),
                 result));

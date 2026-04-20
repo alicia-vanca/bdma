@@ -16,6 +16,7 @@ import java.util.concurrent.TimeoutException;
 
 public class DeviceIdManager {
     private static final Logger log = LoggerFactory.getLogger(DeviceIdManager.class);
+    private static final char[] HEX_CHARS = "0123456789abcdef".toCharArray();
     private volatile String cachedDeviceId;
 
     /**
@@ -156,8 +157,14 @@ public class DeviceIdManager {
                     .redirectErrorStream(true)
                     .start();
             CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> {
-                try (var inputStream = process.getInputStream()) {
-                    return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8).trim();
+                try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (!sb.isEmpty()) sb.append('\n');
+                        sb.append(line);
+                    }
+                    return sb.toString().trim();
                 } catch (IOException e) {
                     return null;
                 }
@@ -191,7 +198,8 @@ public class DeviceIdManager {
             byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(bytes.length * 2);
             for (byte b : bytes) {
-                hex.append(String.format("%02x", b));
+                hex.append(HEX_CHARS[(b >> 4) & 0xF]);
+                hex.append(HEX_CHARS[b & 0xF]);
             }
             return hex.toString();
         } catch (NoSuchAlgorithmException e) {

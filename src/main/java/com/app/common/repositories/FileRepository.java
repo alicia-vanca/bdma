@@ -113,7 +113,7 @@ public class FileRepository {
     public void insertFailed(Long deviceId, String path) {
         String sql = """
                     INSERT INTO files (device_id, create_date, name, path, file_size, status)
-                    VALUES (?, datetime('now'), ?, ?, -1, ?)
+                    VALUES (?, datetime('now', 'localtime'), ?, ?, -1, ?)
                     ON CONFLICT(device_id, path) DO UPDATE SET
                         status = ?
                 """;

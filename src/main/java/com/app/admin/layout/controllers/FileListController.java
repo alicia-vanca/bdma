@@ -3,9 +3,13 @@ package com.app.admin.layout.controllers;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
+import com.app.common.definitions.enums.FileType;
+
+import lombok.Setter;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
@@ -33,7 +37,6 @@ import javafx.util.StringConverter;
 @Scope("prototype")
 public class FileListController {
 
-    private static final List<String> TYPES = List.of("audio", "image", "video", "IMP", "SOS");
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final List<Integer> PAGE_SIZE_THRESHOLDS = List.of(10, 25, 50, 100);
     private static final DateTimeFormatter DATE_PICKER_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -81,6 +84,7 @@ public class FileListController {
     private List<FileView> filteredFiles = new ArrayList<>();
     private int pageSize = DEFAULT_PAGE_SIZE;
     private int currentPageIndex = 0;
+    @Setter
     private Runnable onClearFilter;
 
     public FileListController(FileService fileService, UserService userService, Session session) {
@@ -112,7 +116,7 @@ public class FileListController {
     }
 
     private void setupDatePickers() {
-        StringConverter<LocalDate> converter = new StringConverter<LocalDate>() {
+        StringConverter<LocalDate> converter = new StringConverter<>() {
             @Override
             public String toString(LocalDate date) {
                 return date != null ? date.format(DATE_PICKER_FORMATTER) : "";
@@ -143,10 +147,6 @@ public class FileListController {
     public void filterByDevice(String hardwareId) {
         this.activeHardwareId = hardwareId;
         refresh(buildFilter());
-    }
-
-    public void setOnClearFilter(Runnable callback) {
-        this.onClearFilter = callback;
     }
 
     @FXML
@@ -333,7 +333,8 @@ public class FileListController {
         var options = new ArrayList<String>();
         options.add(I18n.get("filter.allTypes"));
 
-        TYPES.stream()
+        Arrays.stream(FileType.values())
+                .map(FileType::getValue)
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(options::add);
 

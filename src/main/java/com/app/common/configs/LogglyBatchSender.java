@@ -257,11 +257,15 @@ public class LogglyBatchSender {
     }
 
     private long countLines(File file) {
-        if (!file.exists())
-            return 0L;
-        try (var lines = Files.lines(file.toPath(), StandardCharsets.UTF_8)) {
-            return lines.count();
-        } catch (Exception e) {
+        if (!file.exists()) return 0L;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            long count = 0;
+            for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                count++;
+            }
+            return count;
+        } catch (IOException e) {
             log.warn("Failed to count lines for {}: {}", file.getName(), e.getMessage());
             return 0L;
         }
@@ -273,7 +277,7 @@ public class LogglyBatchSender {
             return states;
 
         try {
-            String content = new String(Files.readAllBytes(syncFile.toPath()), StandardCharsets.UTF_8);
+            String content = Files.readString(syncFile.toPath());
             JSONObject root = new JSONObject(content);
 
             if (root.has(FILES) && root.get(FILES) instanceof JSONObject) {
@@ -313,7 +317,7 @@ public class LogglyBatchSender {
 
             JSONObject root = new JSONObject();
             root.put(FILES, files);
-            Files.write(syncFile.toPath(), root.toString().getBytes(StandardCharsets.UTF_8));
+            Files.writeString(syncFile.toPath(), root.toString());
         } catch (Exception e) {
             log.warn("Failed to save loggly-sync.json: {}", e.getMessage());
         }
