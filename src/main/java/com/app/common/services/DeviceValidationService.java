@@ -48,24 +48,12 @@ public class DeviceValidationService {
         this.requiredDeviceDataFolder = requiredDeviceDataFolder;
     }
 
-    public List<String> listConnectedSerials() {
-        return adbClient.listConnectedSerials();
-    }
-
-    public DeviceValidationResult validateFirstConnected() {
-        List<String> connected = adbClient.listConnectedSerials();
-        if (connected.isEmpty()) {
-            return DeviceValidationResult.invalid(null, "No connected ADB device");
-        }
-        return validateConnectedDevice(connected.getFirst());
-    }
-
     public DeviceValidationResult validateConnectedDevice(String serial) {
         return validate(serial);
     }
 
-    public ValidatedDevice saveValidatedDevice(String deviceName, String hardwareId, String whitelistId) {
-        return validatedDeviceRepository.saveOrUpdate(deviceName, hardwareId, whitelistId);
+    public ValidatedDevice saveValidatedDevice(String accountUserId, String hardwareId, String whitelistId) {
+        return validatedDeviceRepository.saveOrUpdate(accountUserId, hardwareId, whitelistId);
     }
 
     // Validate connected device and return metadata used by the UI flow.

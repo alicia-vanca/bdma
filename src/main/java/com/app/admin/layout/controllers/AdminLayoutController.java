@@ -286,15 +286,15 @@ public class AdminLayoutController extends BaseLayoutController {
             return;
         }
 
-        String deviceName = result.getAccountUserId();
+        String accountUserId = result.getAccountUserId();
         if (result.isAlreadySaved()) {
             // Update last_seen_at and enqueue sync for already-registered devices.
             deviceValidationService.saveValidatedDevice(
-                    deviceName,
+                    accountUserId,
                     result.getHardwareId(),
                     result.getMatchedWhitelistId());
-            showNoticeSuccess(I18n.get("device.connected.saved", deviceName));
-            showSyncConfirmation(result.getSerial(), deviceName);
+            showNoticeSuccess(I18n.get("device.connected.saved", accountUserId));
+            showSyncConfirmation(result.getSerial(), accountUserId);
             return;
         }
 
@@ -310,13 +310,13 @@ public class AdminLayoutController extends BaseLayoutController {
             return;
         }
 
-        String deviceName = result.getAccountUserId();
+        String accountUserId = result.getAccountUserId();
         Alert confirm = AlertHelper.createConfirmation(
                 I18n.get("device.save.title"),
                 I18n.get("device.save.header"),
                 I18n.get(
                         "device.save.content",
-                        deviceName,
+                        accountUserId,
                         result.getMatchedModelName()));
 
         ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
@@ -335,7 +335,7 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         ValidatedDevice saved = deviceValidationService.saveValidatedDevice(
-                deviceName,
+                accountUserId,
                 result.getHardwareId(),
                 result.getMatchedWhitelistId());
         deviceTracker.markKnownAsSaved(result);

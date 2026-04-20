@@ -147,6 +147,8 @@ public class AppUpdateService {
         try (InputStream in = conn.getInputStream();
                 OutputStream out = Files.newOutputStream(dest)) {
             in.transferTo(out);
+        } finally {
+            conn.disconnect();
         }
 
         log.info("Installer downloaded to: {}", dest);

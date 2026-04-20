@@ -63,3 +63,12 @@
 .device-cell-unvalidated {
     -fx-font-size: 11px;
 }
+
+.edit-icon-svg {
+    -fx-fill: #888;
+    -fx-cursor: hand;
+}
+
+.edit-icon-svg:hover {
+    -fx-fill: #000;
+}

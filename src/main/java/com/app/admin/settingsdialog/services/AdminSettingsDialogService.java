@@ -80,8 +80,9 @@ public class AdminSettingsDialogService {
     // ── Registry helpers ──────────────────────────────────────────────────────
 
     private boolean checkRegistryEntryExists() {
+          Process proc = null;
         try {
-            Process proc = new ProcessBuilder(
+            proc = new ProcessBuilder(
                     "reg", "query", AppConstants.STARTUP_REG_KEY, "/v", AppConstants.STARTUP_REG_VALUE)
                     .redirectErrorStream(true)
                     .start();
@@ -93,6 +94,10 @@ public class AdminSettingsDialogService {
         } catch (Exception e) {
             log.warn("Could not query startup registry entry", e);
             return false;
+        } finally {
+            if (proc != null && proc.isAlive()) {
+                proc.destroyForcibly();
+            }
         }
     }
 
@@ -120,12 +125,19 @@ public class AdminSettingsDialogService {
                         "/v", AppConstants.STARTUP_REG_VALUE,
                         "/f");
             }
-            int exitCode = pb.redirectErrorStream(true).start().waitFor();
-            if (exitCode != 0) {
-                log.warn("Startup registry command exited with code {}", exitCode);
-                return false;
+            Process proc = pb.redirectErrorStream(true).start();
+            try {
+                int exitCode = proc.waitFor();
+                if (exitCode != 0) {
+                    log.warn("Startup registry command exited with code {}", exitCode);
+                    return false;
+                }
+                return true;
+            } finally {
+                if (proc.isAlive()) {
+                    proc.destroyForcibly();
+                }
             }
-            return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Interrupted while applying startup registry entry", e);

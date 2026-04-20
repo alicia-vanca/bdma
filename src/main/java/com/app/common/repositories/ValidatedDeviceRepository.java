@@ -39,50 +39,57 @@ public class ValidatedDeviceRepository {
         }
     }
 
-    public ValidatedDevice saveOrUpdate(String deviceName, String hardwareId, String whitelistId) {
+    public ValidatedDevice  saveOrUpdate(String accountUserId, String hardwareId, String whitelistId) {
         Optional<ValidatedDevice> existingOpt = findByHardwareId(hardwareId);
         if (existingOpt.isPresent()) {
             jdbcTemplate.update(
-                    "UPDATE validated_device SET device_name = ?, whitelist_id = ?, last_seen_at = datetime('now', 'localtime') WHERE hardware_id = ?",
-                    deviceName,
+                    "UPDATE validated_device SET whitelist_id = ?, last_seen_at = datetime('now', 'localtime'), camera_id = ? WHERE hardware_id = ?",
                     whitelistId,
+                    accountUserId,
                     hardwareId);
-            return findByHardwareId(hardwareId).orElse(existingOpt.get());
+            ValidatedDevice updated = existingOpt.get();
+            updated.setWhitelistId(whitelistId);
+            return updated;
         }
 
         jdbcTemplate.update(
-                "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at) VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))",
-                deviceName,
+                "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), ?)",
+                accountUserId,
                 hardwareId,
-                whitelistId);
+                whitelistId,
+                accountUserId);
 
         return findByHardwareId(hardwareId)
-                .orElse(new ValidatedDevice(null, deviceName, hardwareId, whitelistId, null, null));
+                .orElse(new ValidatedDevice(null, accountUserId, hardwareId, whitelistId, null, null, accountUserId));
     }
 
     public Optional<Long> findDeviceIdByName(String deviceName) {
         String sql = """
                     SELECT id
                     FROM validated_device
-                    WHERE device_name = ?
+                    WHERE camera_id = ?
                     LIMIT 1
                 """;
 
         try {
-            return Optional.ofNullable(
+            return Optional.of(
                     jdbcTemplate.queryForObject(sql, Long.class, deviceName));
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
-    }
-
-    public boolean isAllowed(String serial) {
-        return findByHardwareId(serial).isPresent();
     }
     
     public List<ValidatedDevice> findAll() {
         return jdbcTemplate.query(
                 "SELECT * FROM validated_device ORDER BY last_seen_at DESC",
                 this::mapRow);
+    }
+
+    public void updateDeviceName(Long id, String deviceName) {
+        jdbcTemplate.update(
+                "UPDATE validated_device SET device_name = ? WHERE id = ?",
+                deviceName,
+                id
+        );
     }
 }
