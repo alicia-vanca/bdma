@@ -137,7 +137,9 @@ public class MainApp extends Application {
 
     public static void showAdmin() {
         primaryStage.setResizable(true);
-        loadAndNavigate(ViewPaths.ADMIN_LAYOUT, "BDMA", 1200, 800);
+        // Change w1200 > w1201 fix a rounding issue that cause buttons misalignment
+        // between scenes
+        loadAndNavigate(ViewPaths.ADMIN_LAYOUT, "BDMA", 1201, 800);
     }
 
     private static void loadAndNavigate(String fxml, String title, int w, int h) {

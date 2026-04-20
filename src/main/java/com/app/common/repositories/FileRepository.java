@@ -1,19 +1,20 @@
 package com.app.common.repositories;
 
-import com.app.common.dtos.FileFilter;
-import com.app.common.dtos.FileView;
-import com.app.common.exceptions.RepositoryException;
-import com.app.common.models.File;
-
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
-
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import com.app.common.definitions.AppConstants;
+import com.app.common.dtos.FileFilter;
+import com.app.common.dtos.FileView;
+import com.app.common.exceptions.RepositoryException;
+import com.app.common.models.File;
 
 @Repository
 public class FileRepository {
@@ -32,11 +33,14 @@ public class FileRepository {
     public Set<String> loadSyncedPaths(Long deviceId) {
         String sql = """
                     SELECT path FROM files
-                    WHERE device_id = ? AND status IN ('SYNCED', 'BACKUP', 'PENDING_LARGE')
+                    WHERE device_id = ? AND status IN (?, ?, ?)
                 """;
 
         return new HashSet<>(
-                jdbcTemplate.queryForList(sql, String.class, deviceId));
+                jdbcTemplate.queryForList(sql, String.class, deviceId,
+                        AppConstants.FILE_STATUS_SYNCED,
+                        AppConstants.FILE_STATUS_BACKEDUP,
+                        AppConstants.FILE_STATUS_PENDING_LARGE));
     }
 
     /**
@@ -46,10 +50,10 @@ public class FileRepository {
     public List<String> loadPendingBackup() {
         String sql = """
                     SELECT path FROM files
-                    WHERE status = 'SYNCED'
+                    WHERE status = ?
                 """;
 
-        return jdbcTemplate.queryForList(sql, String.class);
+        return jdbcTemplate.queryForList(sql, String.class, AppConstants.FILE_STATUS_SYNCED);
     }
 
     /**
@@ -109,13 +113,15 @@ public class FileRepository {
     public void insertFailed(Long deviceId, String path) {
         String sql = """
                     INSERT INTO files (device_id, create_date, name, path, file_size, status)
-                    VALUES (?, datetime('now'), ?, ?, -1, 'FAILED')
+                    VALUES (?, datetime('now'), ?, ?, -1, ?)
                     ON CONFLICT(device_id, path) DO UPDATE SET
-                        status = 'FAILED'
+                        status = ?
                 """;
 
         try {
-            jdbcTemplate.update(sql, deviceId, name(path), path);
+            jdbcTemplate.update(sql, deviceId, name(path), path,
+                    AppConstants.FILE_STATUS_FAILED,
+                    AppConstants.FILE_STATUS_FAILED);
         } catch (Exception e) {
             throw new RepositoryException("insertFailed: " + path, e);
         }
@@ -125,23 +131,24 @@ public class FileRepository {
         return path.substring(path.lastIndexOf("\\") + 1);
     }
 
+    @SuppressWarnings("null")
     public List<FileView> findByFilter(FileFilter filter) {
         StringBuilder sql = new StringBuilder("""
-        SELECT f.file_id,
-               f.name,
-               f.device_id,
-               f.user_id,
-               f.file_size,
-               f.status,
-               f.create_date,
-               f.type,
-               u.username,
-               vd.device_name
-        FROM files f
-        LEFT JOIN user u ON f.user_id = u.id
-        LEFT JOIN validated_device vd ON f.device_id = vd.id
-        WHERE 1=1
-    """);
+                    SELECT f.file_id,
+                           f.name,
+                           f.device_id,
+                           f.user_id,
+                           f.file_size,
+                           f.status,
+                           f.create_date,
+                           f.type,
+                           u.username,
+                           vd.device_name
+                    FROM files f
+                    LEFT JOIN user u ON f.user_id = u.id
+                    LEFT JOIN validated_device vd ON f.device_id = vd.id
+                    WHERE 1=1
+                """);
 
         List<Object> params = new ArrayList<>();
 
@@ -165,19 +172,19 @@ public class FileRepository {
 
         // date from
         if (filter.getDateFrom() != null) {
-            sql.append(" AND f.create_date >= ?");
+            sql.append(" AND date(f.create_date) >= ?");
             params.add(filter.getDateFrom().toString());
         }
 
-        // date to (exclusive)
+        // date to (inclusive)
         if (filter.getDateTo() != null) {
-            sql.append(" AND f.create_date < ?");
-            params.add(filter.getDateTo().plusDays(1).toString());
+            sql.append(" AND date(f.create_date) <= ?");
+            params.add(filter.getDateTo().toString());
         }
 
         sql.append(" ORDER BY f.create_date DESC");
 
-        return jdbcTemplate.query(sql.toString(), this::mapRow, params.toArray());
+        return jdbcTemplate.query(sql.toString(), this::mapRow, params.toArray(new Object[0]));
     }
 
     // ── Mapping ──────────────────────────────────────────────────────────────
@@ -196,7 +203,6 @@ public class FileRepository {
         return FileView.from(
                 f,
                 rs.getString("username"),
-                rs.getString("device_name")
-        );
+                rs.getString("device_name"));
     }
 }

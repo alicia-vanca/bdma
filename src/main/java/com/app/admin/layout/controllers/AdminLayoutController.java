@@ -370,7 +370,7 @@ public class AdminLayoutController extends BaseLayoutController {
     @EventListener
     public void onSyncCompleted(DeviceSyncCompletedEvent event) {
         if (currentDashboardController != null) {
-            currentDashboardController.notifySyncCompleted();
+            currentDashboardController.onSyncCompleted();
         }
     }
 

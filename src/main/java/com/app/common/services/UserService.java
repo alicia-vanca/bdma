@@ -57,7 +57,7 @@ public class UserService {
 
     public boolean isInvalidUsername(String username) {
         String normalized = normalizeUsername(username);
-        return normalized != null && normalized.length() >= USERNAME_MIN_LENGTH;
+        return normalized == null || normalized.length() < USERNAME_MIN_LENGTH;
     }
 
     public User create(User user) {

@@ -1,5 +1,6 @@
 package com.app.common.modules.databackup.services;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.repositories.FileRepository;
 import org.slf4j.Logger;
@@ -46,9 +47,9 @@ public class DataBackupService {
     }
 
     /**
-     * Updates file status to BACKUP after successful backup.
+     * Updates file status to BACKEDUP after successful backup.
      */
     public void markBackup(String localPath) {
-        fileRepo.updateStatus(localPath, "BACKUP");
+        fileRepo.updateStatus(localPath, AppConstants.FILE_STATUS_BACKEDUP);
     }
 }

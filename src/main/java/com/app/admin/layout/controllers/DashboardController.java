@@ -1,5 +1,12 @@
 package com.app.admin.layout.controllers;
 
+import java.util.Comparator;
+import java.util.Optional;
+import java.util.function.Consumer;
+
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
+
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceSummary;
@@ -11,6 +18,7 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.DeviceTracker;
 import com.app.common.services.SyncProgressTracker;
+
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -25,20 +33,10 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Scope;
-import org.springframework.stereotype.Component;
-
-import java.util.Comparator;
-import java.util.Optional;
-import java.util.function.Consumer;
 
 @Component
 @Scope("prototype")
 public class DashboardController extends BaseLayoutController {
-
-    private static final Logger log = LoggerFactory.getLogger(DashboardController.class);
 
     private static final String KEY_DEVICE_CONNECTED = "dashboard.device.connected";
 
@@ -47,12 +45,12 @@ public class DashboardController extends BaseLayoutController {
     @FXML
     private StackPane fileListContainer;
 
-    private FileListController fileListController;
-
     private final DeviceTracker deviceTracker;
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final SyncProgressTracker syncProgressTracker;
     private final ObservableList<DeviceSummary> deviceItems = FXCollections.observableArrayList();
+
+    private FileListController fileListController;
     private boolean deviceStateInitialized;
     private Consumer<DeviceSummary> onRequestValidate;
     private Consumer<DeviceSummary> onRequestSync;
@@ -123,6 +121,8 @@ public class DashboardController extends BaseLayoutController {
         });
     }
 
+    // Apply visual styling based on device status: connected (green), offline
+    // (gray), or unvalidated (yellow)
     private void applyStatusStyle(DeviceSummary summary, Circle dot, Label sub) {
         switch (summary.getStatus()) {
             case CONNECTED -> applyConnectedStyle(summary, dot, sub);
@@ -141,6 +141,8 @@ public class DashboardController extends BaseLayoutController {
         sub.getStyleClass().add(resolveConnectedStyle(status));
     }
 
+    // Display sync progress for connected devices: queued, syncing with counts, or
+    // idle
     private String resolveConnectedText(SyncProgressTracker.SyncStatus status,
             SyncProgressTracker.SyncProgress progress) {
 
@@ -214,8 +216,8 @@ public class DashboardController extends BaseLayoutController {
 
         deviceListView.setOnMouseClicked(event -> {
             DeviceSummary selected = deviceListView.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                filterFilesByDevice(selected.getHardwareId());
+            if (selected != null && fileListController != null) {
+                fileListController.filterByDevice(selected.getHardwareId());
             }
         });
     }
@@ -228,6 +230,8 @@ public class DashboardController extends BaseLayoutController {
         deviceStateInitialized = false;
     }
 
+    // Register listener to receive real-time device connection events from ADB
+    // tracker
     private void registerDeviceTrackerListener() {
         if (deviceEventListener != null) {
             return;
@@ -237,7 +241,8 @@ public class DashboardController extends BaseLayoutController {
         deviceTracker.addListener(deviceEventListener);
     }
 
-    // Update device status based on adb event.
+    // Update device status based on ADB event: add new devices or mark existing
+    // ones as connected/disconnected
     private void handleTrackerEvent(DeviceEvent event) {
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             handleConnected(event);
@@ -247,6 +252,8 @@ public class DashboardController extends BaseLayoutController {
         deviceListView.refresh();
     }
 
+    // Handle device connection: update saved device status or add as unvalidated
+    // transient device
     private void handleConnected(DeviceEvent event) {
         DeviceValidationResult result = event.validationResult();
         if (result == null || !result.isValid()) {
@@ -285,6 +292,8 @@ public class DashboardController extends BaseLayoutController {
         sortDeviceItems();
     }
 
+    // Handle device disconnection: remove unvalidated devices or mark saved devices
+    // as offline
     private void handleDisconnected(String serial) {
         Optional<DeviceSummary> existing = findBySerial(serial);
         if (existing.isEmpty()) {
@@ -375,8 +384,8 @@ public class DashboardController extends BaseLayoutController {
         return "";
     }
 
-    // Build a DeviceSummary from a persisted device record, marking it CONNECTED
-    // if the tracker already has a live result for its hardware ID.
+    // Build DeviceSummary from persisted device: mark CONNECTED if currently
+    // plugged in, otherwise OFFLINE
     private DeviceSummary toSavedSummary(ValidatedDevice device) {
         Optional<DeviceValidationResult> known = deviceTracker.getKnownResultByHardwareId(device.getHardwareId());
         DeviceSummary.Status status = known.isPresent() ? DeviceSummary.Status.CONNECTED : DeviceSummary.Status.OFFLINE;
@@ -390,26 +399,22 @@ public class DashboardController extends BaseLayoutController {
         return summary;
     }
 
-
     private void loadFileList() {
         var result = viewLoader.loadView(ViewPaths.FILE_LIST_PANEL);
-
         if (result == null) {
-            log.error("Failed to load file list panel");
             return;
         }
 
         fileListContainer.getChildren().setAll(result.node());
         fileListController = (FileListController) result.controller();
+        fileListController.setOnClearFilter(this::clearDeviceSelection);
     }
 
-    public void filterFilesByDevice(String hardwareId) {
-        if (fileListController != null) {
-            fileListController.filterByDevice(hardwareId);
-        }
+    private void clearDeviceSelection() {
+        deviceListView.getSelectionModel().clearSelection();
     }
 
-    public void notifySyncCompleted() {
+    public void onSyncCompleted() {
         if (fileListController != null) {
             fileListController.onSyncCompleted();
         }

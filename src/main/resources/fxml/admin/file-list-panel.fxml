@@ -1,49 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.geometry.Insets?>
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.layout.controllers.FileListController"
       stylesheets="@/css/admin/file-list-panel.css"
-      spacing="12" VBox.vgrow="ALWAYS">
-    <padding><Insets top="16" right="16" bottom="16" left="16"/></padding>
-
+      spacing="15" VBox.vgrow="ALWAYS">
     <!-- Filter bar -->
-    <HBox spacing="10" alignment="CENTER_LEFT" styleClass="filter-bar">
-        <padding><Insets top="8" right="12" bottom="8" left="12"/></padding>
-
-        <DatePicker fx:id="dateFromPicker" promptText="%filter.dateFrom"/>
-        <Label text="→"/>
-        <DatePicker fx:id="dateToPicker" promptText="%filter.dateTo"/>
-
+    <HBox spacing="10" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34">
+        <HBox spacing="2" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34">
+            <DatePicker fx:id="dateFromPicker" promptText="%filter.dateFrom" styleClass="date-picker"/>
+            <Label text="→"/>
+            <DatePicker fx:id="dateToPicker" promptText="%filter.dateTo" styleClass="date-picker"/>
+        </HBox>
         <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers" prefWidth="150"/>
         <ComboBox fx:id="typeFilterCombo" prefWidth="130"/>
-
-        <Region HBox.hgrow="ALWAYS"/>
-        <Button text="%filter.clear" onAction="#clearFilter" styleClass="btn-secondary"/>
+        <Button text="%common.reset" onAction="#clearFilter" styleClass="btn-secondary"/>
     </HBox>
-
     <!-- Table -->
     <TableView fx:id="fileTable" VBox.vgrow="ALWAYS" fixedCellSize="40">
+        <columnResizePolicy>
+            <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+        </columnResizePolicy>
         <columns>
-            <TableColumn fx:id="colName"   text="%file.name"   prefWidth="270"/>
-            <TableColumn fx:id="colDevice" text="%file.device" prefWidth="75"/>
-            <TableColumn fx:id="colUser"   text="%file.user"   prefWidth="85"/>
-            <TableColumn fx:id="colSize"   text="%file.size"   prefWidth="85"/>
-            <TableColumn fx:id="colStatus" text="%file.status" prefWidth="85"/>
-            <TableColumn fx:id="colType"   text="%file.type"   prefWidth="70"/>
-            <TableColumn fx:id="colDate"   text="%file.date"   prefWidth="145"/>
+            <TableColumn fx:id="colName"   text="%file.name"   prefWidth="33"/>
+            <TableColumn fx:id="colDevice" text="%file.device" prefWidth="9"/>
+            <TableColumn fx:id="colUser"   text="%file.user"   prefWidth="10"/>
+            <TableColumn fx:id="colSize"   text="%file.size"   prefWidth="10"/>
+            <TableColumn fx:id="colStatus" text="%file.status" prefWidth="10"/>
+            <TableColumn fx:id="colType"   text="%file.type"   prefWidth="9"/>
+            <TableColumn fx:id="colDate"   text="%file.date"   prefWidth="19"/>
         </columns>
-        <placeholder><Label text="%file.noData"/></placeholder>
+        <placeholder>
+            <Label text="%file.noData"/>
+        </placeholder>
     </TableView>
-
     <!-- Status bar / Pagination -->
     <HBox alignment="CENTER_LEFT" spacing="10">
         <Label text="%common.show"/>
-        <ComboBox fx:id="cbPageSize" prefWidth="60" styleClass="page-size-combo"/>
+        <ComboBox fx:id="cbPageSize" prefWidth="55" styleClass="page-size-combo"/>
         <Label text="%common.per.page"/>
         <Region HBox.hgrow="ALWAYS"/>
-        <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage" styleClass="btn-secondary"/>
+        <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage"
+                styleClass="btn-secondary"/>
         <Label fx:id="lblPageInfo" text="%common.page"/>
-        <Button fx:id="btnNext" text="%common.next" onAction="#onNextPage" styleClass="btn-secondary"/>
+        <Button fx:id="btnNext" text="%common.next" onAction="#onNextPage"
+                styleClass="btn-secondary"/>
     </HBox>
 </VBox>

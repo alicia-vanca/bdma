@@ -1,3 +1,11 @@
+/* File List Panel Styles */
+
+/* STATUS BAR */
+.status-label {
+    -fx-text-fill: -text-color;
+    -fx-font-size: 12px;
+}
+
 /* TABLE */
 .table-view {
     -fx-background-color: -table-bg;
@@ -46,15 +54,15 @@
     -fx-background-color: -table-selected;
 }
 
-/* FILTER BAR */
-.filter-bar {
-    -fx-background-color: -card-bg;
-    -fx-border-color: -border-color;
-    -fx-border-width: 0 0 1 0;
+.combo-box.page-size-combo .arrow-button {
+    -fx-padding: 0 10 0 0;
+    -fx-pref-width: 15;
 }
 
-/* STATUS BAR */
-.status-label {
-    -fx-text-fill: -text-color;
-    -fx-font-size: 12px;
+/* DatePicker height adjustment */
+.date-picker {
+    -fx-pref-height: 34;
+    -fx-max-height: 34;
+    -fx-pref-width: 110;
+    -fx-max-width: 110;
 }

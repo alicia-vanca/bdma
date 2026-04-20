@@ -1,29 +1,43 @@
 package com.app.admin.layout.controllers;
 
-import com.app.common.dtos.FileFilter;
-import com.app.common.dtos.FileView;
-import com.app.common.modules.session.Session;
-import com.app.common.services.FileService;
-import com.app.common.services.UserService;
-import javafx.application.Platform;
-import javafx.beans.property.SimpleStringProperty;
-import javafx.collections.FXCollections;
-import javafx.fxml.FXML;
-import javafx.scene.control.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
 import org.jetbrains.annotations.NotNull;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import com.app.common.dtos.FileFilter;
+import com.app.common.dtos.FileView;
+import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.session.Session;
+import com.app.common.services.FileService;
+import com.app.common.services.UserService;
+
+import javafx.application.Platform;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.collections.FXCollections;
+import javafx.fxml.FXML;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.util.StringConverter;
 
 @Component
 @Scope("prototype")
 public class FileListController {
 
     private static final List<String> TYPES = List.of("audio", "image", "video", "IMP", "SOS");
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final List<Integer> PAGE_SIZE_THRESHOLDS = List.of(10, 25, 50, 100);
+    private static final DateTimeFormatter DATE_PICKER_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter DATE_DISPLAY_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
 
     @FXML
     private DatePicker dateFromPicker;
@@ -49,7 +63,6 @@ public class FileListController {
     private TableColumn<FileView, String> colType;
     @FXML
     private TableColumn<FileView, String> colDate;
-
     @FXML
     private Button btnPrev;
     @FXML
@@ -64,15 +77,11 @@ public class FileListController {
     private final Session session;
 
     private String activeHardwareId;
-
     private boolean initializing = true;
-
     private List<FileView> filteredFiles = new ArrayList<>();
-
-    private static final int DEFAULT_PAGE_SIZE = 50;
-    private static final List<Integer> PAGE_SIZE_THRESHOLDS = List.of(10, 25, 50, 100);
     private int pageSize = DEFAULT_PAGE_SIZE;
     private int currentPageIndex = 0;
+    private Runnable onClearFilter;
 
     public FileListController(FileService fileService, UserService userService, Session session) {
         this.fileService = fileService;
@@ -83,14 +92,11 @@ public class FileListController {
     @FXML
     public void initialize() {
         setupColumns();
+        setupDatePickers();
 
         boolean isAdmin = session.isAdmin();
         userFilterCombo.setVisible(isAdmin);
         userFilterCombo.setManaged(isAdmin);
-
-        LocalDate today = LocalDate.now();
-        dateFromPicker.setValue(today);
-        dateToPicker.setValue(today);
 
         if (isAdmin) {
             loadUsers();
@@ -105,14 +111,33 @@ public class FileListController {
         refresh(buildFilter());
     }
 
+    private void setupDatePickers() {
+        StringConverter<LocalDate> converter = new StringConverter<LocalDate>() {
+            @Override
+            public String toString(LocalDate date) {
+                return date != null ? date.format(DATE_PICKER_FORMATTER) : "";
+            }
+
+            @Override
+            public LocalDate fromString(String string) {
+                return (string != null && !string.isEmpty())
+                        ? LocalDate.parse(string, DATE_PICKER_FORMATTER)
+                        : null;
+            }
+        };
+
+        dateFromPicker.setConverter(converter);
+        dateToPicker.setConverter(converter);
+    }
+
     private void setupColumns() {
         colName.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().name()));
         colDevice.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().deviceName()));
         colUser.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().username()));
         colSize.setCellValueFactory(c -> new SimpleStringProperty(formatSize(c.getValue().fileSize())));
         colStatus.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().status()));
-        colType.setCellValueFactory(c-> new SimpleStringProperty(c.getValue().type()));
-        colDate.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().createDate()));
+        colType.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().type()));
+        colDate.setCellValueFactory(c -> new SimpleStringProperty(formatDate(c.getValue().createDate())));
     }
 
     public void filterByDevice(String hardwareId) {
@@ -120,12 +145,19 @@ public class FileListController {
         refresh(buildFilter());
     }
 
+    public void setOnClearFilter(Runnable callback) {
+        this.onClearFilter = callback;
+    }
+
     @FXML
     public void clearFilter() {
         dateFromPicker.setValue(null);
         dateToPicker.setValue(null);
-        userFilterCombo.setValue(null);
+        userFilterCombo.getSelectionModel().selectFirst();
         activeHardwareId = null;
+        if (onClearFilter != null) {
+            onClearFilter.run();
+        }
         refresh(null);
     }
 
@@ -153,6 +185,7 @@ public class FileListController {
         });
     }
 
+    // Rebuild file table with current page slice after filter or page size changes
     private void setupPagination() {
         int pageCount = getPageCount();
         if (currentPageIndex >= pageCount) {
@@ -173,7 +206,7 @@ public class FileListController {
     private void updatePagerControls(int pageCount) {
         btnPrev.setDisable(currentPageIndex <= 0);
         btnNext.setDisable(currentPageIndex >= pageCount - 1);
-        lblPageInfo.setText("Trang " + (currentPageIndex + 1) + " / " + pageCount);
+        lblPageInfo.setText(I18n.get("common.page") + " " + (currentPageIndex + 1) + " / " + pageCount);
     }
 
     private int getPageCount() {
@@ -203,13 +236,13 @@ public class FileListController {
         filter.setDateFrom(dateFromPicker.getValue());
         filter.setDateTo(dateToPicker.getValue());
 
-        if (userFilterCombo.getValue() != null
-                && userFilterCombo.getValue().id() != null) {
-            filter.setUserId(userFilterCombo.getValue().id());
+        UserOption userOption = userFilterCombo.getValue();
+        if (userOption != null && userOption.id() != null) {
+            filter.setUserId(userOption.id());
         }
 
         String type = typeFilterCombo.getValue();
-        if (type != null && !"All Types".equalsIgnoreCase(type)) {
+        if (type != null && !I18n.get("filter.allTypes").equalsIgnoreCase(type)) {
             filter.setType(type);
         }
 
@@ -217,10 +250,30 @@ public class FileListController {
     }
 
     private String formatSize(long bytes) {
-        if (bytes < 0) return "-";
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        if (bytes < 0) {
+            return "-";
+        }
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        if (bytes < 1024 * 1024) {
+            return (bytes / 1024) + " KB";
+        }
         return String.format("%.1f MB", bytes / (1024.0 * 1024));
+    }
+
+    private String formatDate(String dateTimeStr) {
+        if (dateTimeStr == null || dateTimeStr.isEmpty()) {
+            return "";
+        }
+        try {
+            // Parse from database format: yyyy-MM-dd HH:mm:ss
+            DateTimeFormatter dbFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            var dateTime = java.time.LocalDateTime.parse(dateTimeStr, dbFormatter);
+            return dateTime.format(DATE_DISPLAY_FORMATTER);
+        } catch (Exception e) {
+            return dateTimeStr;
+        }
     }
 
     record UserOption(Long id, String label) {
@@ -234,42 +287,55 @@ public class FileListController {
     private void loadUsers() {
         var users = userService.findUsersOnly();
         var options = new ArrayList<UserOption>();
-        options.add(new UserOption(null, "All Users"));
-        for (var u : users) {
-            options.add(new UserOption(u.getId(), u.getUsername()));
-        }
+        options.add(new UserOption(null, I18n.get("filter.allUsers")));
+
+        users.stream()
+                .sorted((u1, u2) -> u1.getUsername().compareToIgnoreCase(u2.getUsername()))
+                .forEach(u -> options.add(new UserOption(u.getId(), u.getUsername())));
 
         userFilterCombo.setItems(FXCollections.observableArrayList(options));
         userFilterCombo.getSelectionModel().selectFirst();
     }
 
+    // Auto-refresh file list when any filter changes, skip during initial setup to
+    // avoid redundant queries
     private void setupAutoFilter() {
-
         dateFromPicker.valueProperty().addListener((obs, oldVal, newVal) -> {
-            if (initializing) return;
+            if (initializing) {
+                return;
+            }
             refresh(buildFilter());
         });
 
         dateToPicker.valueProperty().addListener((obs, oldVal, newVal) -> {
-            if (initializing) return;
+            if (initializing) {
+                return;
+            }
             refresh(buildFilter());
         });
 
         userFilterCombo.valueProperty().addListener((obs, oldVal, newVal) -> {
-            if (initializing) return;
+            if (initializing) {
+                return;
+            }
             refresh(buildFilter());
         });
 
         typeFilterCombo.valueProperty().addListener((obs, oldVal, newVal) -> {
-            if (initializing) return;
+            if (initializing) {
+                return;
+            }
             refresh(buildFilter());
         });
     }
 
     private void loadTypes() {
         var options = new ArrayList<String>();
-        options.add("All Types");
-        options.addAll(TYPES);
+        options.add(I18n.get("filter.allTypes"));
+
+        TYPES.stream()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .forEach(options::add);
 
         typeFilterCombo.setItems(FXCollections.observableArrayList(options));
         typeFilterCombo.getSelectionModel().selectFirst();
