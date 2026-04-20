@@ -15,6 +15,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.stage.Stage;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Scope;
@@ -57,7 +58,9 @@ public class UserEditFormController {
 
     private DialogMode mode = DialogMode.CREATE;
     private User user;
+    @Setter
     private Runnable onSuccess;
+    @Setter
     private Runnable onNoChange;
 
     public UserEditFormController(UserService userService) {
@@ -91,14 +94,6 @@ public class UserEditFormController {
         bindUser(user);
     }
 
-    public void setOnSuccess(Runnable onSuccess) {
-        this.onSuccess = onSuccess;
-    }
-
-    public void setOnNoChange(Runnable onNoChange) {
-        this.onNoChange = onNoChange;
-    }
-
     @FXML
     private void onSave() {
         try {
@@ -129,7 +124,7 @@ public class UserEditFormController {
             throw new AppException(I18n.get("user.username.required"));
         }
 
-        if (mode != DialogMode.ACCOUNT && !userService.isValidUsername(username)) {
+        if (mode != DialogMode.ACCOUNT && userService.isInvalidUsername(username)) {
             throw new AppException(I18n.get("user.username.invalid"));
         }
 

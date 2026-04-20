@@ -1,5 +1,6 @@
 package com.app.common.modules.datasync.workers;
 
+import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.definitions.AppConstants;
 import com.app.common.services.AdbClient;
@@ -11,6 +12,7 @@ import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.services.SyncProgressTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -36,6 +38,7 @@ public class DataSyncWorker implements Runnable {
     private final AppConfigService appConfigService;
     private final AdbClient adbClient;
     private final SyncProgressTracker progressTracker;
+    private final ApplicationEventPublisher publisher;
 
     private record LocalFile(String path, String type) {
     }
@@ -72,13 +75,15 @@ public class DataSyncWorker implements Runnable {
                           FolderManagerService folderManagerService,
                           AppConfigService appConfigService,
                           AdbClient adbClient,
-                          SyncProgressTracker progressTracker) {
+                          SyncProgressTracker progressTracker,
+                          ApplicationEventPublisher publisher) {
         this.queue = queue;
         this.service = service;
         this.folderManagerService = folderManagerService;
         this.appConfigService = appConfigService;
         this.adbClient = adbClient;
         this.progressTracker = progressTracker;
+        this.publisher = publisher;
     }
 
     @Override
@@ -99,12 +104,15 @@ public class DataSyncWorker implements Runnable {
     private void processDevice(DeviceSyncQueue.Entry entry) {
         String serial = entry.serial();
         SyncContext ctx = entry.context();
+        boolean syncStarted = false;
 
         try {
             Long deviceId = service.validateDevice(serial);
             Long userId = service.resolveUserId(ctx.username());
             if (deviceId == null || userId == null)
                 return;
+
+            syncStarted = true;
 
             String isAutoDeleteStr = appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC);
             boolean autoDelete = "true".equalsIgnoreCase(isAutoDeleteStr);
@@ -129,7 +137,7 @@ public class DataSyncWorker implements Runnable {
             List<PendingFile> failedList = new ArrayList<>();
 
             for (SyncFile file : syncFiles) {
-                if (Thread.currentThread().isInterrupted() || !alive(serial)) break;
+                if (Thread.currentThread().isInterrupted() || isDeviceDead(serial)) break;
 
                 ProcessResult result = processFile(serial, file, synced, failedList, autoDelete, lookupCache);
 
@@ -151,6 +159,9 @@ public class DataSyncWorker implements Runnable {
 
         } finally {
             queue.done(serial);
+            if (syncStarted) {
+                publisher.publishEvent(new DeviceSyncCompletedEvent(serial));
+            }
         }
     }
 
@@ -231,14 +242,14 @@ public class DataSyncWorker implements Runnable {
         int recovered = 0;
 
         for (int i = 1; i <= MAX_RETRY; i++) {
-            if (remaining.isEmpty() || Thread.currentThread().isInterrupted() || !alive(serial)) {
+            if (remaining.isEmpty() || Thread.currentThread().isInterrupted() || isDeviceDead(serial)) {
                 break;
             }
 
             List<PendingFile> next = new ArrayList<>();
 
             for (PendingFile pf : remaining) {
-                if (Thread.currentThread().isInterrupted() || !alive(serial)) {
+                if (Thread.currentThread().isInterrupted() || isDeviceDead(serial)) {
                     break;
                 }
 
@@ -355,12 +366,12 @@ public class DataSyncWorker implements Runnable {
         }
     }
 
-    private boolean deleteRemoteFile(String serial, String remote) {
-        return adbClient.deleteRemoteFile(serial, remote);
+    private void deleteRemoteFile(String serial, String remote) {
+        adbClient.deleteRemoteFile(serial, remote);
     }
 
-    private boolean alive(String serial) {
-        return adbClient.isDeviceAlive(serial);
+    private boolean isDeviceDead(String serial) {
+        return !adbClient.isDeviceAlive(serial);
     }
 
     private String name(String path) {

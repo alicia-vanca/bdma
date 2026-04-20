@@ -45,7 +45,14 @@ public final class AppConstants {
     public static final String MESSAGE_ERROR = "message-error";
     public static final String MESSAGE_SUCCESS = "message-success";
     public static final String COMMON_ALL = "common.all";
+    public static final String FILTER_ALL_ROLES = "filter.allRoles";
     public static final int PAGE_SIZE = 10;
+
+    // ────────────── File Status ──────────────
+    public static final String FILE_STATUS_SYNCED = "SYNCED";
+    public static final String FILE_STATUS_BACKEDUP = "BACKEDUP";
+    public static final String FILE_STATUS_PENDING_LARGE = "PENDING_LARGE";
+    public static final String FILE_STATUS_FAILED = "FAILED";
 
     // ────────────── Update ──────────────
     public static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";

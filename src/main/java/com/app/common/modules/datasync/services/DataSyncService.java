@@ -4,6 +4,7 @@ import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.models.File;
 import com.app.common.models.User;
 import com.app.common.models.ValidatedDevice;
@@ -61,7 +62,8 @@ public class DataSyncService {
     public void saveFile(Long userId, Long deviceId,
             String name, String path,
             long fileSize, String createDate, String type) {
-        fileRepo.insert(new File(null, userId, deviceId, createDate, name, path, fileSize, type, "SYNCED"));
+        fileRepo.insert(new File(null, userId, deviceId, createDate, name, path, fileSize, type,
+                AppConstants.FILE_STATUS_SYNCED, null));
         dataBackupService.enqueue(path);
     }
 
@@ -72,7 +74,9 @@ public class DataSyncService {
     public void saveLargeFile(Long userId, Long deviceId,
             String name, String path,
             long fileSize, String createDate, String type) {
-        fileRepo.insert(new File(null, userId, deviceId, createDate, name, path, fileSize, type, "PENDING_LARGE"));
+        fileRepo.insert(
+                new File(null, userId, deviceId, createDate, name, path, fileSize, type,
+                        AppConstants.FILE_STATUS_PENDING_LARGE, null));
     }
 
     /**

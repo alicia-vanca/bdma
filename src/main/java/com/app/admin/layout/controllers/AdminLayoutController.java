@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
@@ -23,6 +24,7 @@ import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.datasync.DataSyncRunner;
+import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
@@ -365,6 +367,13 @@ public class AdminLayoutController extends BaseLayoutController {
         }
     }
 
+    @EventListener
+    public void onSyncCompleted(DeviceSyncCompletedEvent event) {
+        if (currentDashboardController != null) {
+            currentDashboardController.onSyncCompleted();
+        }
+    }
+
     private void handleRequestValidate(DeviceSummary summary) {
         if (summary == null || summary.getValidationResult() == null) {
             showNoticeError(I18n.get("device.validation.failed"));
@@ -374,7 +383,16 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private void handleRequestSync(DeviceSummary summary) {
-        showSyncConfirmation(summary.getSerial(), summary.getDisplayName());
+        SyncProgressTracker.SyncProgress progress = syncProgressTracker.getProgress(summary.getHardwareId());
+        if (progress != null) {
+            SyncProgressTracker.SyncStatus status = progress.status();
+            if (status == SyncProgressTracker.SyncStatus.QUEUED
+                    || status == SyncProgressTracker.SyncStatus.SYNCING) {
+                showNoticeError(I18n.get("device.sync.already.queued", summary.getDisplayName()));
+                return;
+            }
+        }
+        showSyncConfirmation(summary.getHardwareId(), summary.getDisplayName());
     }
 
     private void showSyncConfirmation(String serial, String deviceName) {

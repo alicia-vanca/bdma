@@ -55,9 +55,9 @@ public class UserService {
                 && userRepository.existsByUsername(normalizedUsername);
     }
 
-    public boolean isValidUsername(String username) {
+    public boolean isInvalidUsername(String username) {
         String normalized = normalizeUsername(username);
-        return normalized != null && normalized.length() >= USERNAME_MIN_LENGTH;
+        return normalized == null || normalized.length() < USERNAME_MIN_LENGTH;
     }
 
     public User create(User user) {
@@ -67,7 +67,7 @@ public class UserService {
 
         String username = normalizeUsername(user.getUsername());
 
-        if (username == null || !isValidUsername(username)) {
+        if (isInvalidUsername(username)) {
             throw new ValidationException(I18n.get("user.username.invalid"));
         }
 
@@ -134,5 +134,9 @@ public class UserService {
         if (username == null)
             return null;
         return username.trim().toLowerCase();
+    }
+
+    public List<User> findUsersOnly() {
+        return userRepository.findByRole(Role.USER);
     }
 }

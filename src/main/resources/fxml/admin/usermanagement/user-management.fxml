@@ -9,25 +9,28 @@
     stylesheets="@/css/admin.css,@/css/admin/usermanagement/user-management.css"
       styleClass="content">
     <padding>
-        <Insets top="20" right="20" bottom="20" left="20"/>
+        <Insets top="0" right="0" bottom="0" left="0"/>
     </padding>
     <VBox spacing="15">
-        <HBox alignment="CENTER_LEFT" spacing="10">
+        <HBox alignment="TOP_LEFT" spacing="10" prefHeight="34" minHeight="34" maxHeight="34">
             <Label text="%user.title" styleClass="title"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Button text="%user.add" onAction="#onAdd" styleClass="btn-primary"/>
         </HBox>
-        <HBox spacing="10">
+        <HBox spacing="10" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34">
             <TextField fx:id="txtSearch" promptText="%user.search" styleClass="input"/>
             <ComboBox fx:id="cbRole" promptText="%user.role.all"/>
             <Button text="%common.reset" onAction="#onReset" styleClass="btn-secondary"/>
         </HBox>
         <TableView fx:id="table" VBox.vgrow="ALWAYS" fixedCellSize="40">
+            <columnResizePolicy>
+                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+            </columnResizePolicy>
             <columns>
-                <TableColumn fx:id="colSTT" text="%common.stt" prefWidth="60" sortable="false"/>
-                <TableColumn fx:id="colUsername" text="%user.username" prefWidth="180"/>
-                <TableColumn fx:id="colRole" text="%user.role" prefWidth="120"/>
-                <TableColumn fx:id="colAction" text="%common.action" prefWidth="220" sortable="false"/>
+                <TableColumn fx:id="colSTT" text="%common.stt" minWidth="10" maxWidth="60" sortable="false"/>
+                <TableColumn fx:id="colUsername" text="%user.username" prefWidth="30"/>
+                <TableColumn fx:id="colRole" text="%user.role" prefWidth="20"/>
+                <TableColumn fx:id="colAction" text="%common.action" prefWidth="40" sortable="false"/>
             </columns>
         </TableView>
         <HBox alignment="CENTER_LEFT" spacing="10">

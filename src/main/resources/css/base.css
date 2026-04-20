@@ -35,7 +35,7 @@
 /* BUTTON */
 .btn-primary,
 .btn-secondary {
-    -fx-pref-height: 34;
+    -fx-pref-height: 33;
     -fx-padding: 0 16;
     -fx-alignment: CENTER;
     -fx-background-radius: 6;

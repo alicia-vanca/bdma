@@ -129,11 +129,84 @@
 /* ===== INPUT ===== */
 .text-field,
 .password-field,
-.combo-box {
+.combo-box,
+.date-picker .text-field,
+.date-picker {
     -fx-background-color: -input-bg;
     -fx-border-color: -border-color;
     -fx-background-radius: 6;
     -fx-border-radius: 6;
+}
+
+.date-picker .text-field {
+    -fx-padding: 4 4 4 7;
+}
+
+.date-picker .arrow-button {
+    -fx-background-color: -input-bg;
+    -fx-border-color: transparent;
+    -fx-background-radius: 0 6 6 0;
+    -fx-padding: 4 8 4 8;
+}
+
+.date-picker .arrow-button .arrow {
+    -fx-background-color: -text-color;
+}
+
+.date-picker:focused,
+.date-picker .text-field:focused {
+    -fx-border-color: -primary;
+    -fx-background-color: -input-focus-bg;
+}
+
+.date-picker-popup {
+    -fx-background-color: -card-bg;
+    -fx-border-color: -border-color;
+}
+
+.date-picker-popup .month-year-pane {
+    -fx-background-color: -card-bg;
+}
+
+.date-picker-popup > * > .spinner > .button {
+    -fx-background-color: transparent;
+}
+
+.date-picker-popup > * > .spinner > .button:hover {
+    -fx-background-color: -table-hover;
+}
+
+.date-picker-popup > * > .spinner > .button > .left-arrow,
+.date-picker-popup > * > .spinner > .button > .right-arrow {
+    -fx-background-color: -text-color;
+}
+
+.date-picker-popup > * > .day-name-cell,
+.date-picker-popup > * > .week-number-cell {
+    -fx-text-fill: #64748b;
+}
+
+.date-picker-popup .spinner .label {
+    -fx-text-fill: -text-color;
+}
+
+.date-picker-popup > * > .day-cell {
+    -fx-background-color: -card-bg;
+    -fx-text-fill: -text-color;
+}
+
+.date-picker-popup > * > .day-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.date-picker-popup > * > .day-cell.today {
+    -fx-border-color: -primary;
+    -fx-border-width: 1;
+}
+
+.date-picker-popup > * > .day-cell.selected {
+    -fx-background-color: -primary;
+    -fx-text-fill: white;
 }
 
 .text-input {

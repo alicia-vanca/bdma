@@ -1,0 +1,68 @@
+/* File List Panel Styles */
+
+/* STATUS BAR */
+.status-label {
+    -fx-text-fill: -text-color;
+    -fx-font-size: 12px;
+}
+
+/* TABLE */
+.table-view {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+    -fx-table-cell-border-color: -border-color;
+    -fx-table-header-border-color: -border-color;
+}
+
+.table-view .column-header,
+.table-view .filler,
+.table-view .column-header-background {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+}
+
+.table-view .column-header-background,
+.table-view .filler,
+.table-view .column-header {
+    -fx-pref-height: 35;
+    -fx-min-height: 35;
+}
+
+.table-view .table-cell {
+    -fx-alignment: CENTER-LEFT;
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-padding: 0 12;
+}
+
+.table-view .column-header {
+    -fx-border-color: transparent -border-color -border-color transparent;
+}
+
+.table-row-cell {
+    -fx-background-color: -table-bg;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: -table-odd;
+}
+
+.table-row-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: -table-selected;
+}
+
+.combo-box.page-size-combo .arrow-button {
+    -fx-padding: 0 10 0 0;
+    -fx-pref-width: 15;
+}
+
+/* DatePicker height adjustment */
+.date-picker {
+    -fx-pref-height: 34;
+    -fx-max-height: 34;
+    -fx-pref-width: 110;
+    -fx-max-width: 110;
+}

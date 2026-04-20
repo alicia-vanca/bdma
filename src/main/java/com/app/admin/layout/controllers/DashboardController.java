@@ -4,8 +4,10 @@ import java.util.Comparator;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
@@ -33,17 +35,22 @@ import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 
 @Component
+@Scope("prototype")
 public class DashboardController extends BaseLayoutController {
 
     private static final String KEY_DEVICE_CONNECTED = "dashboard.device.connected";
 
     @FXML
     private ListView<DeviceSummary> deviceListView;
+    @FXML
+    private StackPane fileListContainer;
 
     private final DeviceTracker deviceTracker;
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final SyncProgressTracker syncProgressTracker;
     private final ObservableList<DeviceSummary> deviceItems = FXCollections.observableArrayList();
+
+    private FileListController fileListController;
     private boolean deviceStateInitialized;
     private Consumer<DeviceSummary> onRequestValidate;
     private Consumer<DeviceSummary> onRequestSync;
@@ -114,6 +121,8 @@ public class DashboardController extends BaseLayoutController {
         });
     }
 
+    // Apply visual styling based on device status: connected (green), offline
+    // (gray), or unvalidated (yellow)
     private void applyStatusStyle(DeviceSummary summary, Circle dot, Label sub) {
         switch (summary.getStatus()) {
             case CONNECTED -> applyConnectedStyle(summary, dot, sub);
@@ -132,6 +141,8 @@ public class DashboardController extends BaseLayoutController {
         sub.getStyleClass().add(resolveConnectedStyle(status));
     }
 
+    // Display sync progress for connected devices: queued, syncing with counts, or
+    // idle
     private String resolveConnectedText(SyncProgressTracker.SyncStatus status,
             SyncProgressTracker.SyncProgress progress) {
 
@@ -201,6 +212,14 @@ public class DashboardController extends BaseLayoutController {
             deviceStateInitialized = true;
         }
         refresh();
+        loadFileList();
+
+        deviceListView.setOnMouseClicked(event -> {
+            DeviceSummary selected = deviceListView.getSelectionModel().getSelectedItem();
+            if (selected != null && fileListController != null) {
+                fileListController.filterByDevice(selected.getHardwareId());
+            }
+        });
     }
 
     // Clear runtime device state only when the user session ends so language or
@@ -211,6 +230,8 @@ public class DashboardController extends BaseLayoutController {
         deviceStateInitialized = false;
     }
 
+    // Register listener to receive real-time device connection events from ADB
+    // tracker
     private void registerDeviceTrackerListener() {
         if (deviceEventListener != null) {
             return;
@@ -220,7 +241,8 @@ public class DashboardController extends BaseLayoutController {
         deviceTracker.addListener(deviceEventListener);
     }
 
-    // Update device status based on adb event.
+    // Update device status based on ADB event: add new devices or mark existing
+    // ones as connected/disconnected
     private void handleTrackerEvent(DeviceEvent event) {
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             handleConnected(event);
@@ -230,6 +252,8 @@ public class DashboardController extends BaseLayoutController {
         deviceListView.refresh();
     }
 
+    // Handle device connection: update saved device status or add as unvalidated
+    // transient device
     private void handleConnected(DeviceEvent event) {
         DeviceValidationResult result = event.validationResult();
         if (result == null || !result.isValid()) {
@@ -238,13 +262,13 @@ public class DashboardController extends BaseLayoutController {
         }
 
         if (result.isAlreadySaved()) {
-            updateSavedDeviceAsConnected(event.serial(), result);
+            updateSavedDeviceAsConnected(result);
         } else {
-            addTransientDevice(event.serial(), result);
+            addTransientDevice(result);
         }
     }
 
-    private void updateSavedDeviceAsConnected(String serial, DeviceValidationResult result) {
+    private void updateSavedDeviceAsConnected(DeviceValidationResult result) {
         Optional<DeviceSummary> existing = findByHardwareId(result.getHardwareId());
         if (existing.isEmpty()) {
             refresh();
@@ -252,15 +276,14 @@ public class DashboardController extends BaseLayoutController {
         }
 
         DeviceSummary summary = existing.get();
-        summary.setSerial(serial);
         summary.setHardwareId(result.getHardwareId());
         summary.setStatus(DeviceSummary.Status.CONNECTED);
         summary.setSyncProgress(resolveSyncProgress(summary));
+        deviceListView.refresh();
     }
 
-    private void addTransientDevice(String serial, DeviceValidationResult result) {
+    private void addTransientDevice(DeviceValidationResult result) {
         deviceItems.add(new DeviceSummary(
-                serial,
                 result.getHardwareId(),
                 result.getAccountUserId(),
                 DeviceSummary.Status.UNVALIDATED,
@@ -269,6 +292,8 @@ public class DashboardController extends BaseLayoutController {
         sortDeviceItems();
     }
 
+    // Handle device disconnection: remove unvalidated devices or mark saved devices
+    // as offline
     private void handleDisconnected(String serial) {
         Optional<DeviceSummary> existing = findBySerial(serial);
         if (existing.isEmpty()) {
@@ -283,14 +308,14 @@ public class DashboardController extends BaseLayoutController {
             return;
         }
 
-        summary.setSerial(null);
         summary.setStatus(DeviceSummary.Status.OFFLINE);
         summary.setSyncProgress(SyncProgressTracker.SyncProgress.idle());
+        deviceListView.refresh();
     }
 
     private Optional<DeviceSummary> findBySerial(String serial) {
         return deviceItems.stream()
-                .filter(summary -> serial.equals(summary.getSerial()))
+                .filter(summary -> serial.equals(summary.getHardwareId()))
                 .findFirst();
     }
 
@@ -304,15 +329,7 @@ public class DashboardController extends BaseLayoutController {
         if (summary.getHardwareId() == null) {
             return SyncProgressTracker.SyncProgress.idle();
         }
-
-        SyncProgressTracker.SyncProgress progress = syncProgressTracker.getProgress(summary.getHardwareId());
-        if (progress.status() != SyncProgressTracker.SyncStatus.IDLE) {
-            return progress;
-        }
-        if (summary.getSerial() != null) {
-            return syncProgressTracker.getProgress(summary.getSerial());
-        }
-        return progress;
+        return syncProgressTracker.getProgress(summary.getHardwareId());
     }
 
     // Re-resolve sync state only for devices represented by persisted records.
@@ -364,20 +381,15 @@ public class DashboardController extends BaseLayoutController {
         if (summary.getHardwareId() != null) {
             return summary.getHardwareId();
         }
-        if (summary.getSerial() != null) {
-            return summary.getSerial();
-        }
         return "";
     }
 
-    // Build a DeviceSummary from a persisted device record, marking it CONNECTED
-    // if the tracker already has a live result for its hardware ID.
+    // Build DeviceSummary from persisted device: mark CONNECTED if currently
+    // plugged in, otherwise OFFLINE
     private DeviceSummary toSavedSummary(ValidatedDevice device) {
         Optional<DeviceValidationResult> known = deviceTracker.getKnownResultByHardwareId(device.getHardwareId());
-        String serial = known.map(DeviceValidationResult::getSerial).orElse(null);
         DeviceSummary.Status status = known.isPresent() ? DeviceSummary.Status.CONNECTED : DeviceSummary.Status.OFFLINE;
         DeviceSummary summary = new DeviceSummary(
-                serial,
                 device.getHardwareId(),
                 device.getDeviceName(),
                 status,
@@ -385,5 +397,26 @@ public class DashboardController extends BaseLayoutController {
                 null);
         summary.setSyncProgress(resolveSyncProgress(summary));
         return summary;
+    }
+
+    private void loadFileList() {
+        var result = viewLoader.loadView(ViewPaths.FILE_LIST_PANEL);
+        if (result == null) {
+            return;
+        }
+
+        fileListContainer.getChildren().setAll(result.node());
+        fileListController = (FileListController) result.controller();
+        fileListController.setOnClearFilter(this::clearDeviceSelection);
+    }
+
+    private void clearDeviceSelection() {
+        deviceListView.getSelectionModel().clearSelection();
+    }
+
+    public void onSyncCompleted() {
+        if (fileListController != null) {
+            fileListController.onSyncCompleted();
+        }
     }
 }

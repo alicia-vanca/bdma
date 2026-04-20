@@ -1,18 +1,25 @@
 package com.app.admin.usermanagement.controllers;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
 import com.app.MainApp;
-import com.app.common.exceptions.CannotDeleteSelfException;
-import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.session.Session;
-import com.app.common.helpers.AlertHelper;
-import com.app.common.services.AppNoticeService;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.Role;
+import com.app.common.exceptions.CannotDeleteSelfException;
+import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
-
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.User;
+import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.session.Session;
+import com.app.common.services.AppNoticeService;
 import com.app.common.services.UserService;
 import com.app.user.userdetail.controllers.UserInfoController;
 
@@ -22,23 +29,24 @@ import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
 
 @Component
 public class UserManagementController {
 
     private static final Logger log = LoggerFactory.getLogger(UserManagementController.class);
 
-    private static final String COMMON_ALL = AppConstants.COMMON_ALL;
+    private static final String FILTER_ALL_ROLES = AppConstants.FILTER_ALL_ROLES;
 
     @FXML
     private TableView<User> table;
@@ -112,10 +120,10 @@ public class UserManagementController {
     }
 
     private void setupRoleComboBox() {
-        cbRole.getItems().addAll(I18n.get(COMMON_ALL), Role.ADMIN.toString(), Role.USER.toString());
+        cbRole.getItems().addAll(I18n.get(FILTER_ALL_ROLES), Role.ADMIN.toString(), Role.USER.toString());
         // Restore previous role selection if the user had a non-default filter active,
         // translating the "All" sentinel to the current locale's string.
-        String roleToRestore = (savedRoleFilter == null) ? I18n.get(COMMON_ALL) : savedRoleFilter;
+        String roleToRestore = (savedRoleFilter == null) ? I18n.get(FILTER_ALL_ROLES) : savedRoleFilter;
         cbRole.setValue(roleToRestore);
     }
 
@@ -128,7 +136,7 @@ public class UserManagementController {
         });
         cbRole.valueProperty().addListener((obs, oldValue, newValue) -> {
             // Store null for the "All" sentinel so it re-translates correctly on reload.
-            savedRoleFilter = (newValue == null || newValue.equals(I18n.get(COMMON_ALL))) ? null : newValue;
+            savedRoleFilter = (newValue == null || newValue.equals(I18n.get(FILTER_ALL_ROLES))) ? null : newValue;
             onSearch();
         });
     }
@@ -207,7 +215,7 @@ public class UserManagementController {
         filteredUsers = allUsers.stream()
                 .filter(u -> {
                     boolean matchUsername = u.getUsername().toLowerCase().contains(keyword);
-                    boolean matchRole = role == null || role.equals(I18n.get(COMMON_ALL)) ||
+                    boolean matchRole = role == null || role.equals(I18n.get(FILTER_ALL_ROLES)) ||
                             u.getRole().toString().equals(role);
                     return matchUsername && matchRole;
                 })
@@ -220,7 +228,7 @@ public class UserManagementController {
     @FXML
     private void onReset() {
         txtSearch.clear();
-        cbRole.setValue(I18n.get(COMMON_ALL));
+        cbRole.setValue(I18n.get(FILTER_ALL_ROLES));
         filteredUsers = new ArrayList<>(allUsers);
         currentPageIndex = 0;
         setupPagination();

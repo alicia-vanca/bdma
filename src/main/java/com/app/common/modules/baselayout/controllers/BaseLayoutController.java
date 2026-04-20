@@ -18,7 +18,7 @@ public abstract class BaseLayoutController {
 
     private static final String ACTIVE_BUTTON = "active-button";
 
-    private final ViewLoader viewLoader;
+    protected final ViewLoader viewLoader;
 
     @Setter
     private String fxmlPath;

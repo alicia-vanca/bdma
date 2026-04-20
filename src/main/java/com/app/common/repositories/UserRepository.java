@@ -48,17 +48,18 @@ public class UserRepository {
         }
     }
 
+    @SuppressWarnings("java:S2259")
     public boolean existsByUsername(String username) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM user WHERE username = ?",
                 Integer.class, username);
-        return count != null && count > 0;
+        return count > 0;
     }
 
+    @SuppressWarnings("java:S2259")
     public long countByRole(Role role) {
         String sql = "SELECT COUNT(*) FROM user WHERE role = ?";
-        Long count = jdbcTemplate.queryForObject(sql, Long.class, role.name());
-        return count != null ? count : 0;
+        return jdbcTemplate.queryForObject(sql, Long.class, role.name());
     }
 
     // ── Persist ──────────────────────────────────────────────────────────────
@@ -76,6 +77,14 @@ public class UserRepository {
                     user.getPassword(), user.getRole().name(), user.getId());
         }
         return user;
+    }
+
+    public List<User> findByRole(Role role) {
+        return jdbcTemplate.query(
+                "SELECT id, username, password, role FROM user WHERE role = ?",
+                this::mapRow,
+                role.name()
+        );
     }
 
     public void deleteById(Long id) {
