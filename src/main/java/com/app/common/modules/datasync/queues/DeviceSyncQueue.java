@@ -23,7 +23,7 @@ public class DeviceSyncQueue {
         this.progressTracker = progressTracker;
     }
 
-    public record Entry(String serial, SyncContext context) {
+    public record Entry(String hardwareId, SyncContext context) {
     }
 
     private final BlockingQueue<Entry> queue = new LinkedBlockingQueue<>();
@@ -35,65 +35,65 @@ public class DeviceSyncQueue {
 
     // Returns false if input is invalid or the device is already syncing/queued,
     // avoiding duplicate entries.
-    public boolean add(String serial, SyncContext context) {
-        if (serial == null || serial.isBlank() || context == null) {
+    public boolean add(String hardwareId, SyncContext context) {
+        if (hardwareId == null || hardwareId.isBlank() || context == null) {
             return false;
         }
-        if (serial.equals(current) || !inQueue.add(serial)) {
+        if (hardwareId.equals(current) || !inQueue.add(hardwareId)) {
             return false;
         }
 
-        if (queue.offer(new Entry(serial, context))) {
-            progressTracker.markQueued(serial);
-            log.info("Queue add: {}", serial);
+        if (queue.offer(new Entry(hardwareId, context))) {
+            progressTracker.markQueued(hardwareId);
+            log.info("Added to Device sync queue: {}", hardwareId);
             return true;
         } else {
-            inQueue.remove(serial);
+            inQueue.remove(hardwareId);
             return false;
         }
     }
 
     public Entry take() throws InterruptedException {
         Entry entry = queue.take();
-        current = entry.serial();
-        inQueue.remove(entry.serial());
+        current = entry.hardwareId();
+        inQueue.remove(entry.hardwareId());
         return entry;
     }
 
-    public void done(String serial) {
-        if (serial == null || serial.isBlank()) {
+    public void done(String hardwareId) {
+        if (hardwareId == null || hardwareId.isBlank()) {
             return;
         }
-        if (serial.equals(current)) {
+        if (hardwareId.equals(current)) {
             current = null;
         }
-        progressTracker.markDone(serial);
+        progressTracker.markDone(hardwareId);
     }
 
     // Cancel a queued or in-progress sync when the device disconnects.
-    public void remove(String serial) {
-        if (serial == null || serial.isBlank()) {
+    public void remove(String hardwareId) {
+        if (hardwareId == null || hardwareId.isBlank()) {
             return;
         }
 
-        queue.removeIf(e -> e.serial().equals(serial));
-        inQueue.remove(serial);
-        if (serial.equals(current)) {
-            progressTracker.markCancelled(serial);
+        queue.removeIf(e -> e.hardwareId().equals(hardwareId));
+        inQueue.remove(hardwareId);
+        if (hardwareId.equals(current)) {
+            progressTracker.markCancelled(hardwareId);
         } else {
-            progressTracker.markDone(serial);
+            progressTracker.markDone(hardwareId);
         }
-        log.info("Queue remove: {}", serial);
+        log.info("Removed from Device sync queue: {}", hardwareId);
     }
 
     public void clearAll() {
         List<Entry> entries = new ArrayList<>();
         queue.drainTo(entries);
         for (Entry entry : entries) {
-            progressTracker.markDone(entry.serial());
+            progressTracker.markDone(entry.hardwareId());
         }
         inQueue.clear();
         current = null;
-        log.info("Queue cleared");
+        log.info("Device sync queue cleared");
     }
 }

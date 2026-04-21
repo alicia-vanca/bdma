@@ -9,25 +9,23 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class DeviceValidationResult {
     private boolean valid;
-    private String serial;
-    private String message;
     private String hardwareId;
+    private String message;
     private String matchedWhitelistId;
     private String matchedModelName;
-    private String accountUserId;
+    private String cameraId;
     private boolean alreadySaved;
 
-    public static DeviceValidationResult invalid(String serial, String message) {
-        return new DeviceValidationResult(false, serial, message, null, null, null, null, false);
+    public static DeviceValidationResult invalid(String hardwareId, String message) {
+        return new DeviceValidationResult(false, hardwareId, message, null, null, null, false);
     }
 
-    public static DeviceValidationResult valid(String serial,
-            String hardwareId,
+    public static DeviceValidationResult valid(String hardwareId,
             String whitelistId,
             String modelName,
-            String accountUserId,
+            String cameraId,
             boolean alreadySaved) {
-        return new DeviceValidationResult(true, serial, "Device validated", hardwareId,
-                whitelistId, modelName, accountUserId, alreadySaved);
+        return new DeviceValidationResult(true, hardwareId, "Device validated",
+                whitelistId, modelName, cameraId, alreadySaved);
     }
 }

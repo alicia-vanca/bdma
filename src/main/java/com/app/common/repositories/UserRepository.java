@@ -1,15 +1,16 @@
 package com.app.common.repositories;
 
-import com.app.common.definitions.enums.Role;
-import com.app.common.models.User;
-import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
-
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
+
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import com.app.common.definitions.enums.Role;
+import com.app.common.models.User;
 
 @Repository
 public class UserRepository {
@@ -69,8 +70,13 @@ public class UserRepository {
             jdbcTemplate.update(
                     "INSERT INTO user(username, password, role) VALUES (?, ?, ?)",
                     user.getUsername(), user.getPassword(), user.getRole().name());
-            Long id = jdbcTemplate.queryForObject("SELECT last_insert_rowid()", Long.class);
-            user.setId(id);
+            Long id = jdbcTemplate.queryForObject(
+                    "SELECT id FROM user WHERE username = ?",
+                    Long.class,
+                    user.getUsername());
+            if (id != null && id > 0) {
+                user.setId(id);
+            }
         } else {
             jdbcTemplate.update(
                     "UPDATE user SET password = ?, role = ? WHERE id = ?",
@@ -83,8 +89,7 @@ public class UserRepository {
         return jdbcTemplate.query(
                 "SELECT id, username, password, role FROM user WHERE role = ?",
                 this::mapRow,
-                role.name()
-        );
+                role.name());
     }
 
     public void deleteById(Long id) {

@@ -4,11 +4,10 @@ import java.util.Comparator;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import javafx.scene.control.*;
-import javafx.scene.layout.*;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceSummary;
@@ -28,15 +27,23 @@ import javafx.collections.ObservableList;
 import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.SVGPath;
 
 @Component
 @Scope("prototype")
 public class DashboardController extends BaseLayoutController {
-
-    private static final String KEY_DEVICE_CONNECTED = "dashboard.device.connected";
 
     @FXML
     private ListView<DeviceSummary> deviceListView;
@@ -149,9 +156,9 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void setupEditBehavior(DeviceSummary summary,
-                                   Label name,
-                                   TextField nameField,
-                                   SVGPath icon) {
+            Label name,
+            TextField nameField,
+            SVGPath icon) {
 
         icon.setOnMousePressed(Event::consume);
 
@@ -184,8 +191,8 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private Runnable createCommitAction(DeviceSummary summary,
-                                        Label name,
-                                        TextField nameField) {
+            Label name,
+            TextField nameField) {
 
         return () -> {
             String newName = nameField.getText();
@@ -196,9 +203,7 @@ public class DashboardController extends BaseLayoutController {
                 validatedDeviceRepository
                         .findByHardwareId(summary.getHardwareId())
                         .map(ValidatedDevice::getId)
-                        .ifPresent(id ->
-                                validatedDeviceRepository.updateDeviceName(id, newName)
-                        );
+                        .ifPresent(id -> validatedDeviceRepository.updateDeviceName(id, newName));
 
                 name.setText(newName);
 
@@ -259,10 +264,9 @@ public class DashboardController extends BaseLayoutController {
         return switch (status) {
             case QUEUED -> I18n.get("dashboard.device.queued");
             case SYNCING -> I18n.get("dashboard.device.syncing") + " " + formatProgress(progress);
-            case COMPLETED -> progress.total() > 0
-                    ? I18n.get(KEY_DEVICE_CONNECTED) + " " + formatProgress(progress)
-                    : I18n.get(KEY_DEVICE_CONNECTED);
-            default -> I18n.get(KEY_DEVICE_CONNECTED);
+            case COMPLETED -> I18n.get(AppConstants.KEY_DEVICE_SYNCED) + " " + formatProgress(progress);
+            default -> I18n.get(AppConstants.KEY_DEVICE_CONNECTED);
+
         };
     }
 
@@ -292,7 +296,8 @@ public class DashboardController extends BaseLayoutController {
 
     private void setupClickHandler(ListCell<DeviceSummary> cell, DeviceSummary summary) {
         cell.setOnMouseClicked(event -> {
-            if (event.getButton() != MouseButton.PRIMARY) return;
+            if (event.getButton() != MouseButton.PRIMARY)
+                return;
             fileListController.filterByDevice(summary.getHardwareId());
 
             if (event.getClickCount() == 2) {
@@ -359,7 +364,7 @@ public class DashboardController extends BaseLayoutController {
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             handleConnected(event);
         } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
-            handleDisconnected(event.serial());
+            handleDisconnected(event.hardwareId());
         }
         deviceListView.refresh();
     }
@@ -395,12 +400,9 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void addTransientDevice(DeviceValidationResult result) {
-        String displayName = result.getMatchedModelName() != null
-                ? result.getMatchedModelName()
-                : result.getHardwareId();
         deviceItems.add(new DeviceSummary(
                 result.getHardwareId(),
-                displayName,
+                result.getCameraId(),
                 DeviceSummary.Status.UNVALIDATED,
                 SyncProgressTracker.SyncProgress.idle(),
                 result));
@@ -409,8 +411,8 @@ public class DashboardController extends BaseLayoutController {
 
     // Handle device disconnection: remove unvalidated devices or mark saved devices
     // as offline
-    private void handleDisconnected(String serial) {
-        Optional<DeviceSummary> existing = findBySerial(serial);
+    private void handleDisconnected(String hardwareId) {
+        Optional<DeviceSummary> existing = findByHardwareId(hardwareId);
         if (existing.isEmpty()) {
             return;
         }
@@ -426,12 +428,6 @@ public class DashboardController extends BaseLayoutController {
         summary.setStatus(DeviceSummary.Status.OFFLINE);
         summary.setSyncProgress(SyncProgressTracker.SyncProgress.idle());
         deviceListView.refresh();
-    }
-
-    private Optional<DeviceSummary> findBySerial(String serial) {
-        return deviceItems.stream()
-                .filter(summary -> serial.equals(summary.getHardwareId()))
-                .findFirst();
     }
 
     private Optional<DeviceSummary> findByHardwareId(String hardwareId) {
@@ -474,7 +470,7 @@ public class DashboardController extends BaseLayoutController {
             return;
         }
 
-        findBySerial(result.getSerial())
+        findByHardwareId(result.getHardwareId())
                 .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
                 .ifPresent(summary -> {
                     summary.setDisplayName(savedDeviceName);
@@ -532,6 +528,12 @@ public class DashboardController extends BaseLayoutController {
     public void onSyncCompleted() {
         if (fileListController != null) {
             fileListController.onSyncCompleted();
+        }
+    }
+
+    public void onBackupCompleted() {
+        if (fileListController != null) {
+            fileListController.onBackupCompleted();
         }
     }
 }

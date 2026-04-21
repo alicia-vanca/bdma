@@ -1,21 +1,23 @@
 package com.app.common.modules.foldermanager.services;
 
-import com.app.common.definitions.AppDataPaths;
-import com.app.common.definitions.AppConstants;
-import com.app.common.definitions.enums.FolderType;
-import com.app.common.services.AppConfigService;
-import lombok.Getter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Callable;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.AppDataPaths;
+import com.app.common.definitions.enums.FolderType;
+import com.app.common.services.AppConfigService;
+
+import lombok.Getter;
 
 /**
  * Manages a protected data folder and a temporary working folder.
@@ -56,14 +58,14 @@ public class FolderManagerService {
     public void init() {
         String dataDirPath = appConfigService.getConfigValue(AppConstants.KEY_DATA_DIR);
         if (dataDirPath == null || dataDirPath.isBlank()) {
-            dataDirPath = Path.of(AppDataPaths.appDir(), "datasave").toString();
+            dataDirPath = Path.of("C:", "BDMA_User_Data", "DataSave").toString();
             appConfigService.saveConfigValue(AppConstants.KEY_DATA_DIR, dataDirPath);
             log.info("Initialized default save folder: {}", dataDirPath);
         }
 
         String backupDirPath = appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR);
         if (backupDirPath == null || backupDirPath.isBlank()) {
-            backupDirPath = Path.of(AppDataPaths.appDir(), "databackup").toString();
+            backupDirPath = Path.of("C:", "BDMA_User_Data", "DataBackup").toString();
             appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
             log.info("Initialized default backup folder: {}", backupDirPath);
         }
@@ -148,6 +150,13 @@ public class FolderManagerService {
         }
 
         return basePath.relativize(targetPath).toString();
+    }
+
+    public String getBackupPath(String relativePath) throws IOException {
+        if (backupDir == null) {
+            throw new IOException("Backup directory is not configured yet.");
+        }
+        return new File(backupDir, relativePath).getAbsolutePath();
     }
 
     // Unlocks the data folder, runs the action, then re-locks in finally.
@@ -299,7 +308,7 @@ public class FolderManagerService {
                 File target = new File(backupDir, fileName);
                 ensureParentDir(target);
                 Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                log.info("Backed up {} from save to backup", fileName);
+                log.info("Backed up from save dir to backup dir: {}", fileName);
                 return null;
             });
         } catch (IOException e) {

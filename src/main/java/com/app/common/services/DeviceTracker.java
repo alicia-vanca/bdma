@@ -109,18 +109,17 @@ public class DeviceTracker implements Runnable {
     // Marks a connected device as saved in the known cache right after
     // persistence succeeds, so later replays carry the correct saved state.
     public void markKnownAsSaved(DeviceValidationResult result) {
-        if (result == null || !result.isValid() || result.getSerial() == null) {
+        if (result == null || !result.isValid() || result.getHardwareId() == null) {
             return;
         }
 
         DeviceValidationResult saved = DeviceValidationResult.valid(
-                result.getSerial(),
                 result.getHardwareId(),
                 result.getMatchedWhitelistId(),
                 result.getMatchedModelName(),
-                result.getAccountUserId(),
+                result.getCameraId(),
                 true);
-        knownResults.put(saved.getSerial(), saved);
+        knownResults.put(saved.getHardwareId(), saved);
     }
 
     // Signals the tracker to stop and destroys the active adb process so the
@@ -222,7 +221,7 @@ public class DeviceTracker implements Runnable {
         try {
             listener.accept(event);
         } catch (Exception e) {
-            log.warn("Device event listener failed for serial {}: {}", event.serial(), e.getMessage());
+            log.warn("Device event listener failed for hardwareId {}: {}", event.hardwareId(), e.getMessage());
         }
     }
 

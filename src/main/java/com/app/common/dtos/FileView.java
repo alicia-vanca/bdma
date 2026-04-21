@@ -8,14 +8,13 @@ public record FileView(
         Long deviceId,
         String createDate,
         String name,
-        String path,
+        String syncedPath,
         String status,
         Long fileSize,
         String type,
         String createdAt,
         String username,
-        String deviceName
-) {
+        String deviceName) {
     public static FileView from(File f, String username, String deviceName) {
         return new FileView(
                 f.getId(),
@@ -23,13 +22,12 @@ public record FileView(
                 f.getDeviceId(),
                 f.getCreateDate(),
                 f.getName(),
-                f.getPath(),
+                f.getSyncedPath(),
                 f.getStatus(),
                 f.getFileSize(),
                 f.getType(),
                 f.getCreatedAt(),
                 username,
-                deviceName
-        );
+                deviceName);
     }
 }

@@ -1,14 +1,15 @@
 package com.app.common.repositories;
 
-import com.app.common.models.ValidatedDevice;
-import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
-
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
+
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import com.app.common.models.ValidatedDevice;
 
 @Repository
 public class ValidatedDeviceRepository {
@@ -27,6 +28,7 @@ public class ValidatedDeviceRepository {
         device.setWhitelistId(rs.getString("whitelist_id"));
         device.setValidatedAt(rs.getString("validated_at"));
         device.setLastSeenAt(rs.getString("last_seen_at"));
+        device.setCameraId(rs.getString("camera_id"));
         return device;
     }
 
@@ -39,13 +41,13 @@ public class ValidatedDeviceRepository {
         }
     }
 
-    public ValidatedDevice  saveOrUpdate(String accountUserId, String hardwareId, String whitelistId) {
+    public ValidatedDevice saveOrUpdate(String cameraId, String hardwareId, String whitelistId) {
         Optional<ValidatedDevice> existingOpt = findByHardwareId(hardwareId);
         if (existingOpt.isPresent()) {
             jdbcTemplate.update(
                     "UPDATE validated_device SET whitelist_id = ?, last_seen_at = datetime('now', 'localtime'), camera_id = ? WHERE hardware_id = ?",
                     whitelistId,
-                    accountUserId,
+                    cameraId,
                     hardwareId);
             ValidatedDevice updated = existingOpt.get();
             updated.setWhitelistId(whitelistId);
@@ -54,13 +56,13 @@ public class ValidatedDeviceRepository {
 
         jdbcTemplate.update(
                 "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), ?)",
-                accountUserId,
+                cameraId,
                 hardwareId,
                 whitelistId,
-                accountUserId);
+                cameraId);
 
         return findByHardwareId(hardwareId)
-                .orElse(new ValidatedDevice(null, accountUserId, hardwareId, whitelistId, null, null, accountUserId));
+                .orElse(new ValidatedDevice(null, cameraId, hardwareId, whitelistId, null, null, cameraId));
     }
 
     public Optional<Long> findDeviceIdByName(String deviceName) {
@@ -78,7 +80,7 @@ public class ValidatedDeviceRepository {
             return Optional.empty();
         }
     }
-    
+
     public List<ValidatedDevice> findAll() {
         return jdbcTemplate.query(
                 "SELECT * FROM validated_device ORDER BY last_seen_at DESC",
@@ -89,7 +91,6 @@ public class ValidatedDeviceRepository {
         jdbcTemplate.update(
                 "UPDATE validated_device SET device_name = ? WHERE id = ?",
                 deviceName,
-                id
-        );
+                id);
     }
 }

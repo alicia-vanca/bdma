@@ -13,9 +13,10 @@ public class File {
     private Long deviceId;
     private String createDate;
     private String name;
-    private String path;
+    private String syncedPath;
     private long fileSize;
     private String type;
     private String status;
     private String createdAt;
+    private String backedUpPath;
 }

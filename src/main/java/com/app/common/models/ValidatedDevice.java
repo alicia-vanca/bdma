@@ -10,9 +10,9 @@ import lombok.NoArgsConstructor;
 public class ValidatedDevice {
     private Long id;
     private String deviceName;
-    private String deviceId;
     private String hardwareId;
     private String whitelistId;
     private String validatedAt;
     private String lastSeenAt;
+    private String cameraId;
 }

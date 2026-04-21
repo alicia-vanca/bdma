@@ -45,6 +45,7 @@ bin/
 
 ### AI/Agent Instruction Files ###
 AGENTS.md
+TODO.md
 .github/copilot-instructions.md
 .github/instructions/code-style.instructions.md
 

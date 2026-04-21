@@ -48,67 +48,66 @@ public class DeviceValidationService {
         this.requiredDeviceDataFolder = requiredDeviceDataFolder;
     }
 
-    public DeviceValidationResult validateConnectedDevice(String serial) {
-        return validate(serial);
+    public DeviceValidationResult validateConnectedDevice(String adbSerial) {
+        return validate(adbSerial);
     }
 
-    public ValidatedDevice saveValidatedDevice(String accountUserId, String hardwareId, String whitelistId) {
-        return validatedDeviceRepository.saveOrUpdate(accountUserId, hardwareId, whitelistId);
+    public ValidatedDevice saveValidatedDevice(String cameraId, String hardwareId, String whitelistId) {
+        return validatedDeviceRepository.saveOrUpdate(cameraId, hardwareId, whitelistId);
     }
 
     // Validate connected device and return metadata used by the UI flow.
-    private DeviceValidationResult validate(String serial) {
-        if (serial == null || serial.isBlank()) {
-            return DeviceValidationResult.invalid(null, "Serial is required");
+    private DeviceValidationResult validate(String adbSerial) {
+        if (adbSerial == null || adbSerial.isBlank()) {
+            return DeviceValidationResult.invalid(null, "ADB serial is required");
         }
 
-        Map<String, String> props = adbClient.getProps(serial);
+        Map<String, String> props = adbClient.getProps(adbSerial);
         if (props.isEmpty()) {
-            return DeviceValidationResult.invalid(serial, "Cannot read device properties");
+            return DeviceValidationResult.invalid(adbSerial, "Cannot read device properties");
         }
 
         String hardwareId = sanitizeValue(props.get(SERIAL_PROPERTY));
         if (hardwareId.isBlank()) {
-            hardwareId = sanitizeValue(serial);
+            hardwareId = sanitizeValue(adbSerial);
         }
 
         List<ModelWhitelist> whitelists = whitelistRepository.findAllActiveWithRules();
         Optional<ModelWhitelist> matchedWhitelist = findMatchedWhitelist(whitelists, props);
         if (matchedWhitelist.isEmpty()) {
-            return DeviceValidationResult.invalid(serial, "Device does not match any active whitelist");
+            return DeviceValidationResult.invalid(adbSerial, "Device does not match any active whitelist");
         }
 
-        List<String> missingFiles = findMissingFiles(serial, Set.of(configCsonPath, requiredDeviceDataFolder));
+        List<String> missingFiles = findMissingFiles(adbSerial, Set.of(configCsonPath, requiredDeviceDataFolder));
         if (!missingFiles.isEmpty()) {
-            return DeviceValidationResult.invalid(serial, "Required files are missing");
+            return DeviceValidationResult.invalid(adbSerial, "Required files are missing");
         }
 
-        String configContent = adbClient.readTextFile(serial, configCsonPath);
+        String configContent = adbClient.readTextFile(adbSerial, configCsonPath);
 
         if (configContent == null || configContent.isBlank()) {
-            return DeviceValidationResult.invalid(serial, "account.user_id not found: config missing or unreadable");
+            return DeviceValidationResult.invalid(adbSerial, "account.user_id not found: config missing or unreadable");
         }
-        String accountUserId = extractAccountUserId(configContent);
-        if (accountUserId.isBlank()) {
-            return DeviceValidationResult.invalid(serial, "account.user_id is blank or invalid");
+        String cameraId = extractAccountUserId(configContent);
+        if (cameraId.isBlank()) {
+            return DeviceValidationResult.invalid(adbSerial, "account.user_id is blank or invalid");
         }
 
         ModelWhitelist whitelist = matchedWhitelist.get();
         Optional<ValidatedDevice> existingDevice = validatedDeviceRepository.findByHardwareId(hardwareId);
 
-        log.info("Validated device serial={} hardwareId={} whitelistId={} accountUserId={} alreadySaved={}",
-                serial,
+        log.info("Validated device adbSerial={} hardwareId={} whitelistId={} cameraId={} alreadySaved={}",
+                adbSerial,
                 hardwareId,
                 whitelist.getId(),
-                accountUserId,
+                cameraId,
                 existingDevice.isPresent());
 
         return DeviceValidationResult.valid(
-                serial,
-                hardwareId,
+                adbSerial,
                 whitelist.getId(),
                 whitelist.getModelName(),
-                accountUserId,
+                cameraId,
                 existingDevice.isPresent());
     }
 
@@ -139,10 +138,10 @@ public class DeviceValidationService {
         return true;
     }
 
-    private List<String> findMissingFiles(String serial, Set<String> requiredFiles) {
+    private List<String> findMissingFiles(String adbSerial, Set<String> requiredFiles) {
         List<String> missing = new ArrayList<>();
         for (String path : requiredFiles) {
-            if (!adbClient.fileExists(serial, path)) {
+            if (!adbClient.fileExists(adbSerial, path)) {
                 missing.add(path);
             }
         }

@@ -11,6 +11,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
+import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
+import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceEvent;
@@ -23,6 +25,7 @@ import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
+import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
@@ -63,6 +66,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DeviceTracker deviceTracker;
     private final DataSyncRunner syncRunner;
     private final SyncProgressTracker syncProgressTracker;
+    private final AdminSettingsDialogService adminSettingsService;
 
     @FXML
     private StackPane contentArea;
@@ -79,7 +83,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     private SettingsPopupHelper settingsPopupHelper;
     private DashboardController currentDashboardController;
-    private final Map<String, Alert> activeAlertsBySerial = new HashMap<>();
+    private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
     // Stored so the same reference can be passed to removeListener on logout.
     private java.util.function.Consumer<DeviceEvent> deviceEventListener;
 
@@ -92,7 +96,8 @@ public class AdminLayoutController extends BaseLayoutController {
             DeviceSyncQueue deviceSyncQueue,
             SyncProgressTracker syncProgressTracker,
             DeviceTracker deviceTracker,
-            DataSyncRunner syncRunner) {
+            DataSyncRunner syncRunner,
+            AdminSettingsDialogService adminSettingsService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
@@ -103,6 +108,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.deviceTracker = deviceTracker;
         this.syncRunner = syncRunner;
         this.syncProgressTracker = syncProgressTracker;
+        this.adminSettingsService = adminSettingsService;
     }
 
     @Override
@@ -214,7 +220,11 @@ public class AdminLayoutController extends BaseLayoutController {
             settingsPopupHelper.togglePopup();
             return;
         }
-        Stage stage = DialogHelper.createDialogStage(ViewPaths.ADMIN_SETTINGS_DIALOG, I18n.get("settings.title"));
+        DialogHelper.Dialog<AdminSettingsDialogController> dialog = DialogHelper.createDialog(
+                ViewPaths.ADMIN_SETTINGS_DIALOG,
+                I18n.get("settings.title"));
+        dialog.controller().setOnLanguageChangedAction(this::reloadUI);
+        Stage stage = dialog.stage();
         stage.setResizable(false);
         stage.showAndWait();
     }
@@ -251,15 +261,15 @@ public class AdminLayoutController extends BaseLayoutController {
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             Platform.runLater(() -> handleValidatedResult(event.validationResult()));
         } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
-            deviceSyncQueue.remove(event.serial());
-            Platform.runLater(() -> closeSyncConfirmationForSerial(event.serial()));
+            deviceSyncQueue.remove(event.hardwareId());
+            Platform.runLater(() -> closeSyncConfirmationForHardwareId(event.hardwareId()));
         }
     }
 
     // Programmatically dismiss any open sync-confirmation dialog for a device that
     // disconnected so the user is not left waiting on a stale prompt.
-    private void closeSyncConfirmationForSerial(String serial) {
-        Alert alert = activeAlertsBySerial.remove(serial);
+    private void closeSyncConfirmationForHardwareId(String hardwareId) {
+        Alert alert = activeAlertsByHardwareId.remove(hardwareId);
         if (alert == null) {
             return;
         }
@@ -271,12 +281,12 @@ public class AdminLayoutController extends BaseLayoutController {
         }
     }
 
-    private void registerAlert(String serial, Alert alert) {
-        activeAlertsBySerial.put(serial, alert);
+    private void registerAlert(String hardwareId, Alert alert) {
+        activeAlertsByHardwareId.put(hardwareId, alert);
     }
 
-    private void unregisterAlert(String serial, Alert alert) {
-        activeAlertsBySerial.remove(serial, alert);
+    private void unregisterAlert(String hardwareId, Alert alert) {
+        activeAlertsByHardwareId.remove(hardwareId, alert);
     }
 
     // Skip invalid or unrecognized connections; only process confirmed valid
@@ -286,15 +296,15 @@ public class AdminLayoutController extends BaseLayoutController {
             return;
         }
 
-        String accountUserId = result.getAccountUserId();
+        String cameraId = result.getCameraId();
         if (result.isAlreadySaved()) {
             // Update last_seen_at and enqueue sync for already-registered devices.
             deviceValidationService.saveValidatedDevice(
-                    accountUserId,
+                    cameraId,
                     result.getHardwareId(),
                     result.getMatchedWhitelistId());
-            showNoticeSuccess(I18n.get("device.connected.saved", accountUserId));
-            showSyncConfirmation(result.getSerial(), accountUserId);
+            showNoticeSuccess(I18n.get("device.connected.saved", cameraId));
+            showSyncConfirmation(result.getHardwareId(), cameraId);
             return;
         }
 
@@ -310,32 +320,32 @@ public class AdminLayoutController extends BaseLayoutController {
             return;
         }
 
-        String accountUserId = result.getAccountUserId();
+        String cameraId = result.getCameraId();
         Alert confirm = AlertHelper.createConfirmation(
                 I18n.get("device.save.title"),
                 I18n.get("device.save.header"),
                 I18n.get(
                         "device.save.content",
-                        accountUserId,
+                        cameraId,
                         result.getMatchedModelName()));
 
         ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
         ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
         AlertHelper.setButtons(confirm, yesButton, noButton);
 
-        registerAlert(result.getSerial(), confirm);
+        registerAlert(result.getHardwareId(), confirm);
         Optional<ButtonType> chosen;
         try {
             chosen = confirm.showAndWait();
         } finally {
-            unregisterAlert(result.getSerial(), confirm);
+            unregisterAlert(result.getHardwareId(), confirm);
         }
         if (chosen.isEmpty() || chosen.get() != yesButton) {
             return;
         }
 
         ValidatedDevice saved = deviceValidationService.saveValidatedDevice(
-                accountUserId,
+                cameraId,
                 result.getHardwareId(),
                 result.getMatchedWhitelistId());
         deviceTracker.markKnownAsSaved(result);
@@ -343,7 +353,7 @@ public class AdminLayoutController extends BaseLayoutController {
             currentDashboardController.markDeviceSaved(result, saved.getDeviceName());
         }
         showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
-        showSyncConfirmation(result.getSerial(), saved.getDeviceName());
+        showSyncConfirmation(result.getHardwareId(), saved.getDeviceName());
         refreshDashboardIfActive();
     }
 
@@ -374,6 +384,13 @@ public class AdminLayoutController extends BaseLayoutController {
         }
     }
 
+    @EventListener
+    public void onBackupCompleted(FileBackupCompletedEvent event) {
+        if (currentDashboardController != null) {
+            currentDashboardController.onBackupCompleted();
+        }
+    }
+
     private void handleRequestValidate(DeviceSummary summary) {
         if (summary == null || summary.getValidationResult() == null) {
             showNoticeError(I18n.get("device.validation.failed"));
@@ -395,31 +412,34 @@ public class AdminLayoutController extends BaseLayoutController {
         showSyncConfirmation(summary.getHardwareId(), summary.getDisplayName());
     }
 
-    private void showSyncConfirmation(String serial, String deviceName) {
+    private void showSyncConfirmation(String hardwareId, String cameraId) {
+        boolean autoDelete = adminSettingsService.getAutoDelete();
+        String contentKey = autoDelete ? "device.sync.content.autodelete" : "device.sync.content.keep";
+
         Alert confirm = AlertHelper.createConfirmation(
                 I18n.get("device.sync.title"),
-                I18n.get("device.sync.header"),
-                I18n.get("device.sync.content", deviceName));
+                I18n.get("device.sync.header", cameraId),
+                I18n.get(contentKey));
 
         ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
         ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
         AlertHelper.setButtons(confirm, yesButton, noButton);
 
-        registerAlert(serial, confirm);
+        registerAlert(hardwareId, confirm);
         try {
             Optional<ButtonType> chosen = confirm.showAndWait();
             if (chosen.isEmpty() || chosen.get() != yesButton) {
                 return;
             }
 
-            boolean queued = deviceSyncQueue.add(serial,
+            boolean queued = deviceSyncQueue.add(hardwareId,
                     new SyncContext(session.getUser().getUsername(), session.isAdmin()));
             if (queued) {
-                showNoticeSuccess(I18n.get("device.sync.queued", deviceName));
+                showNoticeSuccess(I18n.get("device.sync.queued", cameraId));
             }
             refreshDashboardIfActive();
         } finally {
-            unregisterAlert(serial, confirm);
+            unregisterAlert(hardwareId, confirm);
         }
     }
 }

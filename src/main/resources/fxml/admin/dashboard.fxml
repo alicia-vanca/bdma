@@ -12,11 +12,11 @@
         <ListView fx:id="deviceListView" VBox.vgrow="ALWAYS"/>
     </VBox>
     <Separator orientation="VERTICAL"/>
-    <VBox spacing="12" HBox.hgrow="ALWAYS" alignment="TOP_LEFT">
+    <VBox spacing="15" HBox.hgrow="ALWAYS" alignment="TOP_LEFT">
         <padding>
             <Insets top="0" right="0" bottom="0" left="12"/>
         </padding>
-        <Label text="%menu.dashboard" styleClass="title"/>
+        <Label text="%menu.dashboard" styleClass="title" minHeight="34" maxHeight="34"/>
         <StackPane fx:id="fileListContainer" VBox.vgrow="ALWAYS"/>
     </VBox>
 </HBox>

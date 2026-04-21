@@ -45,40 +45,40 @@ public class SyncProgressTracker {
 
     private final Map<String, SyncProgress> progressMap = new ConcurrentHashMap<>();
 
-    public void markQueued(String serial) {
-        progressMap.put(serial, SyncProgress.queued());
+    public void markQueued(String hardwareId) {
+        progressMap.put(hardwareId, SyncProgress.queued());
         notifyProgressChanged();
     }
 
-    public void markSyncing(String serial, int total, int passed, int failed) {
-        progressMap.put(serial, SyncProgress.syncing(total, passed, failed));
+    public void markSyncing(String hardwareId, int total, int passed, int failed) {
+        progressMap.put(hardwareId, SyncProgress.syncing(total, passed, failed));
         notifyProgressChanged();
     }
 
-    public void markCancelled(String serial) {
-        SyncProgress current = progressMap.get(serial);
+    public void markCancelled(String hardwareId) {
+        SyncProgress current = progressMap.get(hardwareId);
         if (current != null && current.status() == SyncStatus.SYNCING) {
-            progressMap.put(serial, SyncProgress.cancelled(current.total(), current.passed(), current.failed()));
+            progressMap.put(hardwareId, SyncProgress.cancelled(current.total(), current.passed(), current.failed()));
         } else {
-            progressMap.remove(serial);
+            progressMap.remove(hardwareId);
         }
         notifyProgressChanged();
     }
 
-    public void markDone(String serial) {
-        SyncProgress current = progressMap.get(serial);
+    public void markDone(String hardwareId) {
+        SyncProgress current = progressMap.get(hardwareId);
         if (current != null && current.status() == SyncStatus.SYNCING) {
-            progressMap.put(serial, SyncProgress.completed(current.total(), current.passed(), current.failed()));
+            progressMap.put(hardwareId, SyncProgress.completed(current.total(), current.passed(), current.failed()));
         } else if (current != null && current.status() == SyncStatus.CANCELLED) {
             // keep cancelled status if already set
         } else {
-            progressMap.remove(serial);
+            progressMap.remove(hardwareId);
         }
         notifyProgressChanged();
     }
 
-    public SyncProgress getProgress(String serial) {
-        return progressMap.getOrDefault(serial, SyncProgress.idle());
+    public SyncProgress getProgress(String hardwareId) {
+        return progressMap.getOrDefault(hardwareId, SyncProgress.idle());
     }
 
     private void notifyProgressChanged() {
