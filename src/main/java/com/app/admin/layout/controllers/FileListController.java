@@ -3,17 +3,14 @@ package com.app.admin.layout.controllers;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-import com.app.common.definitions.enums.FileType;
-
-import lombok.Setter;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileView;
 import com.app.common.modules.i18n.I18n;
@@ -37,10 +34,10 @@ import javafx.util.StringConverter;
 @Scope("prototype")
 public class FileListController {
 
-    private static final int DEFAULT_PAGE_SIZE = 50;
-    private static final List<Integer> PAGE_SIZE_THRESHOLDS = List.of(10, 25, 50, 100);
-    private static final DateTimeFormatter DATE_PICKER_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final DateTimeFormatter DATE_DISPLAY_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
+    private static final DateTimeFormatter DATE_PICKER_FORMATTER = DateTimeFormatter
+            .ofPattern(AppConstants.DATE_PICKER_FORMAT);
+    private static final DateTimeFormatter DATE_DISPLAY_FORMATTER = DateTimeFormatter
+            .ofPattern(AppConstants.DATE_DISPLAY_FORMAT);
 
     @FXML
     private DatePicker dateFromPicker;
@@ -82,9 +79,8 @@ public class FileListController {
     private String activeHardwareId;
     private boolean initializing = true;
     private List<FileView> filteredFiles = new ArrayList<>();
-    private int pageSize = DEFAULT_PAGE_SIZE;
+    private int pageSize = AppConstants.DEFAULT_PAGE_SIZE;
     private int currentPageIndex = 0;
-    @Setter
     private Runnable onClearFilter;
 
     public FileListController(FileService fileService, UserService userService, Session session) {
@@ -116,7 +112,7 @@ public class FileListController {
     }
 
     private void setupDatePickers() {
-        StringConverter<LocalDate> converter = new StringConverter<>() {
+        StringConverter<LocalDate> converter = new StringConverter<LocalDate>() {
             @Override
             public String toString(LocalDate date) {
                 return date != null ? date.format(DATE_PICKER_FORMATTER) : "";
@@ -149,11 +145,16 @@ public class FileListController {
         refresh(buildFilter());
     }
 
+    public void setOnClearFilter(Runnable callback) {
+        this.onClearFilter = callback;
+    }
+
     @FXML
     public void clearFilter() {
         dateFromPicker.setValue(null);
         dateToPicker.setValue(null);
         userFilterCombo.getSelectionModel().selectFirst();
+        typeFilterCombo.getSelectionModel().selectFirst();
         activeHardwareId = null;
         if (onClearFilter != null) {
             onClearFilter.run();
@@ -173,8 +174,8 @@ public class FileListController {
     }
 
     private void setupPageSizeComboBox() {
-        cbPageSize.getItems().setAll(PAGE_SIZE_THRESHOLDS);
-        cbPageSize.setValue(DEFAULT_PAGE_SIZE);
+        cbPageSize.getItems().setAll(AppConstants.PAGE_SIZE_THRESHOLDS);
+        cbPageSize.setValue(AppConstants.DEFAULT_PAGE_SIZE);
         cbPageSize.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == null || Objects.equals(newValue, pageSize)) {
                 return;
@@ -359,8 +360,7 @@ public class FileListController {
         var options = new ArrayList<TypeOption>();
         options.add(new TypeOption(null, I18n.get("filter.allTypes")));
 
-        Arrays.stream(FileType.values())
-                .map(FileType::getValue)
+        AppConstants.MEDIA_TYPES.stream()
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(type -> options.add(new TypeOption(type, I18n.get("file.type." + type))));
 

@@ -191,7 +191,7 @@ public class FileRepository {
         // type
         if (filter.getType() != null) {
             sql.append(" AND f.type = ?");
-            params.add(filter.getType().toLowerCase()); // tránh mismatch
+            params.add(filter.getType());
         }
 
         // date from

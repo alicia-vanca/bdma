@@ -65,6 +65,10 @@ public final class AppConstants {
     public static final java.util.List<String> MEDIA_TYPES = java.util.List.of("audio", "image", "video", "IMP", "SOS");
     public static final int MAX_RETRY = 3;
 
+    // ────────────── File List ──────────────
+    public static final String DATE_PICKER_FORMAT = "dd/MM/yyyy";
+    public static final String DATE_DISPLAY_FORMAT = "dd/MM/yyyy HH:mm:ss";
+
     // ────────────── Update ──────────────
     public static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
     public static final String DATE_FORMAT = "yyyy-MM-dd";

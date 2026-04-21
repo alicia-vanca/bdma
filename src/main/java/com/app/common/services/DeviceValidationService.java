@@ -52,8 +52,8 @@ public class DeviceValidationService {
         return validate(adbSerial);
     }
 
-    public ValidatedDevice saveValidatedDevice(String deviceName, String hardwareId, String whitelistId) {
-        return validatedDeviceRepository.saveOrUpdate(deviceName, hardwareId, whitelistId);
+    public ValidatedDevice saveValidatedDevice(String cameraId, String hardwareId, String whitelistId) {
+        return validatedDeviceRepository.saveOrUpdate(cameraId, hardwareId, whitelistId);
     }
 
     // Validate connected device and return metadata used by the UI flow.
@@ -88,26 +88,26 @@ public class DeviceValidationService {
         if (configContent == null || configContent.isBlank()) {
             return DeviceValidationResult.invalid(adbSerial, "account.user_id not found: config missing or unreadable");
         }
-        String accountUserId = extractAccountUserId(configContent);
-        if (accountUserId.isBlank()) {
+        String cameraId = extractAccountUserId(configContent);
+        if (cameraId.isBlank()) {
             return DeviceValidationResult.invalid(adbSerial, "account.user_id is blank or invalid");
         }
 
         ModelWhitelist whitelist = matchedWhitelist.get();
         Optional<ValidatedDevice> existingDevice = validatedDeviceRepository.findByHardwareId(hardwareId);
 
-        log.info("Validated device adbSerial={} hardwareId={} whitelistId={} accountUserId={} alreadySaved={}",
+        log.info("Validated device adbSerial={} hardwareId={} whitelistId={} cameraId={} alreadySaved={}",
                 adbSerial,
                 hardwareId,
                 whitelist.getId(),
-                accountUserId,
+                cameraId,
                 existingDevice.isPresent());
 
         return DeviceValidationResult.valid(
                 adbSerial,
                 whitelist.getId(),
                 whitelist.getModelName(),
-                accountUserId,
+                cameraId,
                 existingDevice.isPresent());
     }
 

@@ -25,9 +25,9 @@ import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
+import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
-import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
@@ -296,15 +296,15 @@ public class AdminLayoutController extends BaseLayoutController {
             return;
         }
 
-        String deviceName = result.getAccountUserId();
+        String cameraId = result.getCameraId();
         if (result.isAlreadySaved()) {
             // Update last_seen_at and enqueue sync for already-registered devices.
             deviceValidationService.saveValidatedDevice(
-                    deviceName,
+                    cameraId,
                     result.getHardwareId(),
                     result.getMatchedWhitelistId());
-            showNoticeSuccess(I18n.get("device.connected.saved", deviceName));
-            showSyncConfirmation(result.getHardwareId(), deviceName);
+            showNoticeSuccess(I18n.get("device.connected.saved", cameraId));
+            showSyncConfirmation(result.getHardwareId(), cameraId);
             return;
         }
 
@@ -320,13 +320,13 @@ public class AdminLayoutController extends BaseLayoutController {
             return;
         }
 
-        String deviceName = result.getAccountUserId();
+        String cameraId = result.getCameraId();
         Alert confirm = AlertHelper.createConfirmation(
                 I18n.get("device.save.title"),
                 I18n.get("device.save.header"),
                 I18n.get(
                         "device.save.content",
-                        deviceName,
+                        cameraId,
                         result.getMatchedModelName()));
 
         ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
@@ -345,7 +345,7 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         ValidatedDevice saved = deviceValidationService.saveValidatedDevice(
-                deviceName,
+                cameraId,
                 result.getHardwareId(),
                 result.getMatchedWhitelistId());
         deviceTracker.markKnownAsSaved(result);
@@ -412,13 +412,13 @@ public class AdminLayoutController extends BaseLayoutController {
         showSyncConfirmation(summary.getHardwareId(), summary.getDisplayName());
     }
 
-    private void showSyncConfirmation(String hardwareId, String deviceName) {
+    private void showSyncConfirmation(String hardwareId, String cameraId) {
         boolean autoDelete = adminSettingsService.getAutoDelete();
         String contentKey = autoDelete ? "device.sync.content.autodelete" : "device.sync.content.keep";
 
         Alert confirm = AlertHelper.createConfirmation(
                 I18n.get("device.sync.title"),
-                I18n.get("device.sync.header", deviceName),
+                I18n.get("device.sync.header", cameraId),
                 I18n.get(contentKey));
 
         ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
@@ -435,7 +435,7 @@ public class AdminLayoutController extends BaseLayoutController {
             boolean queued = deviceSyncQueue.add(hardwareId,
                     new SyncContext(session.getUser().getUsername(), session.isAdmin()));
             if (queued) {
-                showNoticeSuccess(I18n.get("device.sync.queued", deviceName));
+                showNoticeSuccess(I18n.get("device.sync.queued", cameraId));
             }
             refreshDashboardIfActive();
         } finally {

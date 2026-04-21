@@ -117,7 +117,7 @@ public class DeviceTracker implements Runnable {
                 result.getHardwareId(),
                 result.getMatchedWhitelistId(),
                 result.getMatchedModelName(),
-                result.getAccountUserId(),
+                result.getCameraId(),
                 true);
         knownResults.put(saved.getHardwareId(), saved);
     }

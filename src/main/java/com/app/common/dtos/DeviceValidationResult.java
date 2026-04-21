@@ -13,7 +13,7 @@ public class DeviceValidationResult {
     private String message;
     private String matchedWhitelistId;
     private String matchedModelName;
-    private String accountUserId;
+    private String cameraId;
     private boolean alreadySaved;
 
     public static DeviceValidationResult invalid(String hardwareId, String message) {
@@ -23,9 +23,9 @@ public class DeviceValidationResult {
     public static DeviceValidationResult valid(String hardwareId,
             String whitelistId,
             String modelName,
-            String accountUserId,
+            String cameraId,
             boolean alreadySaved) {
         return new DeviceValidationResult(true, hardwareId, "Device validated",
-                whitelistId, modelName, accountUserId, alreadySaved);
+                whitelistId, modelName, cameraId, alreadySaved);
     }
 }
