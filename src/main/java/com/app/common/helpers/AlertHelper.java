@@ -10,6 +10,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.stage.Stage;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -100,17 +101,17 @@ public final class AlertHelper {
     }
 
     private static ImageView createLogoGraphic() {
-        InputStream logoStream = AlertHelper.class.getResourceAsStream(LOGO_PATH);
-        if (logoStream == null) {
+        try (InputStream logoStream = AlertHelper.class.getResourceAsStream(LOGO_PATH)) {
+            if (logoStream == null) {
+                return null;
+            }
+            Image image = new Image(logoStream, 48, 48, true, true);
+            ImageView imageView = new ImageView(image);
+            imageView.setPreserveRatio(true);
+            imageView.setSmooth(true);
+            return imageView;
+        } catch (IOException e) {
             return null;
         }
-
-        Image image = new Image(logoStream);
-        ImageView imageView = new ImageView(image);
-        imageView.setFitWidth(48);
-        imageView.setFitHeight(48);
-        imageView.setPreserveRatio(true);
-        imageView.setSmooth(true);
-        return imageView;
     }
 }

@@ -5,7 +5,9 @@ import org.slf4j.LoggerFactory;
 
 import com.app.common.definitions.enums.FolderType;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -192,7 +194,7 @@ public class FolderSecurityService {
         Files.createDirectories(target);
 
         try (var entries = Files.list(source)) {
-            for (Path entry : entries.toList()) {
+            for (Path entry : (Iterable<Path>) entries::iterator) {
                 Path targetEntry = target.resolve(entry.getFileName().toString());
                 if (Files.isDirectory(entry)) {
                     mergeDirectory(entry, targetEntry);
@@ -213,7 +215,7 @@ public class FolderSecurityService {
         }
 
         try (var entries = Files.list(dir)) {
-            for (Path entry : entries.toList()) {
+            for (Path entry : (Iterable<Path>) entries::iterator) {
                 if (Files.isDirectory(entry)) {
                     deleteDirectory(entry);
                 } else {
@@ -265,7 +267,15 @@ public class FolderSecurityService {
                 .redirectErrorStream(true)
                 .start();
 
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        StringBuilder sb = new StringBuilder();
+        try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!sb.isEmpty()) sb.append('\n');
+                sb.append(line);
+            }
+        }
+        String output = sb.toString().trim();
         int code = process.waitFor();
 
         if (!output.isEmpty()) {
