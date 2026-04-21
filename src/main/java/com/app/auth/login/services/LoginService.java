@@ -1,11 +1,12 @@
 package com.app.auth.login.services;
 
-import com.app.common.models.User;
-import com.app.common.modules.datasync.DataSyncRunner;
-import com.app.common.modules.session.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+
+import com.app.common.models.User;
+import com.app.common.modules.datasync.DataSyncRunner;
+import com.app.common.modules.session.Session;
 
 @Service
 public class LoginService {
@@ -16,7 +17,7 @@ public class LoginService {
     private final DataSyncRunner syncRunner;
 
     public LoginService(Session session,
-                        DataSyncRunner syncRunner) {
+            DataSyncRunner syncRunner) {
         this.session = session;
         this.syncRunner = syncRunner;
     }
@@ -29,7 +30,7 @@ public class LoginService {
             return;
         }
 
-        syncRunner.start();
+        syncRunner.startSyncWorker();
 
         log.info("Login [{}] [{}] — sync runner started.",
                 user.getUsername(),

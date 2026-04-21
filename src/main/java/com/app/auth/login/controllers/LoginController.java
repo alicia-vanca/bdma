@@ -1,18 +1,23 @@
 package com.app.auth.login.controllers;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
 import com.app.MainApp;
 import com.app.auth.login.services.LoginService;
+import com.app.common.definitions.ViewPaths;
 import com.app.common.helpers.CssLoader;
 import com.app.common.helpers.SpringContextHolder;
 import com.app.common.helpers.ViewLoader;
+import com.app.common.models.User;
+import com.app.common.modules.appupdate.controllers.AppUpdateController;
+import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
-import com.app.common.modules.appupdate.controllers.AppUpdateController;
-import com.app.common.definitions.ViewPaths;
 import com.app.common.services.UserService;
 import com.app.common.services.UserSettingService;
-import com.app.common.models.User;
 
 import javafx.fxml.FXML;
 import javafx.scene.Parent;
@@ -20,9 +25,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 @Component
 public class LoginController {
@@ -107,6 +109,10 @@ public class LoginController {
 
             // Trigger background sync without blocking UI
             loginService.onLoginSuccess();
+
+            // Start device tracker after successful login
+            DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
+            dataSyncRunner.startDeviceTracker();
 
             // Navigate to main screen
             MainApp.showAdmin();

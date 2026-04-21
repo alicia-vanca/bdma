@@ -1,13 +1,14 @@
 package com.app.common.services;
 
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileView;
 import com.app.common.models.User;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.FileRepository;
-import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @Service
 public class FileService {
@@ -23,7 +24,7 @@ public class FileService {
     public List<FileView> query(FileFilter filter) {
         User currentUser = session.getUser();
 
-        if (!session.isAdmin()) {
+        if (currentUser != null && !session.isAdmin()) {
             filter.setUserId(currentUser.getId());
         }
 

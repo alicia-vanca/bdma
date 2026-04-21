@@ -4,7 +4,7 @@ import java.util.Comparator;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import org.springframework.context.annotation.Scope;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
@@ -18,7 +18,6 @@ import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.ValidatedDeviceRepository;
-import com.app.common.services.DeviceTracker;
 import com.app.common.services.SyncProgressTracker;
 
 import javafx.application.Platform;
@@ -42,7 +41,6 @@ import javafx.scene.shape.Circle;
 import javafx.scene.shape.SVGPath;
 
 @Component
-@Scope("prototype")
 public class DashboardController extends BaseLayoutController {
 
     @FXML
@@ -50,7 +48,6 @@ public class DashboardController extends BaseLayoutController {
     @FXML
     private StackPane fileListContainer;
 
-    private final DeviceTracker deviceTracker;
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final SyncProgressTracker syncProgressTracker;
     private final Session session;
@@ -59,8 +56,6 @@ public class DashboardController extends BaseLayoutController {
     private FileListController fileListController;
     private boolean deviceStateInitialized;
     private Consumer<DeviceSummary> onRequestValidate;
-    private Consumer<DeviceSummary> onRequestSync;
-    private java.util.function.Consumer<DeviceEvent> deviceEventListener;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
             DashboardController::sortName,
             String.CASE_INSENSITIVE_ORDER)
@@ -68,12 +63,10 @@ public class DashboardController extends BaseLayoutController {
                     String.CASE_INSENSITIVE_ORDER);
 
     public DashboardController(ViewLoader viewLoader,
-            DeviceTracker deviceTracker,
             ValidatedDeviceRepository validatedDeviceRepository,
             SyncProgressTracker syncProgressTracker,
             Session session) {
         super(viewLoader);
-        this.deviceTracker = deviceTracker;
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.syncProgressTracker = syncProgressTracker;
         this.session = session;
@@ -82,18 +75,6 @@ public class DashboardController extends BaseLayoutController {
     public void setOnRequestValidate(Consumer<DeviceSummary> callback) {
         this.onRequestValidate = callback;
         updateCellFactory();
-    }
-
-    public void setOnRequestSync(Consumer<DeviceSummary> callback) {
-        this.onRequestSync = callback;
-        updateCellFactory();
-    }
-
-    public void stopTracking() {
-        if (deviceEventListener != null) {
-            deviceTracker.removeListener(deviceEventListener);
-            deviceEventListener = null;
-        }
     }
 
     private void updateCellFactory() {
@@ -300,12 +281,8 @@ public class DashboardController extends BaseLayoutController {
                 return;
             fileListController.filterByDevice(summary.getHardwareId());
 
-            if (event.getClickCount() == 2) {
-                if (summary.isUnvalidated() && onRequestValidate != null) {
-                    onRequestValidate.accept(summary);
-                } else if (summary.isConnected() && onRequestSync != null) {
-                    onRequestSync.accept(summary);
-                }
+            if (event.getClickCount() == 2 && summary.isUnvalidated() && onRequestValidate != null) {
+                onRequestValidate.accept(summary);
             }
         });
     }
@@ -326,7 +303,6 @@ public class DashboardController extends BaseLayoutController {
         deviceListView.setItems(deviceItems);
         if (!deviceStateInitialized) {
             loadSavedDevices();
-            registerDeviceTrackerListener();
             deviceStateInitialized = true;
         }
         refresh();
@@ -342,31 +318,26 @@ public class DashboardController extends BaseLayoutController {
     // Clear runtime device state only when the user session ends so language or
     // tab reloads can reuse the same in-memory list.
     public void resetState() {
-        stopTracking();
         deviceItems.clear();
         deviceStateInitialized = false;
     }
 
-    // Register listener to receive real-time device connection events from ADB
-    // tracker
-    private void registerDeviceTrackerListener() {
-        if (deviceEventListener != null) {
+        // Handle device connection/disconnection events from DeviceTracker
+    @EventListener
+    public void handleTrackerEvent(DeviceEvent event) {
+        // Ignore events before UI initialization
+        if (deviceListView == null) {
             return;
         }
 
-        deviceEventListener = event -> Platform.runLater(() -> handleTrackerEvent(event));
-        deviceTracker.addListener(deviceEventListener);
-    }
-
-    // Update device status based on ADB event: add new devices or mark existing
-    // ones as connected/disconnected
-    private void handleTrackerEvent(DeviceEvent event) {
-        if (event.type() == DeviceEvent.EventType.CONNECTED) {
-            handleConnected(event);
-        } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
-            handleDisconnected(event.hardwareId());
-        }
-        deviceListView.refresh();
+        Platform.runLater(() -> {
+            if (event.type() == DeviceEvent.EventType.CONNECTED) {
+                handleConnected(event);
+            } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
+                handleDisconnected(event.hardwareId());
+            }
+            deviceListView.refresh();
+        });
     }
 
     // Handle device connection: update saved device status or add as unvalidated
@@ -495,15 +466,13 @@ public class DashboardController extends BaseLayoutController {
         return "";
     }
 
-    // Build DeviceSummary from persisted device: mark CONNECTED if currently
-    // plugged in, otherwise OFFLINE
+    // Build DeviceSummary from persisted device: status will be updated by
+    // device tracker events when devices connect/disconnect
     private DeviceSummary toSavedSummary(ValidatedDevice device) {
-        Optional<DeviceValidationResult> known = deviceTracker.getKnownResultByHardwareId(device.getHardwareId());
-        DeviceSummary.Status status = known.isPresent() ? DeviceSummary.Status.CONNECTED : DeviceSummary.Status.OFFLINE;
         DeviceSummary summary = new DeviceSummary(
                 device.getHardwareId(),
                 device.getDeviceName(),
-                status,
+                DeviceSummary.Status.OFFLINE,
                 SyncProgressTracker.SyncProgress.idle(),
                 null);
         summary.setSyncProgress(resolveSyncProgress(summary));
