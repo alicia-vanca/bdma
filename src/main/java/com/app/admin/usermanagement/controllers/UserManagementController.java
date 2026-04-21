@@ -120,11 +120,8 @@ public class UserManagementController {
         addActionColumn();
         loadData();
         restoreFilterState();
-        // Refresh user list and notify when sync auto-creates a new account.
-        dataSyncService.setOnUserAutoCreated(username -> Platform.runLater(() -> {
-            loadData();
-            showSuccess(I18n.get("user.auto.created", username));
-        }));
+        // Refresh user list when sync auto-creates a new account
+        dataSyncService.setOnUserAutoCreated(username -> Platform.runLater(this::loadData));
     }
 
     private void setupRoleComboBox() {
