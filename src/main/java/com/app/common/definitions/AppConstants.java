@@ -51,8 +51,19 @@ public final class AppConstants {
     // ────────────── File Status ──────────────
     public static final String FILE_STATUS_SYNCED = "SYNCED";
     public static final String FILE_STATUS_BACKEDUP = "BACKEDUP";
-    public static final String FILE_STATUS_PENDING_LARGE = "PENDING_LARGE";
     public static final String FILE_STATUS_FAILED = "FAILED";
+
+    // ────────────── Dashboard ──────────────
+    public static final String KEY_DEVICE_CONNECTED = "dashboard.device.connected";
+    public static final String KEY_DEVICE_SYNCED = "dashboard.device.synced";
+
+    // ────────────── User Management ──────────────
+    public static final int DEFAULT_PAGE_SIZE = 50;
+    public static final java.util.List<Integer> PAGE_SIZE_THRESHOLDS = java.util.List.of(10, 25, 50, 100);
+
+    // ────────────── Data Sync ──────────────
+    public static final java.util.List<String> MEDIA_TYPES = java.util.List.of("audio", "image", "video", "IMP", "SOS");
+    public static final int MAX_RETRY = 3;
 
     // ────────────── Update ──────────────
     public static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";

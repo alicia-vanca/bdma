@@ -1,11 +1,14 @@
 package com.app.common.modules.databackup.workers;
 
-import com.app.common.modules.foldermanager.services.FolderManagerService;
-import com.app.common.modules.databackup.queues.DataBackupQueue;
-import com.app.common.modules.databackup.services.DataBackupService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+
+import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
+import com.app.common.modules.databackup.queues.DataBackupQueue;
+import com.app.common.modules.databackup.services.DataBackupService;
+import com.app.common.modules.foldermanager.services.FolderManagerService;
 
 /**
  * Worker thread responsible for backing up files from dataDir to backupDir.
@@ -21,13 +24,16 @@ public class DataBackupWorker implements Runnable {
     private final DataBackupQueue dataBackupQueue;
     private final FolderManagerService folderManager;
     private final DataBackupService dataBackupService;
+    private final ApplicationEventPublisher publisher;
 
     public DataBackupWorker(DataBackupQueue dataBackupQueue,
             FolderManagerService folderManager,
-            DataBackupService dataBackupService) {
+            DataBackupService dataBackupService,
+            ApplicationEventPublisher publisher) {
         this.dataBackupQueue = dataBackupQueue;
         this.folderManager = folderManager;
         this.dataBackupService = dataBackupService;
+        this.publisher = publisher;
     }
 
     @Override
@@ -45,9 +51,13 @@ public class DataBackupWorker implements Runnable {
 
                     folderManager.backupFromSave(relativeName);
 
-                    dataBackupService.markBackup(localPath);
+                    String backupPath = folderManager.getBackupPath(relativeName);
+
+                    dataBackupService.markBackup(localPath, backupPath);
 
                     log.info("Backed up: {}", relativeName);
+
+                    publisher.publishEvent(new FileBackupCompletedEvent(localPath));
 
                 } else {
                     log.warn("BackupDir not configured, skipping: {}", localPath);

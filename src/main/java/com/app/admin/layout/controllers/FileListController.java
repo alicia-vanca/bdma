@@ -46,7 +46,7 @@ public class FileListController {
     @FXML
     private ComboBox<UserOption> userFilterCombo;
     @FXML
-    private ComboBox<String> typeFilterCombo;
+    private ComboBox<TypeOption> typeFilterCombo;
     @FXML
     private TableView<FileView> fileTable;
     @FXML
@@ -135,8 +135,8 @@ public class FileListController {
         colDevice.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().deviceName()));
         colUser.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().username()));
         colSize.setCellValueFactory(c -> new SimpleStringProperty(formatSize(c.getValue().fileSize())));
-        colStatus.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().status()));
-        colType.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().type()));
+        colStatus.setCellValueFactory(c -> new SimpleStringProperty(formatStatus(c.getValue().status())));
+        colType.setCellValueFactory(c -> new SimpleStringProperty(formatType(c.getValue().type())));
         colDate.setCellValueFactory(c -> new SimpleStringProperty(formatDate(c.getValue().createDate())));
     }
 
@@ -241,9 +241,9 @@ public class FileListController {
             filter.setUserId(userOption.id());
         }
 
-        String type = typeFilterCombo.getValue();
-        if (type != null && !I18n.get("filter.allTypes").equalsIgnoreCase(type)) {
-            filter.setType(type);
+        TypeOption typeOption = typeFilterCombo.getValue();
+        if (typeOption != null && typeOption.key() != null) {
+            filter.setType(typeOption.key());
         }
 
         return filter;
@@ -276,7 +276,33 @@ public class FileListController {
         }
     }
 
+    // Translate file status using i18n keys
+    private String formatStatus(String status) {
+        if (status == null || status.isEmpty()) {
+            return "";
+        }
+        String key = "file.status." + status;
+        return I18n.get(key);
+    }
+
+    // Translate file type using i18n keys
+    private String formatType(String type) {
+        if (type == null || type.isEmpty()) {
+            return "";
+        }
+        String key = "file.type." + type;
+        return I18n.get(key);
+    }
+
     record UserOption(Long id, String label) {
+        @NotNull
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    record TypeOption(String key, String label) {
         @NotNull
         @Override
         public String toString() {
@@ -330,18 +356,22 @@ public class FileListController {
     }
 
     private void loadTypes() {
-        var options = new ArrayList<String>();
-        options.add(I18n.get("filter.allTypes"));
+        var options = new ArrayList<TypeOption>();
+        options.add(new TypeOption(null, I18n.get("filter.allTypes")));
 
         TYPES.stream()
                 .sorted(String.CASE_INSENSITIVE_ORDER)
-                .forEach(options::add);
+                .forEach(type -> options.add(new TypeOption(type, I18n.get("file.type." + type))));
 
         typeFilterCombo.setItems(FXCollections.observableArrayList(options));
         typeFilterCombo.getSelectionModel().selectFirst();
     }
 
     public void onSyncCompleted() {
+        Platform.runLater(() -> refresh(buildFilter()));
+    }
+
+    public void onBackupCompleted() {
         Platform.runLater(() -> refresh(buildFilter()));
     }
 }

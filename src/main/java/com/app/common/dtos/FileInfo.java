@@ -9,12 +9,15 @@ package com.app.common.dtos;
  * → deviceName = "000003"
  * → userName = "000000"
  * → createDate = "2026-04-08 15:50:23"
+ * → size = file size in bytes
+ * → type = folder category from remote path
  */
 public record FileInfo(
         String deviceName,
         String userName,
-        String createDate // "yyyy-MM-dd HH:mm:ss"
-) {
+        String createDate, // "yyyy-MM-dd HH:mm:ss"
+        long size,
+        String type) {
 
     private static final String PREFIX = "DSJ_";
 
@@ -23,6 +26,22 @@ public record FileInfo(
      * Returns null if the format is invalid.
      */
     public static FileInfo parse(String fileName) {
+        return parse(fileName, 0, null);
+    }
+
+    /**
+     * Parses a FileInfo from a file name with size.
+     * Returns null if the format is invalid.
+     */
+    public static FileInfo parse(String fileName, long size) {
+        return parse(fileName, size, null);
+    }
+
+    /**
+     * Parses a FileInfo from a file name with size and type.
+     * Returns null if the format is invalid.
+     */
+    public static FileInfo parse(String fileName, long size, String type) {
         if (fileName == null || fileName.isBlank())
             return null;
 
@@ -60,7 +79,7 @@ public record FileInfo(
                     + timePart.substring(2, 4) + ":"
                     + timePart.substring(4, 6);
 
-            return new FileInfo(deviceName, userName, createDate);
+            return new FileInfo(deviceName, userName, createDate, size, type);
 
         } catch (Exception e) {
             return null;

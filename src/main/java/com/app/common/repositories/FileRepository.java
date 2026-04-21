@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
+import com.app.common.dtos.FileInfo;
 import com.app.common.dtos.FileView;
 import com.app.common.exceptions.RepositoryException;
 import com.app.common.models.File;
@@ -28,19 +29,18 @@ public class FileRepository {
     /**
      * Loads paths of files already synced or backed up.
      * Used for in-memory deduplication to avoid re-syncing existing files.
-     * Files with status PENDING_LARGE or FAILED are excluded.
+     * Files with status FAILED are excluded.
      */
     public Set<String> loadSyncedPaths(Long deviceId) {
         String sql = """
-                    SELECT path FROM files
-                    WHERE device_id = ? AND status IN (?, ?, ?)
+                    SELECT synced_path FROM files
+                    WHERE device_id = ? AND status IN (?, ?)
                 """;
 
         return new HashSet<>(
                 jdbcTemplate.queryForList(sql, String.class, deviceId,
                         AppConstants.FILE_STATUS_SYNCED,
-                        AppConstants.FILE_STATUS_BACKEDUP,
-                        AppConstants.FILE_STATUS_PENDING_LARGE));
+                        AppConstants.FILE_STATUS_BACKEDUP));
     }
 
     /**
@@ -49,7 +49,7 @@ public class FileRepository {
      */
     public List<String> loadPendingBackup() {
         String sql = """
-                    SELECT path FROM files
+                    SELECT synced_path FROM files
                     WHERE status = ?
                 """;
 
@@ -57,31 +57,47 @@ public class FileRepository {
     }
 
     /**
-     * Updates file status by path.
+     * Updates file status by synced_path.
      */
-    public void updateStatus(String path, String status) {
+    public void updateStatusBySyncedPath(String syncedPath, String status) {
         String sql = """
-                    UPDATE files SET status = ? WHERE path = ?
+                    UPDATE files SET status = ? WHERE synced_path = ?
                 """;
 
         try {
-            jdbcTemplate.update(sql, status, path);
+            jdbcTemplate.update(sql, status, syncedPath);
         } catch (Exception e) {
-            throw new RepositoryException("updateStatus failed: " + path, e);
+            throw new RepositoryException("updateStatusBySyncedPath failed: " + syncedPath, e);
+        }
+    }
+
+    /**
+     * Updates file status and backed_up_path after successful backup.
+     */
+    public void updateStatusAndBackupPath(String syncedPath, String backedUpPath, String status) {
+        String sql = """
+                    UPDATE files SET status = ?, backed_up_path = ? WHERE synced_path = ?
+                """;
+
+        try {
+            jdbcTemplate.update(sql, status, backedUpPath, syncedPath);
+        } catch (Exception e) {
+            throw new RepositoryException("updateStatusAndBackupPath failed: " + syncedPath, e);
         }
     }
 
     /**
      * Inserts or updates a file record.
      * - create_date is derived from file name.
-     * - On conflict (device_id, path), updates status, file_size, create_date, and
+     * - On conflict (device_id, synced_path), updates status, file_size,
+     * create_date, and
      * type.
      */
     public void insert(File file) {
         String sql = """
-                    INSERT INTO files (user_id, device_id, create_date, name, path, file_size, type, status)
+                    INSERT INTO files (user_id, device_id, create_date, name, synced_path, file_size, type, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(device_id, path) DO UPDATE SET
+                    ON CONFLICT(device_id, synced_path) DO UPDATE SET
                         status      = excluded.status,
                         file_size   = excluded.file_size,
                         create_date = excluded.create_date,
@@ -95,12 +111,12 @@ public class FileRepository {
                     file.getDeviceId(),
                     file.getCreateDate(),
                     file.getName(),
-                    file.getPath(),
+                    file.getSyncedPath(),
                     file.getFileSize(),
                     file.getType(),
                     file.getStatus());
         } catch (Exception e) {
-            throw new RepositoryException("insert failed: " + file.getPath(), e);
+            throw new RepositoryException("insert failed: " + file.getSyncedPath(), e);
         }
     }
 
@@ -110,20 +126,28 @@ public class FileRepository {
      * - file_size = -1
      * - On conflict, only updates status to FAILED.
      */
-    public void insertFailed(Long deviceId, String path) {
+    public void insertFailed(Long userId, Long deviceId, String syncedPath, FileInfo info) {
         String sql = """
-                    INSERT INTO files (device_id, create_date, name, path, file_size, status)
-                    VALUES (?, datetime('now'), ?, ?, -1, ?)
-                    ON CONFLICT(device_id, path) DO UPDATE SET
-                        status = ?
+                    INSERT INTO files (user_id, device_id, create_date, name, synced_path, file_size, type, status)
+                    VALUES (?, ?, ?, ?, ?, -1, ?, ?)
+                    ON CONFLICT(device_id, synced_path) DO UPDATE SET
+                        status = ?,
+                        user_id = excluded.user_id,
+                        type = excluded.type
                 """;
 
         try {
-            jdbcTemplate.update(sql, deviceId, name(path), path,
+            jdbcTemplate.update(sql,
+                    userId,
+                    deviceId,
+                    info.createDate(),
+                    name(syncedPath),
+                    syncedPath,
+                    info.type(),
                     AppConstants.FILE_STATUS_FAILED,
                     AppConstants.FILE_STATUS_FAILED);
         } catch (Exception e) {
-            throw new RepositoryException("insertFailed: " + path, e);
+            throw new RepositoryException("insertFailed: " + syncedPath, e);
         }
     }
 

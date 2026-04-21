@@ -2,11 +2,11 @@ package com.app.common.dtos;
 
 /**
  * Represents a device connection state change detected by DeviceTracker.
- * Listeners receive the affected serial, the event type, and any validation
+ * Listeners receive the affected hardwareId, the event type, and any validation
  * details resolved at the tracker boundary.
  */
 public record DeviceEvent(
-        String serial,
+        String hardwareId,
         EventType type,
         DeviceValidationResult validationResult) {
 

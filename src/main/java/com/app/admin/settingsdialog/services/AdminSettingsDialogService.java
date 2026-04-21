@@ -1,17 +1,17 @@
 package com.app.admin.settingsdialog.services;
 
-import com.app.common.definitions.AppConstants;
-import com.app.common.definitions.enums.FolderType;
-import com.app.common.modules.foldermanager.services.FolderManagerService;
-import com.app.common.services.AppConfigService;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.nio.file.Path;
-
-import java.util.Optional;
+import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.enums.FolderType;
+import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.services.AppConfigService;
 
 /**
  * Manages all admin-level application settings: storage folders,
@@ -70,8 +70,9 @@ public class AdminSettingsDialogService {
     }
 
     public void setStartWithWindows(boolean enable) {
-        if (!applyRegistryEntry(enable)) {
-            throw new IllegalStateException("Unable to update startup registry entry");
+        RegistryCommandResult result = applyRegistryEntry(enable);
+        if (!result.success()) {
+            throw new IllegalStateException("Unable to update startup registry entry. " + result.message());
         }
         appConfigService.saveConfigValue(AppConstants.KEY_IS_START_WITH_WINDOWS, String.valueOf(enable));
         log.info("Start with Windows set to: {}", enable);
@@ -96,7 +97,9 @@ public class AdminSettingsDialogService {
         }
     }
 
-    private boolean applyRegistryEntry(boolean enable) {
+    // Execute registry add/delete and return a user-facing diagnostic message when
+    // the command cannot be applied.
+    private RegistryCommandResult applyRegistryEntry(boolean enable) {
         try {
             ProcessBuilder pb;
             if (enable) {
@@ -104,7 +107,8 @@ public class AdminSettingsDialogService {
                 java.io.File exeFile = new java.io.File(exePath);
                 if (!exeFile.exists()) {
                     log.error("Launcher executable not found at: {}", exePath);
-                    return false;
+                    return new RegistryCommandResult(false,
+                            "Cannot set startup when running from JAR. Install the application to enable this feature.");
                 }
                 // Wrap in quotes so Windows handles paths with spaces correctly.
                 String quotedExePath = "\"" + exePath + "\"";
@@ -120,19 +124,28 @@ public class AdminSettingsDialogService {
                         "/v", AppConstants.STARTUP_REG_VALUE,
                         "/f");
             }
-            int exitCode = pb.redirectErrorStream(true).start().waitFor();
+            Process process = pb.redirectErrorStream(true).start();
+            int exitCode = process.waitFor();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             if (exitCode != 0) {
-                log.warn("Startup registry command exited with code {}", exitCode);
-                return false;
+                log.warn("Startup registry command exited with code {}. Output: {}", exitCode, output);
+                return new RegistryCommandResult(false,
+                        "Command exited with code " + exitCode + (output.isBlank() ? "" : ". " + output));
             }
-            return true;
+            return RegistryCommandResult.ok();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Interrupted while applying startup registry entry", e);
-            return false;
+            return new RegistryCommandResult(false, "Interrupted while applying startup registry entry");
         } catch (Exception e) {
             log.error("Failed to apply startup registry entry", e);
-            return false;
+            return new RegistryCommandResult(false, e.getMessage() == null ? "Unknown error" : e.getMessage());
+        }
+    }
+
+    private record RegistryCommandResult(boolean success, String message) {
+        private static RegistryCommandResult ok() {
+            return new RegistryCommandResult(true, "");
         }
     }
 

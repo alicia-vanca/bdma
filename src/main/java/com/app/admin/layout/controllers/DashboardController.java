@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceSummary;
@@ -37,8 +38,6 @@ import javafx.scene.shape.Circle;
 @Component
 @Scope("prototype")
 public class DashboardController extends BaseLayoutController {
-
-    private static final String KEY_DEVICE_CONNECTED = "dashboard.device.connected";
 
     @FXML
     private ListView<DeviceSummary> deviceListView;
@@ -90,6 +89,21 @@ public class DashboardController extends BaseLayoutController {
 
     private void updateCellFactory() {
         deviceListView.setCellFactory(lv -> new ListCell<>() {
+            private final Circle dot = new Circle(5);
+            private final Label name = new Label();
+            private final Label sub = new Label();
+            private final VBox text = new VBox(2, name, sub);
+            private final HBox row = new HBox(8, dot, text);
+
+            {
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.getStyleClass().add("device-cell-row");
+                name.getStyleClass().add("device-cell-name");
+                setPrefHeight(50);
+                setMinHeight(50);
+                setMaxHeight(50);
+            }
+
             @Override
             protected void updateItem(DeviceSummary summary, boolean empty) {
                 super.updateItem(summary, empty);
@@ -101,19 +115,19 @@ public class DashboardController extends BaseLayoutController {
                     return;
                 }
 
-                Circle dot = new Circle(5);
-                Label name = new Label(summary.getDisplayName());
-                Label sub = new Label();
+                // Temporarily hide graphic to prevent flicker during update
+                setGraphic(null);
+
+                name.setText(summary.getDisplayName());
+
+                // Clear previous styles and reapply
+                dot.getStyleClass().clear();
+                sub.getStyleClass().clear();
+                sub.setText("");
 
                 applyStatusStyle(summary, dot, sub);
 
-                name.getStyleClass().add("device-cell-name");
-
-                VBox text = new VBox(2, name, sub);
-                HBox row = new HBox(8, dot, text);
-                row.setAlignment(Pos.CENTER_LEFT);
-                row.getStyleClass().add("device-cell-row");
-
+                // Show graphic after all updates are complete
                 setGraphic(row);
                 setText(null);
                 DashboardController.this.setupClickHandler(this, summary);
@@ -132,13 +146,15 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void applyConnectedStyle(DeviceSummary summary, Circle dot, Label sub) {
-        dot.getStyleClass().add("dot-connected");
-
         SyncProgressTracker.SyncProgress progress = summary.getSyncProgress();
         SyncProgressTracker.SyncStatus status = progress.status();
 
-        sub.setText(resolveConnectedText(status, progress));
-        sub.getStyleClass().add(resolveConnectedStyle(status));
+        String text = resolveConnectedText(status, progress);
+        String styleClass = resolveConnectedStyle(status);
+
+        dot.getStyleClass().add("dot-connected");
+        sub.setText(text);
+        sub.getStyleClass().add(styleClass);
     }
 
     // Display sync progress for connected devices: queued, syncing with counts, or
@@ -149,10 +165,9 @@ public class DashboardController extends BaseLayoutController {
         return switch (status) {
             case QUEUED -> I18n.get("dashboard.device.queued");
             case SYNCING -> I18n.get("dashboard.device.syncing") + " " + formatProgress(progress);
-            case COMPLETED -> progress.total() > 0
-                    ? I18n.get(KEY_DEVICE_CONNECTED) + " " + formatProgress(progress)
-                    : I18n.get(KEY_DEVICE_CONNECTED);
-            default -> I18n.get(KEY_DEVICE_CONNECTED);
+            case COMPLETED -> I18n.get(AppConstants.KEY_DEVICE_SYNCED) + " " + formatProgress(progress);
+            default -> I18n.get(AppConstants.KEY_DEVICE_CONNECTED);
+
         };
     }
 
@@ -165,19 +180,23 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void applyOfflineStyle(Circle dot, Label sub) {
+        String text = I18n.get("dashboard.device.offline");
+
         dot.getStyleClass().add("dot-offline");
-        sub.setText(I18n.get("dashboard.device.offline"));
+        sub.setText(text);
         sub.getStyleClass().add("device-cell-offline");
     }
 
     private void applyUnvalidatedStyle(Circle dot, Label sub) {
+        String text = I18n.get("dashboard.device.unvalidated");
+
         dot.getStyleClass().add("dot-unvalidated");
-        sub.setText(I18n.get("dashboard.device.unvalidated"));
+        sub.setText(text);
         sub.getStyleClass().add("device-cell-unvalidated");
     }
 
     private String formatProgress(SyncProgressTracker.SyncProgress progress) {
-        return "(" + progress.total() + " : " + progress.passed() + " ✓  " + progress.failed() + " ✗)";
+        return "(✓: " + progress.passed() + "/" + progress.total() + "    ✗: " + progress.failed() + ")";
     }
 
     private void setupClickHandler(ListCell<DeviceSummary> cell, DeviceSummary summary) {
@@ -247,7 +266,7 @@ public class DashboardController extends BaseLayoutController {
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             handleConnected(event);
         } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
-            handleDisconnected(event.serial());
+            handleDisconnected(event.hardwareId());
         }
         deviceListView.refresh();
     }
@@ -294,8 +313,8 @@ public class DashboardController extends BaseLayoutController {
 
     // Handle device disconnection: remove unvalidated devices or mark saved devices
     // as offline
-    private void handleDisconnected(String serial) {
-        Optional<DeviceSummary> existing = findBySerial(serial);
+    private void handleDisconnected(String hardwareId) {
+        Optional<DeviceSummary> existing = findByHardwareId(hardwareId);
         if (existing.isEmpty()) {
             return;
         }
@@ -311,12 +330,6 @@ public class DashboardController extends BaseLayoutController {
         summary.setStatus(DeviceSummary.Status.OFFLINE);
         summary.setSyncProgress(SyncProgressTracker.SyncProgress.idle());
         deviceListView.refresh();
-    }
-
-    private Optional<DeviceSummary> findBySerial(String serial) {
-        return deviceItems.stream()
-                .filter(summary -> serial.equals(summary.getHardwareId()))
-                .findFirst();
     }
 
     private Optional<DeviceSummary> findByHardwareId(String hardwareId) {
@@ -359,7 +372,7 @@ public class DashboardController extends BaseLayoutController {
             return;
         }
 
-        findBySerial(result.getSerial())
+        findByHardwareId(result.getHardwareId())
                 .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
                 .ifPresent(summary -> {
                     summary.setDisplayName(savedDeviceName);
@@ -417,6 +430,12 @@ public class DashboardController extends BaseLayoutController {
     public void onSyncCompleted() {
         if (fileListController != null) {
             fileListController.onSyncCompleted();
+        }
+    }
+
+    public void onBackupCompleted() {
+        if (fileListController != null) {
+            fileListController.onBackupCompleted();
         }
     }
 }

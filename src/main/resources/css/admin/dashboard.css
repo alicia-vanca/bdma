@@ -17,29 +17,33 @@
     -fx-padding: 0 0 8 0;
 }
 
-.list-view {
+#deviceListView {
     -fx-background-color: transparent;
     -fx-border-color: transparent;
 }
 
-.list-cell {
+#deviceListView .list-cell {
     -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 2px;
+    -fx-border-radius: 4px;
+    -fx-border-style: solid;
 }
 
-.list-cell:odd {
+#deviceListView .list-cell:odd {
     -fx-background-color: derive(-card-bg, -5%);
 }
 
-.list-cell:hover {
+#deviceListView .list-cell:hover {
     -fx-background-color: derive(-card-bg, -10%);
 }
 
-.list-cell:selected {
-    -fx-background-color: -primary;
+#deviceListView .list-cell:selected {
+    -fx-border-color: -primary;
 }
 
-.list-cell:empty,
-.list-cell:empty:odd {
+#deviceListView .list-cell:empty,
+#deviceListView .list-cell:empty:odd {
     -fx-background-color: transparent;
 }
 

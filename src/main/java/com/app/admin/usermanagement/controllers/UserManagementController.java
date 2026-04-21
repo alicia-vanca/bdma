@@ -17,12 +17,14 @@ import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.User;
+import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.UserService;
 import com.app.user.userdetail.controllers.UserInfoController;
 
+import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -47,7 +49,6 @@ public class UserManagementController {
     private static final Logger log = LoggerFactory.getLogger(UserManagementController.class);
 
     private static final String FILTER_ALL_ROLES = AppConstants.FILTER_ALL_ROLES;
-
     @FXML
     private TableView<User> table;
     @FXML
@@ -77,13 +78,13 @@ public class UserManagementController {
     private final ViewLoader viewLoader;
     private final Session session;
     private final AppNoticeService appNoticeService;
+    private final DataSyncService dataSyncService;
 
     private List<User> allUsers = new ArrayList<>();
     private List<User> filteredUsers = new ArrayList<>();
 
-    private static final int DEFAULT_PAGE_SIZE = 50;
-    private static final List<Integer> PAGE_SIZE_THRESHOLDS = List.of(10, 25, 50, 100);
-    private int pageSize = DEFAULT_PAGE_SIZE;
+    private int pageSize = AppConstants.DEFAULT_PAGE_SIZE;
+
     private int currentPageIndex = 0;
 
     // Persist filter state across language-change reloads. @FXML fields are
@@ -96,11 +97,13 @@ public class UserManagementController {
     public UserManagementController(UserService userService,
             ViewLoader viewLoader,
             Session session,
-            AppNoticeService appNoticeService) {
+            AppNoticeService appNoticeService,
+            DataSyncService dataSyncService) {
         this.userService = userService;
         this.viewLoader = viewLoader;
         this.session = session;
         this.appNoticeService = appNoticeService;
+        this.dataSyncService = dataSyncService;
     }
 
     // ── Init ────────────────────────────────────────────────────────────────
@@ -117,6 +120,11 @@ public class UserManagementController {
         addActionColumn();
         loadData();
         restoreFilterState();
+        // Refresh user list and notify when sync auto-creates a new account.
+        dataSyncService.setOnUserAutoCreated(username -> Platform.runLater(() -> {
+            loadData();
+            showSuccess(I18n.get("user.auto.created", username));
+        }));
     }
 
     private void setupRoleComboBox() {
@@ -124,6 +132,7 @@ public class UserManagementController {
         // Restore previous role selection if the user had a non-default filter active,
         // translating the "All" sentinel to the current locale's string.
         String roleToRestore = (savedRoleFilter == null) ? I18n.get(FILTER_ALL_ROLES) : savedRoleFilter;
+
         cbRole.setValue(roleToRestore);
     }
 
@@ -174,8 +183,9 @@ public class UserManagementController {
     }
 
     private void setupPageSizeComboBox() {
-        cbPageSize.getItems().setAll(PAGE_SIZE_THRESHOLDS);
-        cbPageSize.setValue(DEFAULT_PAGE_SIZE);
+        cbPageSize.getItems().setAll(AppConstants.PAGE_SIZE_THRESHOLDS);
+        cbPageSize.setValue(AppConstants.DEFAULT_PAGE_SIZE);
+
         cbPageSize.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == null || Objects.equals(newValue, pageSize)) {
                 return;

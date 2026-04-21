@@ -47,9 +47,10 @@ public class DataBackupService {
     }
 
     /**
-     * Updates file status to BACKEDUP after successful backup.
+     * Updates file status to BACKEDUP and sets backed_up_path after successful
+     * backup.
      */
-    public void markBackup(String localPath) {
-        fileRepo.updateStatus(localPath, AppConstants.FILE_STATUS_BACKEDUP);
+    public void markBackup(String syncedPath, String backedUpPath) {
+        fileRepo.updateStatusAndBackupPath(syncedPath, backedUpPath, AppConstants.FILE_STATUS_BACKEDUP);
     }
 }

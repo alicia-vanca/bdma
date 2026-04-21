@@ -1,9 +1,16 @@
 package com.app.admin.settingsdialog.controllers;
 
+import java.io.File;
+import java.util.List;
+import java.util.Locale;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
 import com.app.MainApp;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
-import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
@@ -11,6 +18,7 @@ import com.app.common.definitions.enums.Language;
 import com.app.common.definitions.enums.Theme;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.NoticeStackRenderer;
+import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
@@ -24,14 +32,6 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
-import javafx.util.Duration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-
-import java.io.File;
-import java.util.List;
-import java.util.Locale;
 
 @SuppressWarnings("unused")
 @Component
@@ -71,15 +71,11 @@ public class AdminSettingsDialogController {
     @FXML
     private Button btnChooseSaveFolder;
     @FXML
-    private Button btnSaveSaveFolder;
-    @FXML
     private Label lblBackupFolderTitle;
     @FXML
     private TextField txtBackupPath;
     @FXML
     private Button btnChooseBackupFolder;
-    @FXML
-    private Button btnSaveBackupFolder;
     @FXML
     private Label lblAutoDeleteTitle;
     @FXML
@@ -96,6 +92,7 @@ public class AdminSettingsDialogController {
     private VBox noticeContainer;
 
     private NoticeStackRenderer noticeRenderer;
+    private Runnable onLanguageChangedAction;
 
     public AdminSettingsDialogController(
             AdminSettingsDialogService adminSettingsService,
@@ -106,6 +103,10 @@ public class AdminSettingsDialogController {
         this.session = session;
         this.userSettingService = userSettingService;
         this.appUpdateController = appUpdateController;
+    }
+
+    public void setOnLanguageChangedAction(Runnable onLanguageChangedAction) {
+        this.onLanguageChangedAction = onLanguageChangedAction;
     }
 
     @FXML
@@ -130,10 +131,8 @@ public class AdminSettingsDialogController {
 
         lblSaveFolderTitle.setText(I18n.get("setting.storage.save.title"));
         btnChooseSaveFolder.setText(I18n.get("setting.storage.btn.choose"));
-        btnSaveSaveFolder.setText(I18n.get("setting.storage.btn.save"));
         lblBackupFolderTitle.setText(I18n.get("setting.storage.backup.title"));
         btnChooseBackupFolder.setText(I18n.get("setting.storage.btn.choose"));
-        btnSaveBackupFolder.setText(I18n.get("setting.storage.btn.save"));
 
         lblAutoDeleteTitle.setText(I18n.get("setting.databackup.autodelete.title"));
         lblAutoDeleteDescription.setText(I18n.get("setting.databackup.autodelete.desc"));
@@ -178,22 +177,12 @@ public class AdminSettingsDialogController {
 
     @FXML
     public void onSelectSaveFolder() {
-        selectFolder(txtSavePath, FolderType.SAVE);
-    }
-
-    @FXML
-    public void onSaveSaveFolder() {
-        persistFolder(txtSavePath, FolderType.SAVE);
+        selectAndPersistFolder(txtSavePath, FolderType.SAVE);
     }
 
     @FXML
     public void onSelectBackupFolder() {
-        selectFolder(txtBackupPath, FolderType.BACKUP);
-    }
-
-    @FXML
-    public void onSaveBackupFolder() {
-        persistFolder(txtBackupPath, FolderType.BACKUP);
+        selectAndPersistFolder(txtBackupPath, FolderType.BACKUP);
     }
 
     @FXML
@@ -219,6 +208,10 @@ public class AdminSettingsDialogController {
             showNotice(value
                     ? I18n.get("setting.startWithWindows.status.on")
                     : I18n.get("setting.startWithWindows.status.off"), true);
+        } catch (IllegalStateException e) {
+            log.warn("Failed to save startWithWindows setting: {}", e.getMessage());
+            chkStartWithWindows.setSelected(!value);
+            showNotice(I18n.get("setting.startWithWindows.status.error"), false);
         } catch (Exception e) {
             log.error("Failed to save startWithWindows setting", e);
             chkStartWithWindows.setSelected(!value);
@@ -257,7 +250,11 @@ public class AdminSettingsDialogController {
         if (stage != null) {
             stage.setTitle(I18n.get("settings.title"));
         }
-        MainApp.showAdmin();
+        if (onLanguageChangedAction != null) {
+            onLanguageChangedAction.run();
+        } else {
+            MainApp.showAdmin();
+        }
 
     }
 
@@ -284,8 +281,8 @@ public class AdminSettingsDialogController {
 
     // ── Folder helpers ────────────────────────────────────────────────────────
 
-    // Show native directory picker and populate the text field on selection.
-    private void selectFolder(TextField txtField, FolderType type) {
+    // Show native directory picker and persist immediately after selection.
+    private void selectAndPersistFolder(TextField txtField, FolderType type) {
         DirectoryChooser chooser = new DirectoryChooser();
         chooser.setTitle(I18n.get("setting.storage.chooser.title", type.toString()));
         String current = txtField.getText();
@@ -299,6 +296,7 @@ public class AdminSettingsDialogController {
         File selected = chooser.showDialog(stage);
         if (selected != null) {
             txtField.setText(selected.getAbsolutePath());
+            persistFolder(txtField, type);
         }
     }
 

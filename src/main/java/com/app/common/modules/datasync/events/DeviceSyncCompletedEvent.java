@@ -5,10 +5,10 @@ import lombok.Getter;
 @Getter
 public class DeviceSyncCompletedEvent {
 
-    private final String serial;
+    private final String hardwareId;
 
-    public DeviceSyncCompletedEvent(String serial) {
-        this.serial = serial;
+    public DeviceSyncCompletedEvent(String hardwareId) {
+        this.hardwareId = hardwareId;
     }
 
 }

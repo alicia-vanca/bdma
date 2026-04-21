@@ -73,9 +73,6 @@
                                 <Button fx:id="btnChooseSaveFolder"
                                         onAction="#onSelectSaveFolder"
                                         styleClass="btn-secondary"/>
-                                <Button fx:id="btnSaveSaveFolder"
-                                        onAction="#onSaveSaveFolder"
-                                        styleClass="btn-primary"/>
                             </HBox>
                             <Region prefHeight="8"/>
                             <Label fx:id="lblBackupFolderTitle" styleClass="section-label"/>
@@ -87,9 +84,6 @@
                                 <Button fx:id="btnChooseBackupFolder"
                                         onAction="#onSelectBackupFolder"
                                         styleClass="btn-secondary"/>
-                                <Button fx:id="btnSaveBackupFolder"
-                                        onAction="#onSaveBackupFolder"
-                                        styleClass="btn-primary"/>
                             </HBox>
                         </VBox>
                         <Separator/>
