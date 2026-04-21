@@ -23,16 +23,19 @@ public class DataSyncRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        start();
+        // Only start sync worker on app startup; device tracker starts after login
+        startSyncWorker();
     }
 
-    public synchronized void start() {
+    public synchronized void startSyncWorker() {
         if (syncThread == null || !syncThread.isAlive()) {
             syncThread = new Thread(worker, "sync-worker");
             syncThread.setDaemon(true);
             syncThread.start();
         }
+    }
 
+    public synchronized void startDeviceTracker() {
         if (trackerThread == null || !trackerThread.isAlive()) {
             trackerThread = new Thread(tracker, "device-tracker");
             trackerThread.setDaemon(true);

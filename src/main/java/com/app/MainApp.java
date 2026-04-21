@@ -1,22 +1,35 @@
 package com.app;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.Properties;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ConfigurableApplicationContext;
+
 import com.app.common.configs.AppRuntimeInitializer;
 import com.app.common.configs.LogbackConfigInitializer;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.exceptions.AppException;
 import com.app.common.exceptions.GlobalExceptionHandler;
-import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.helpers.CssLoader;
 import com.app.common.helpers.NavigationHelper;
 import com.app.common.helpers.SpringContextHolder;
 import com.app.common.helpers.ViewLoader;
-import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.theme.ThemeManager;
-import com.app.common.utils.StageUtil;
-
 import com.app.common.modules.databackup.services.DataBackupService;
 import com.app.common.modules.databackup.workers.DataBackupWorker;
+import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.theme.ThemeManager;
+import com.app.common.services.DeviceTracker;
+import com.app.common.utils.StageUtil;
+
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Parent;
@@ -24,17 +37,6 @@ import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import lombok.Getter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.boot.SpringApplication;
-import org.springframework.context.ConfigurableApplicationContext;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.Properties;
 
 public class MainApp extends Application {
 
@@ -123,8 +125,18 @@ public class MainApp extends Application {
     @Override
     public void stop() {
         releaseSingleInstanceLock();
-        if (springContext != null)
+
+        // Shutdown device tracker to kill ADB processes
+        if (springContext != null) {
+            try {
+                DeviceTracker tracker = springContext.getBean(DeviceTracker.class);
+                tracker.shutdown();
+            } catch (Exception e) {
+                log.warn("Failed to shutdown device tracker: {}", e.getMessage());
+            }
             springContext.close();
+        }
+
         if (folderManagerService != null)
             folderManagerService.shutdown();
         log.info("App stopped");
