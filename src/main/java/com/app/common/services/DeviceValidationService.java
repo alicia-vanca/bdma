@@ -96,6 +96,12 @@ public class DeviceValidationService {
         ModelWhitelist whitelist = matchedWhitelist.get();
         Optional<ValidatedDevice> existingDevice = validatedDeviceRepository.findByHardwareId(hardwareId);
 
+        // Get device name from database if device already saved, otherwise use
+        // cameraId
+        String deviceName = existingDevice
+                .map(ValidatedDevice::getDeviceName)
+                .orElse(cameraId);
+
         log.info("Validated device adbSerial={} hardwareId={} whitelistId={} cameraId={} alreadySaved={}",
                 adbSerial,
                 hardwareId,
@@ -108,7 +114,8 @@ public class DeviceValidationService {
                 whitelist.getId(),
                 whitelist.getModelName(),
                 cameraId,
-                existingDevice.isPresent());
+                existingDevice.isPresent(),
+                deviceName);
     }
 
     private Optional<ModelWhitelist> findMatchedWhitelist(List<ModelWhitelist> whitelists,

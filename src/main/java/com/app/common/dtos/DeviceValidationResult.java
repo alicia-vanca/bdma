@@ -15,17 +15,19 @@ public class DeviceValidationResult {
     private String matchedModelName;
     private String cameraId;
     private boolean alreadySaved;
+    private String deviceName;
 
     public static DeviceValidationResult invalid(String hardwareId, String message) {
-        return new DeviceValidationResult(false, hardwareId, message, null, null, null, false);
+        return new DeviceValidationResult(false, hardwareId, message, null, null, null, false, null);
     }
 
     public static DeviceValidationResult valid(String hardwareId,
             String whitelistId,
             String modelName,
             String cameraId,
-            boolean alreadySaved) {
+            boolean alreadySaved,
+            String deviceName) {
         return new DeviceValidationResult(true, hardwareId, "Device validated",
-                whitelistId, modelName, cameraId, alreadySaved);
+                whitelistId, modelName, cameraId, alreadySaved, deviceName);
     }
 }

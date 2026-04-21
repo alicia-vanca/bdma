@@ -16,7 +16,7 @@ public class DeviceSummary {
     }
 
     private String hardwareId;
-    private String displayName;
+    private String deviceName;
     private Status status;
     private SyncProgressTracker.SyncProgress syncProgress;
     private DeviceValidationResult validationResult;

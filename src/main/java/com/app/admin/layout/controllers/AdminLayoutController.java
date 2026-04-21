@@ -298,8 +298,9 @@ public class AdminLayoutController extends BaseLayoutController {
                     cameraId,
                     result.getHardwareId(),
                     result.getMatchedWhitelistId());
-            showNoticeSuccess(I18n.get("device.connected.saved", cameraId));
-            autoSyncDevice(result.getHardwareId(), cameraId);
+
+            showNoticeSuccess(I18n.get("device.connected.saved", result.getDeviceName()));
+            autoSyncDevice(result.getHardwareId(), result.getDeviceName());
             return;
         }
 
@@ -394,11 +395,11 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     // Auto-sync device without confirmation dialog
-    private void autoSyncDevice(String hardwareId, String cameraId) {
+    private void autoSyncDevice(String hardwareId, String deviceName) {
         boolean queued = deviceSyncQueue.add(hardwareId,
                 new SyncContext(session.getUser().getUsername(), session.isAdmin()));
         if (queued) {
-            showNoticeSuccess(I18n.get("device.sync.queued", cameraId));
+            showNoticeSuccess(I18n.get("device.sync.queued", deviceName));
         }
         refreshDashboardIfActive();
     }
