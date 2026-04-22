@@ -5,9 +5,11 @@ import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.repositories.FileRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class DataBackupService {
@@ -52,5 +54,18 @@ public class DataBackupService {
      */
     public void markBackup(String syncedPath, String backedUpPath) {
         fileRepo.updateStatusAndBackupPath(syncedPath, backedUpPath, AppConstants.FILE_STATUS_BACKEDUP);
+    }
+
+    @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.MINUTES)
+    public void recoverPendingBackups() {
+        List<String> pending = fileRepo.loadPendingBackup();
+
+        if (pending.isEmpty()) {
+            log.debug("Recovery scan: no pending backup files found.");
+            return;
+        }
+
+        log.info("Recovery scan: found {} file(s) pending backup, enqueuing...", pending.size());
+        pending.forEach(dataBackupQueue::add);
     }
 }

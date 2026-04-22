@@ -120,16 +120,18 @@ public final class AppRuntimeInitializer {
     private static byte[] deriveDbKey() {
         char[] deviceIdChars = AppContext.getDeviceId().toCharArray();
         byte[] deviceIdSalt = AppContext.getDeviceId().getBytes(StandardCharsets.UTF_8);
+         PBEKeySpec spec = null;
         try {
             SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-            PBEKeySpec spec = new PBEKeySpec(deviceIdChars, deriveDbKeySalt(deviceIdSalt), DB_KEY_ITERATIONS,
+            spec = new PBEKeySpec(deviceIdChars, deriveDbKeySalt(deviceIdSalt), DB_KEY_ITERATIONS,
                     DB_KEY_LENGTH_BITS);
-            byte[] key = factory.generateSecret(spec).getEncoded();
-            spec.clearPassword();
-            return key;
+            return factory.generateSecret(spec).getEncoded();
         } catch (GeneralSecurityException e) {
             throw new AppException("Failed to derive database key", e);
         } finally {
+            if (spec != null) {
+                spec.clearPassword();
+            }
             Arrays.fill(deviceIdChars, '\0');
             Arrays.fill(deviceIdSalt, (byte) 0);
         }
