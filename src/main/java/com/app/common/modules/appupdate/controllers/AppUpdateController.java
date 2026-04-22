@@ -51,7 +51,7 @@ public class AppUpdateController {
 
         task.setOnSucceeded(e -> {
             AppUpdateInfo info = task.getValue();
-            if (!info.hasUpdate())
+            if (info == null || !info.hasUpdate())
                 return;
 
             String skipped = appUpdateService.getSkippedVersion();

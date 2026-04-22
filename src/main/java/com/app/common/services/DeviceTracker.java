@@ -6,6 +6,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -32,6 +36,12 @@ public class DeviceTracker implements Runnable {
     // Holds the active adb track-devices process so shutdown() can destroy it
     // immediately without waiting for the read loop to time out.
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingChecks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Integer> stableCounters = new ConcurrentHashMap<>();
+
+    private static final int STABLE_CONFIRM_COUNT = 5;
+    private static final int STABLE_POLL_INTERVAL_MS = 1000;
 
     public DeviceTracker(AdbClient adbClient,
             DeviceValidationService deviceValidationService,
@@ -69,6 +79,10 @@ public class DeviceTracker implements Runnable {
     // OS-level process exits instead of being abandoned in the task manager.
     public void shutdown() {
         running = false;
+        scheduler.shutdownNow();
+        pendingChecks.clear();
+        stableCounters.clear();
+
         Process p = activeProcess.getAndSet(null);
         if (p != null) {
             p.destroyForcibly();
@@ -127,20 +141,61 @@ public class DeviceTracker implements Runnable {
         Set<String> newSet = new HashSet<>(newDevices);
 
         for (String serial : newSet) {
-            if (!currentDevices.contains(serial)) {
-                DeviceValidationResult result = validateSerialSafely(serial);
-                eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
+            if (!currentDevices.contains(serial) && !pendingChecks.containsKey(serial)) {
+                log.info("New device detected, starting stability check: {}", serial);
+                startStabilityCheck(serial);
             }
         }
 
         for (String serial : new HashSet<>(currentDevices)) {
             if (!newSet.contains(serial)) {
+                // Cancel stability check nếu disconnect trong lúc đang chờ
+                cancelStabilityCheck(serial);
                 eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, null));
             }
         }
 
         currentDevices.clear();
         currentDevices.addAll(newSet);
+    }
+
+    private void startStabilityCheck(String serial) {
+        stableCounters.put(serial, 0);
+
+        ScheduledFuture<?> future = scheduler.scheduleWithFixedDelay(() -> {
+            if (!running) {
+                cancelStabilityCheck(serial);
+                return;
+            }
+
+            boolean alive = adbClient.isDeviceAlive(serial);
+            if (!alive) {
+                log.debug("Stability check failed for {}, resetting counter", serial);
+                stableCounters.put(serial, 0);
+                return;
+            }
+
+            int count = stableCounters.merge(serial, 1, Integer::sum);
+            log.debug("Stability check {}/{} for: {}", count, STABLE_CONFIRM_COUNT, serial);
+
+            if (count >= STABLE_CONFIRM_COUNT) {
+                cancelStabilityCheck(serial);
+                log.info("Device stable after {} checks, publishing CONNECTED: {}", STABLE_CONFIRM_COUNT, serial);
+                DeviceValidationResult result = validateSerialSafely(serial);
+                eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
+            }
+
+        }, STABLE_POLL_INTERVAL_MS, STABLE_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+
+        pendingChecks.put(serial, future);
+    }
+
+    private void cancelStabilityCheck(String serial) {
+        ScheduledFuture<?> future = pendingChecks.remove(serial);
+        if (future != null) {
+            future.cancel(false);
+        }
+        stableCounters.remove(serial);
     }
 
     // Validation failures should not stop device tracking; emit an invalid result
@@ -160,5 +215,9 @@ public class DeviceTracker implements Runnable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    public boolean isConnected(String hardwareId) {
+        return currentDevices.contains(hardwareId);
     }
 }

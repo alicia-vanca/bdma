@@ -46,7 +46,6 @@ public abstract class BaseLayoutController {
     protected Node loadView(String fxml) {
         var result = viewLoader.loadView(fxml);
         if (result != null) {
-            // KHÔNG ghi đè fxmlPath — đó là layout path, do ViewLoader set
             currentModuleFxml = fxml;
             CssLoader.applyModule(MainApp.getScene(), fxml);
             return result.node();
@@ -59,7 +58,6 @@ public abstract class BaseLayoutController {
     protected <T> ViewLoader.LoadResult<T> loadViewWithController(String fxml, Class<T> controllerType) {
         ViewLoader.LoadResult<Object> result = viewLoader.loadView(fxml);
         if (result != null) {
-            // KHÔNG ghi đè fxmlPath
             currentModuleFxml = fxml;
             CssLoader.applyModule(MainApp.getScene(), fxml);
 
@@ -110,10 +108,8 @@ public abstract class BaseLayoutController {
             throw new IllegalStateException("FXML path not set for controller");
         }
 
-        // Snapshot trước khi reload
         String moduleToRestore = currentModuleFxml;
 
-        // Reload layout shell
         var result = viewLoader.loadView(fxmlPath);
         if (result == null)
             return;
@@ -123,8 +119,6 @@ public abstract class BaseLayoutController {
         CssLoader.applyAdmin(scene);
         ThemeManager.apply(scene);
 
-        // initialize() của AdminLayoutController đã load dashboard mặc định.
-        // Nếu user đang ở module khác thì restore lại đúng module.
         if (moduleToRestore != null
                 && !moduleToRestore.equals(ViewPaths.ADMIN_DASHBOARD)
                 && result.controller() instanceof BaseLayoutController layoutCtrl) {

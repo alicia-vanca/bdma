@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
-import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceEvent;
@@ -33,7 +32,6 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
 import com.app.common.services.AppNoticeService;
-import com.app.common.services.DeviceTracker;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.services.SyncProgressTracker;
 import com.app.common.services.UserSettingService;
@@ -51,7 +49,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
-@SuppressWarnings({ "squid:S2209", "unused" })
 @Component
 public class AdminLayoutController extends BaseLayoutController {
 
@@ -63,10 +60,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DeviceValidationService deviceValidationService;
     private final AppNoticeService appNoticeService;
     private final DeviceSyncQueue deviceSyncQueue;
-    private final DeviceTracker deviceTracker;
     private final DataSyncRunner syncRunner;
     private final SyncProgressTracker syncProgressTracker;
-    private final AdminSettingsDialogService adminSettingsService;
 
     @FXML
     private StackPane contentArea;
@@ -93,9 +88,7 @@ public class AdminLayoutController extends BaseLayoutController {
             AppNoticeService appNoticeService,
             DeviceSyncQueue deviceSyncQueue,
             SyncProgressTracker syncProgressTracker,
-            DeviceTracker deviceTracker,
-            DataSyncRunner syncRunner,
-            AdminSettingsDialogService adminSettingsService) {
+            DataSyncRunner syncRunner) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
@@ -103,10 +96,8 @@ public class AdminLayoutController extends BaseLayoutController {
         this.deviceValidationService = deviceValidationService;
         this.appNoticeService = appNoticeService;
         this.deviceSyncQueue = deviceSyncQueue;
-        this.deviceTracker = deviceTracker;
         this.syncRunner = syncRunner;
         this.syncProgressTracker = syncProgressTracker;
-        this.adminSettingsService = adminSettingsService;
     }
 
     @Override

@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,9 @@ import com.app.common.services.AdbClient;
 import com.app.common.services.AppConfigService;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.SyncProgressTracker;
+import com.app.common.services.DeviceTracker;
+import com.app.common.services.DriveLetterMapper;
+import com.app.common.services.MassStorageFileSource;
 
 @Component
 public class DataSyncWorker implements Runnable {
@@ -42,6 +46,11 @@ public class DataSyncWorker implements Runnable {
     private final SyncProgressTracker progressTracker;
     private final ApplicationEventPublisher publisher;
     private final AppNoticeService appNoticeService;
+    private final DeviceTracker deviceTracker;
+    private final DriveLetterMapper driveLetterMapper;
+    private final MassStorageFileSource massStorageFileSource;
+
+    private final Map<String, String> driveLetterCache = new ConcurrentHashMap<>();
 
     private record SyncFile(String remotePath, String localPath, FileInfo info) {
     }
@@ -98,7 +107,10 @@ public class DataSyncWorker implements Runnable {
             AdbClient adbClient,
             SyncProgressTracker progressTracker,
             ApplicationEventPublisher publisher,
-            AppNoticeService appNoticeService) {
+            AppNoticeService appNoticeService,
+            DeviceTracker deviceTracker,
+            DriveLetterMapper driveLetterMapper,
+            MassStorageFileSource massStorageFileSource) {
         this.queue = queue;
         this.service = service;
         this.folderManagerService = folderManagerService;
@@ -107,6 +119,9 @@ public class DataSyncWorker implements Runnable {
         this.progressTracker = progressTracker;
         this.publisher = publisher;
         this.appNoticeService = appNoticeService;
+        this.deviceTracker = deviceTracker;
+        this.driveLetterMapper = driveLetterMapper;
+        this.massStorageFileSource = massStorageFileSource;
     }
 
     @Override
@@ -168,6 +183,7 @@ public class DataSyncWorker implements Runnable {
             log.info("Finished sync for {}: total={}, passed={}, failed={}, elapsedMs={}",
                     hardwareId, total, counters.passed, counters.failed, elapsedMs);
         } finally {
+            driveLetterCache.remove(hardwareId);
             queue.done(hardwareId);
             if (syncStarted) {
                 publisher.publishEvent(new DeviceSyncCompletedEvent(hardwareId));
@@ -195,33 +211,35 @@ public class DataSyncWorker implements Runnable {
 
     // Discover and prepare files for sync from device
     private SyncPreparation prepareSyncFiles(String hardwareId, Long deviceId, SyncContext ctx, boolean autoDelete) {
-        long t1 = System.currentTimeMillis();
         Set<String> syncedPaths = service.loadSyncedPaths(deviceId);
-        log.info("loadSyncedPaths took {}ms", System.currentTimeMillis() - t1);
-
-        long t2 = System.currentTimeMillis();
         List<String> remoteFilePaths = new ArrayList<>(findFiles(hardwareId, INTERNAL_ROOT));
-        log.info("findFiles(INTERNAL) took {}ms, found {} files", System.currentTimeMillis() - t2,
-                remoteFilePaths.size());
-
-        long t3 = System.currentTimeMillis();
         String ext = getExternalStorage(hardwareId);
-        log.info("getExternalStorage took {}ms", System.currentTimeMillis() - t3);
 
         if (ext != null) {
-            long t4 = System.currentTimeMillis();
             remoteFilePaths.addAll(findFiles(hardwareId, ext + EXTERNAL_SUFFIX));
-            log.info("findFiles(EXTERNAL) took {}ms, found {} files", System.currentTimeMillis() - t4,
-                    remoteFilePaths.size());
+        } else {
+            List<String> massStorageFiles = findFilesFromMassStorage(hardwareId);
+            if (!massStorageFiles.isEmpty()) {
+                remoteFilePaths.addAll(massStorageFiles);
+            }
         }
 
-        long t5 = System.currentTimeMillis();
         LookupCache lookupCache = new LookupCache();
         SyncFileCollection fileCollection = collectSyncFiles(hardwareId, ctx, remoteFilePaths, syncedPaths,
                 lookupCache, autoDelete);
-        log.info("collectSyncFiles took {}ms", System.currentTimeMillis() - t5);
 
         return new SyncPreparation(fileCollection, syncedPaths, lookupCache);
+    }
+
+    private List<String> findFilesFromMassStorage(String hardwareId) {
+        String driveLetter = driveLetterMapper.resolve(hardwareId);
+        if (driveLetter == null) {
+            log.warn("[{}] SD card not accessible via ADB and no drive letter found", hardwareId);
+            return List.of();
+        }
+        driveLetterCache.put(hardwareId, driveLetter);
+        log.info("[{}] MassStorage fallback: using drive {}", hardwareId, driveLetter);
+        return massStorageFileSource.findFiles(driveLetter, AppConstants.MEDIA_TYPES);
     }
 
     // Process each file in the sync list
@@ -624,6 +642,11 @@ public class DataSyncWorker implements Runnable {
 
     // Get remote file size without throwing exceptions, returns 0 on error
     private long getRemoteSizeQuiet(String hardwareId, String remote) {
+        if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
+            String driveLetter = driveLetterCache.get(hardwareId);
+            if (driveLetter == null) return -1;
+            return massStorageFileSource.getFileSize(driveLetter, remote);
+        }
         try {
             return adbClient.getRemoteSize(hardwareId, remote);
         } catch (Exception e) {
@@ -633,6 +656,14 @@ public class DataSyncWorker implements Runnable {
 
     private boolean pullFile(String hardwareId, String remote, String local) {
         // Add timeout to avoid hanging on slow devices
+        if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
+            String driveLetter = driveLetterCache.get(hardwareId);
+            if (driveLetter == null) {
+                log.warn("[{}] No drive letter cached for mass storage pull: {}", hardwareId, remote);
+                return false;
+            }
+            return massStorageFileSource.copyFile(driveLetter, remote, local);
+        }
         try {
             return adbClient.pullFile(hardwareId, remote, local);
         } catch (Exception e) {
@@ -642,11 +673,15 @@ public class DataSyncWorker implements Runnable {
     }
 
     private void deleteRemoteFile(String hardwareId, String remote) {
+        if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
+            log.debug("[{}] Skipping delete for mass storage file: {}", hardwareId, remote);
+            return;
+        }
         adbClient.deleteRemoteFile(hardwareId, remote);
     }
 
     private boolean isDeviceDead(String hardwareId) {
-        return !adbClient.isDeviceAlive(hardwareId);
+        return !deviceTracker.isConnected(hardwareId);
     }
 
     private String name(String path) {
