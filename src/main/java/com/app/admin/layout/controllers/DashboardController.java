@@ -97,10 +97,10 @@ public class DashboardController extends BaseLayoutController {
     private HBox buildRow(DeviceSummary summary) {
         Circle dot = new Circle(5);
 
-        Label name = new Label(summary.getDisplayName());
+        Label name = new Label(summary.getDeviceName());
         name.getStyleClass().add("device-cell-name");
 
-        TextField nameField = createHiddenTextField(summary.getDisplayName());
+        TextField nameField = createHiddenTextField(summary.getDeviceName());
 
         Label sub = new Label();
         applyStatusStyle(summary, dot, sub);
@@ -179,7 +179,7 @@ public class DashboardController extends BaseLayoutController {
             String newName = nameField.getText();
 
             if (newName != null && !newName.isBlank()) {
-                summary.setDisplayName(newName);
+                summary.setDeviceName(newName);
 
                 validatedDeviceRepository
                         .findByHardwareId(summary.getHardwareId())
@@ -322,7 +322,8 @@ public class DashboardController extends BaseLayoutController {
         deviceStateInitialized = false;
     }
 
-        // Handle device connection/disconnection events from DeviceTracker
+    // Handle device connection/disconnection events from DeviceTracker
+
     @EventListener
     public void handleTrackerEvent(DeviceEvent event) {
         // Ignore events before UI initialization
@@ -444,7 +445,7 @@ public class DashboardController extends BaseLayoutController {
         findByHardwareId(result.getHardwareId())
                 .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
                 .ifPresent(summary -> {
-                    summary.setDisplayName(savedDeviceName);
+                    summary.setDeviceName(savedDeviceName);
                     summary.setStatus(DeviceSummary.Status.CONNECTED);
                     summary.setSyncProgress(resolveSyncProgress(summary));
                     summary.setValidationResult(null);
@@ -457,8 +458,8 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private static String sortName(DeviceSummary summary) {
-        if (summary.getDisplayName() != null && !summary.getDisplayName().isBlank()) {
-            return summary.getDisplayName();
+        if (summary.getDeviceName() != null && !summary.getDeviceName().isBlank()) {
+            return summary.getDeviceName();
         }
         if (summary.getHardwareId() != null) {
             return summary.getHardwareId();
