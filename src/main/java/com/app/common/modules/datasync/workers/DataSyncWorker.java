@@ -280,7 +280,8 @@ public class DataSyncWorker implements Runnable {
             SyncFile syncFile = buildSyncFile(path, syncContext, lookupCache);
             if (syncFile != null) {
                 allSyncFiles.add(syncFile);
-                if (!syncedPaths.contains(syncFile.localPath())) {
+                String relPath = folderManagerService.stripDriveLetter(syncFile.localPath());
+                if (!syncedPaths.contains(relPath)) {
                     unsyncedFiles.add(syncFile);
                 } else {
                     alreadySyncedCount++;
@@ -378,8 +379,9 @@ public class DataSyncWorker implements Runnable {
         PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size(),
                 syncContext.saveDir());
         if (result.isSuccess()) {
-            service.saveFile(uId, dId, name(file.remotePath()), file.localPath(), file.info());
-            syncedPaths.add(file.localPath());
+            String relPath = folderManagerService.stripDriveLetter(file.localPath());
+            service.saveFile(uId, dId, name(file.remotePath()), relPath, file.info());
+            syncedPaths.add(relPath);
             logSyncedFile(file.localPath(), counters.passed + 1, counters.total);
             if (syncContext.autoDelete()) {
                 deleteRemoteFile(hardwareId, file.remotePath());
@@ -388,7 +390,8 @@ public class DataSyncWorker implements Runnable {
         }
 
         cleanupIncompleteFile(file.localPath());
-        failed.add(new PendingFile(file.remotePath(), file.localPath(), file.info(), result.failureReason()));
+        String relPath = folderManagerService.stripDriveLetter(file.localPath());
+        failed.add(new PendingFile(file.remotePath(), relPath, file.info(), result.failureReason()));
         return ProcessResult.FAILED;
     }
 

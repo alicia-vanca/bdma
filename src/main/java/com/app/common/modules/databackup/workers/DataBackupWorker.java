@@ -10,6 +10,10 @@ import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.databackup.services.DataBackupService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+
 /**
  * Worker thread responsible for backing up files from dataDir to backupDir.
  * Flow:
@@ -47,13 +51,14 @@ public class DataBackupWorker implements Runnable {
 
                 if (folderManager.isBackupDirConfigured()) {
 
-                    String relativeName = folderManager.toRelativeDataPath(localPath);
+                    String relativeName = extractRelativeFromData(localPath);
 
                     folderManager.backupFromSave(relativeName);
 
-                    String backupPath = folderManager.getBackupPath(relativeName);
+                    String absoluteBackupPath = folderManager.getBackupPath(relativeName);
+                    String relativeBackupPath = folderManager.stripDriveLetter(absoluteBackupPath);
 
-                    dataBackupService.markBackup(localPath, backupPath);
+                    dataBackupService.markBackup(localPath, relativeBackupPath);
 
                     publisher.publishEvent(new FileBackupCompletedEvent(localPath));
 
@@ -75,5 +80,20 @@ public class DataBackupWorker implements Runnable {
                 }
             }
         }
+    }
+
+    private String extractRelativeFromData(String relativePath) throws IOException {
+        File dataDir = folderManager.getDataDir();
+        if (dataDir == null) throw new IOException("DataDir not configured");
+
+        String dataDirRelative = folderManager.stripDriveLetter(dataDir.getAbsolutePath());
+
+        Path base = Path.of(dataDirRelative).normalize();
+        Path target = Path.of(relativePath).normalize();
+
+        if (!target.startsWith(base)) {
+            throw new IOException("Path is outside data directory: " + relativePath);
+        }
+        return base.relativize(target).toString();
     }
 }

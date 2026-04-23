@@ -196,8 +196,9 @@ public class AdminLayoutController extends BaseLayoutController {
         deviceSyncQueue.clearAll();
         syncProgressTracker.clearAll();
 
-        // Stop device tracker and sync worker on logout
-        syncRunner.shutdown();
+        // Reset tracked device state for the current session. The next login will
+        // start from a fresh device scan.
+        syncRunner.resetForLogout();
 
         session.clear();
         MainApp.showLogin();

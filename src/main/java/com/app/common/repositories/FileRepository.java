@@ -1,5 +1,6 @@
 package com.app.common.repositories;
 
+import java.nio.file.Path;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -54,21 +55,6 @@ public class FileRepository {
                 """;
 
         return jdbcTemplate.queryForList(sql, String.class, AppConstants.FILE_STATUS_SYNCED);
-    }
-
-    /**
-     * Updates file status by synced_path.
-     */
-    public void updateStatusBySyncedPath(String syncedPath, String status) {
-        String sql = """
-                    UPDATE files SET status = ? WHERE synced_path = ?
-                """;
-
-        try {
-            jdbcTemplate.update(sql, status, syncedPath);
-        } catch (Exception e) {
-            throw new RepositoryException("updateStatusBySyncedPath failed: " + syncedPath, e);
-        }
     }
 
     /**
@@ -228,5 +214,32 @@ public class FileRepository {
                 f,
                 rs.getString("username"),
                 rs.getString("device_name"));
+    }
+
+    public void batchUpdatePaths(List<String> relativeNames, String newDataRoot, String newBackupRoot) {
+        String sql = """
+            UPDATE files
+            SET synced_path     = ? || '\\' || name,
+                backed_up_path  = ? || '\\' || name,
+                status          = ?
+            WHERE name = ?
+            """;
+
+        List<Object[]> batchArgs = relativeNames.stream()
+                .map(rel -> {
+                    String fileName = Path.of(rel).getFileName().toString();
+                    // rebuild full relative path per file
+                    String newSyncedPath  = Path.of(newDataRoot,   rel).toString();
+                    String newBackupPath  = Path.of(newBackupRoot, rel).toString();
+                    return new Object[]{ newSyncedPath, newBackupPath,
+                            AppConstants.FILE_STATUS_BACKEDUP, fileName };
+                })
+                .toList();
+
+        try {
+            jdbcTemplate.batchUpdate(sql, batchArgs);
+        } catch (Exception e) {
+            throw new RepositoryException("batchUpdatePaths failed", e);
+        }
     }
 }
