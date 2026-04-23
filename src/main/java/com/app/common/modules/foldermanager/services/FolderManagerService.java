@@ -142,14 +142,27 @@ public class FolderManagerService {
     public String toRelativeDataPath(String absolutePath) throws IOException {
         ensureDataReady();
 
-        Path basePath = dataDir.toPath().toAbsolutePath().normalize();
         Path targetPath = Path.of(absolutePath).toAbsolutePath().normalize();
 
-        if (!targetPath.startsWith(basePath)) {
+        // Find the deepest "data_bdma" folder in the path
+        // Ex: D:\BDMA_User_Dataxx\data_bdma\data_bdma\DataSave\data_bdma\
+        Path deepestDataFolder = null;
+        Path current = targetPath;
+        while (current != null) {
+            if (current.getFileName() != null &&
+                    current.getFileName().toString().equals(AppConstants.DATA_FOLDER_NAME)) {
+                deepestDataFolder = current;
+                break;
+            }
+            current = current.getParent();
+        }
+
+        if (deepestDataFolder == null) {
             throw new IOException("Path is outside data directory: " + absolutePath);
         }
 
-        return basePath.relativize(targetPath).toString();
+        // Get relative path from the deepest data_bdma folder
+        return deepestDataFolder.relativize(targetPath).toString();
     }
 
     public String getBackupPath(String relativePath) throws IOException {
@@ -164,14 +177,37 @@ public class FolderManagerService {
     // and the interrupted flag is restored so callers can detect shutdown.
     public synchronized <T> T withDataDirUnlocked(Callable<T> action) throws Exception {
         ensureDataReady();
-        dataSecurity.ensureUnlocked();
+        return withSpecificDirUnlocked(dataDir, action);
+    }
+
+    // Unlocks a specific data directory, runs the action, then re-locks.
+    // Used during sync to ensure operations use the captured saveDir.
+    public synchronized <T> T withSpecificDirUnlocked(File specificDir, Callable<T> action) throws Exception {
+        if (specificDir == null) {
+            throw new IOException("Specific directory is null");
+        }
+
+        // If the specific dir matches current dataDir, use the existing security
+        // service
+        FolderSecurityService security;
+        if (dataDir != null && specificDir.getAbsolutePath().equals(dataDir.getAbsolutePath())) {
+            security = dataSecurity;
+        } else {
+            // Create a temporary security service for this specific directory
+            security = new FolderSecurityService(
+                    specificDir.getAbsolutePath(),
+                    FolderType.SAVE,
+                    storageProtectionEnabled);
+        }
+
+        security.ensureUnlocked();
         try {
-            ensureDir(dataDir);
+            ensureDir(specificDir);
             return action.call();
         } finally {
             boolean wasInterrupted = Thread.interrupted();
             try {
-                dataSecurity.ensureLocked();
+                security.ensureLocked();
             } finally {
                 if (wasInterrupted) {
                     Thread.currentThread().interrupt();
@@ -211,7 +247,7 @@ public class FolderManagerService {
         if (configuredPath == null || configuredPath.isBlank())
             return;
 
-        this.dataDir = new File(configuredPath, "data_bdma");
+        this.dataDir = new File(configuredPath, AppConstants.DATA_FOLDER_NAME);
         this.dataSecurity = new FolderSecurityService(
                 dataDir.getAbsolutePath(),
                 FolderType.SAVE,
@@ -230,7 +266,7 @@ public class FolderManagerService {
         if (configuredPath == null || configuredPath.isBlank())
             return;
 
-        this.backupDir = new File(configuredPath, "backup_bdma");
+        this.backupDir = new File(configuredPath, AppConstants.BACKUP_FOLDER_NAME);
         this.backupSecurity = new FolderSecurityService(
                 backupDir.getAbsolutePath(),
                 FolderType.BACKUP,
@@ -308,7 +344,7 @@ public class FolderManagerService {
                 File target = new File(backupDir, fileName);
                 ensureParentDir(target);
                 Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                log.info("Backed up from save dir to backup dir: {}", fileName);
+                log.info("Backed up to backup dir: {}", fileName);
                 return null;
             });
         } catch (IOException e) {

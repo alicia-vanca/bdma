@@ -24,7 +24,7 @@ public class NoticeStackRenderer {
     private final Duration fadeDuration;
 
     public NoticeStackRenderer(VBox container) {
-        this(container, 4, Duration.seconds(3), Duration.millis(220));
+        this(container, 4, Duration.seconds(4), Duration.millis(220));
     }
 
     public NoticeStackRenderer(VBox container, int maxVisible, Duration ttl, Duration fadeDuration) {

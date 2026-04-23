@@ -46,6 +46,7 @@ public class SyncProgressTracker {
     private final Map<String, SyncProgress> progressMap = new ConcurrentHashMap<>();
 
     public void markQueued(String hardwareId) {
+        progressMap.remove(hardwareId);
         progressMap.put(hardwareId, SyncProgress.queued());
         notifyProgressChanged();
     }

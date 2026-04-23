@@ -175,7 +175,7 @@ public class DeviceTracker implements Runnable {
                 return;
             }
 
-            int count = stableCounters.merge(serial, 1, Integer::sum);
+            int count = stableCounters.merge(serial, 1, (a, b) -> a + b);
             log.debug("Stability check {}/{} for: {}", count, STABLE_CONFIRM_COUNT, serial);
 
             if (count >= STABLE_CONFIRM_COUNT) {

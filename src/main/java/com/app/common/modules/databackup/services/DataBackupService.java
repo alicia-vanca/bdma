@@ -56,7 +56,7 @@ public class DataBackupService {
         fileRepo.updateStatusAndBackupPath(syncedPath, backedUpPath, AppConstants.FILE_STATUS_BACKEDUP);
     }
 
-    @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.MINUTES)
+    @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.HOURS)
     public void recoverPendingBackups() {
         List<String> pending = fileRepo.loadPendingBackup();
 

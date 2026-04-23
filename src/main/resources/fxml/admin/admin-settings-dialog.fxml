@@ -23,7 +23,7 @@
       alignment="CENTER"
       prefWidth="720"
       minWidth="720"
-      prefHeight="625">
+      prefHeight="660">
         <Region styleClass="popup-spacer"/>
         <Label fx:id="lblTitle" styleClass="title"/>
         <Region styleClass="popup-header-spacer"/>
@@ -74,6 +74,7 @@
                                         onAction="#onSelectSaveFolder"
                                         styleClass="btn-secondary"/>
                             </HBox>
+                            <Label fx:id="lblSaveFolderNote" wrapText="true" styleClass="settings-note"/>
                             <Region prefHeight="8"/>
                             <Label fx:id="lblBackupFolderTitle" styleClass="section-label"/>
                             <HBox spacing="8" alignment="CENTER_LEFT" styleClass="settings-form-row">
@@ -91,6 +92,7 @@
                             <Label fx:id="lblAutoDeleteTitle" styleClass="section-label"/>
                             <Label fx:id="lblAutoDeleteDescription" wrapText="true"/>
                             <CheckBox fx:id="chkAutoDelete" onAction="#onToggleAutoDelete"/>
+                            <Label fx:id="lblAutoDeleteNote" wrapText="true" styleClass="settings-note"/>
                         </VBox>
                         <Separator/>
                         <VBox spacing="8" styleClass="settings-card">

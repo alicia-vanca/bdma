@@ -77,11 +77,15 @@ public class AdminSettingsDialogController {
     @FXML
     private Button btnChooseBackupFolder;
     @FXML
+    private Label lblSaveFolderNote;
+    @FXML
     private Label lblAutoDeleteTitle;
     @FXML
     private Label lblAutoDeleteDescription;
     @FXML
     private CheckBox chkAutoDelete;
+    @FXML
+    private Label lblAutoDeleteNote;
     @FXML
     private Label lblStartWithWindowsTitle;
     @FXML
@@ -133,10 +137,12 @@ public class AdminSettingsDialogController {
         btnChooseSaveFolder.setText(I18n.get("setting.storage.btn.choose"));
         lblBackupFolderTitle.setText(I18n.get("setting.storage.backup.title"));
         btnChooseBackupFolder.setText(I18n.get("setting.storage.btn.choose"));
+        lblSaveFolderNote.setText(I18n.get("setting.storage.save.note"));
 
         lblAutoDeleteTitle.setText(I18n.get("setting.databackup.autodelete.title"));
         lblAutoDeleteDescription.setText(I18n.get("setting.databackup.autodelete.desc"));
         chkAutoDelete.setText(I18n.get("setting.databackup.autodelete.checkbox"));
+        lblAutoDeleteNote.setText(I18n.get("setting.databackup.autodelete.note"));
 
         lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.title"));
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));

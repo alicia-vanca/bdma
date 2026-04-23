@@ -14,12 +14,12 @@ import com.app.common.models.File;
 import com.app.common.models.User;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.databackup.services.DataBackupService;
+import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.FileRepository;
 import com.app.common.repositories.UserRepository;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.AppNoticeService;
-import com.app.common.modules.i18n.I18n;
 
 @Service
 public class DataSyncService {
@@ -55,8 +55,8 @@ public class DataSyncService {
                 .orElse(null);
     }
 
-    public Long resolveDeviceId(String deviceName) {
-        return validatedDeviceRepository.findDeviceIdByName(deviceName).orElse(null);
+    public Long resolveDeviceId(String cameraId) {
+        return validatedDeviceRepository.findDeviceIdByCameraId(cameraId).orElse(null);
     }
 
     public Long resolveUserId(String username) {

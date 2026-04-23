@@ -55,8 +55,6 @@ public class DataBackupWorker implements Runnable {
 
                     dataBackupService.markBackup(localPath, backupPath);
 
-                    log.info("Backed up: {}", relativeName);
-
                     publisher.publishEvent(new FileBackupCompletedEvent(localPath));
 
                 } else {
