@@ -253,9 +253,7 @@ public class DataSyncWorker implements Runnable {
             }
             ProcessResult result = processFile(hardwareId, syncContext, prep, file, failedList, counters);
 
-            if (result == ProcessResult.FAILED) {
-                counters.failed++;
-            } else {
+            if (result != ProcessResult.FAILED) {
                 counters.passed++;
             }
 
