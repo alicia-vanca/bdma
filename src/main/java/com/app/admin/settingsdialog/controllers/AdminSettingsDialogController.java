@@ -1,9 +1,15 @@
 package com.app.admin.settingsdialog.controllers;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
+import com.app.admin.settingsdialog.services.RestoreService;
+import com.app.common.helpers.AlertHelper;
+import com.app.common.services.DriveResolverService;
+import javafx.application.Platform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -29,6 +35,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
@@ -43,6 +51,7 @@ public class AdminSettingsDialogController {
     private final Session session;
     private final UserSettingService userSettingService;
     private final AppUpdateController appUpdateController;
+    private final DriveResolverService driveResolverService;
 
     @FXML
     private VBox panel;
@@ -94,6 +103,8 @@ public class AdminSettingsDialogController {
     private CheckBox chkStartWithWindows;
     @FXML
     private VBox noticeContainer;
+    @FXML
+    private Button btnRestore;
 
     private NoticeStackRenderer noticeRenderer;
     private Runnable onLanguageChangedAction;
@@ -102,11 +113,13 @@ public class AdminSettingsDialogController {
             AdminSettingsDialogService adminSettingsService,
             Session session,
             UserSettingService userSettingService,
-            AppUpdateController appUpdateController) {
+            AppUpdateController appUpdateController,
+            DriveResolverService driveResolverService) {
         this.adminSettingsService = adminSettingsService;
         this.session = session;
         this.userSettingService = userSettingService;
         this.appUpdateController = appUpdateController;
+        this.driveResolverService = driveResolverService;
     }
 
     public void setOnLanguageChangedAction(Runnable onLanguageChangedAction) {
@@ -147,6 +160,7 @@ public class AdminSettingsDialogController {
         lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.title"));
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         chkStartWithWindows.setText(I18n.get("setting.startWithWindows.checkbox"));
+        btnRestore.setText(I18n.get("setting.storage.btn.restore"));
     }
 
     // Bind each pair of segment buttons to equal widths within their row.
@@ -301,9 +315,26 @@ public class AdminSettingsDialogController {
         Stage stage = (Stage) txtField.getScene().getWindow();
         File selected = chooser.showDialog(stage);
         if (selected != null) {
+            if (isDriveConflict(selected.getAbsolutePath(), type)) {
+                showNotice(I18n.get("setting.storage.error.same_drive"), false);
+                return;
+            }
             txtField.setText(selected.getAbsolutePath());
             persistFolder(txtField, type);
         }
+    }
+
+    private boolean isDriveConflict(String selectedPath, FolderType selectedType) {
+        String otherPath = selectedType == FolderType.SAVE
+                ? txtBackupPath.getText()
+                : txtSavePath.getText();
+
+        if (otherPath == null || otherPath.isBlank()) return false;
+
+        String selectedDrive = Path.of(selectedPath).getRoot().toString();
+        String otherDrive    = Path.of(otherPath).getRoot().toString();
+
+        return selectedDrive.equalsIgnoreCase(otherDrive);
     }
 
     private void persistFolder(TextField txtField, FolderType type) {
@@ -314,6 +345,7 @@ public class AdminSettingsDialogController {
         }
         try {
             adminSettingsService.saveFolder(path, type);
+            driveResolverService.invalidateCache();
             showNotice(I18n.get("setting.storage.success"), true);
         } catch (Exception e) {
             log.error("Failed to save folder setting for {}", type, e);
@@ -345,6 +377,38 @@ public class AdminSettingsDialogController {
         } else {
             noticeRenderer.showError(message);
         }
+    }
+
+    @FXML
+    public void onRestore() {
+        String backupPath = txtBackupPath.getText();
+        if (backupPath == null || backupPath.isBlank()) {
+            showNotice(I18n.get("setting.storage.restore.error.no_backup"), false);
+            return;
+        }
+
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("setting.storage.restore.confirm.title"),
+                null,
+                I18n.get("setting.storage.restore.confirm.content"));
+
+        Optional<ButtonType> result = confirm.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) return;
+
+        btnRestore.setDisable(true);
+        showNotice(I18n.get("setting.storage.restore.progress"), true);
+
+        Thread.ofVirtual().start(() -> {
+            RestoreService.RestoreResult restoreResult  = adminSettingsService.restoreFromBackup();
+            Platform.runLater(() -> {
+                btnRestore.setDisable(false);
+                if (restoreResult .success()) {
+                    showNotice(I18n.get("setting.storage.restore.success", restoreResult .count()), true);
+                } else {
+                    showNotice(I18n.get("setting.storage.restore.error", restoreResult .errorMessage()), false);
+                }
+            });
+        });
     }
 
 }

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -36,7 +37,7 @@ public class DeviceTracker implements Runnable {
     // Holds the active adb track-devices process so shutdown() can destroy it
     // immediately without waiting for the read loop to time out.
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private AtomicReference<ScheduledExecutorService> scheduler = new AtomicReference<>(Executors.newScheduledThreadPool(2));
     private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingChecks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Integer> stableCounters = new ConcurrentHashMap<>();
 
@@ -58,6 +59,7 @@ public class DeviceTracker implements Runnable {
             return;
         }
 
+        ensureScheduler();
         running = true;
         try {
             while (running && !Thread.currentThread().isInterrupted()) {
@@ -75,13 +77,11 @@ public class DeviceTracker implements Runnable {
         }
     }
 
-    // Signals the tracker to stop and destroys the active adb process so the
-    // OS-level process exits instead of being abandoned in the task manager.
-    public void shutdown() {
+    // Stop the current login session and clear all tracked device state so the
+    // next login starts from a clean snapshot.
+    public void stopTrackingAndResetState() {
         running = false;
-        scheduler.shutdownNow();
-        pendingChecks.clear();
-        stableCounters.clear();
+        cancelAllStabilityChecks();
 
         Process p = activeProcess.getAndSet(null);
         if (p != null) {
@@ -91,11 +91,38 @@ public class DeviceTracker implements Runnable {
         currentDevices.clear();
     }
 
+    // Signals the tracker to stop and destroys the active adb process so the
+    // OS-level process exits instead of being abandoned in the task manager.
+    public void shutdown() {
+        stopTrackingAndResetState();
+        ScheduledExecutorService currentScheduler = scheduler.getAndSet(Executors.newScheduledThreadPool(2));
+        currentScheduler.shutdownNow();
+    }
+
+    private void cancelAllStabilityChecks() {
+        for (ScheduledFuture<?> future : pendingChecks.values()) {
+            future.cancel(false);
+        }
+        pendingChecks.clear();
+        stableCounters.clear();
+    }
+
+    private void ensureScheduler() {
+        ScheduledExecutorService current = scheduler.get();
+        if (current.isShutdown() || current.isTerminated()) {
+            scheduler.compareAndSet(current, Executors.newScheduledThreadPool(2));
+        }
+    }
+
     private void track() {
         Process p = null;
         try {
             p = adbClient.startAdbProcess("track-devices");
             activeProcess.set(p);
+
+            // Seed each login session from the current adb snapshot so already-
+            // Connected devices are re-added immediately after login.
+            handle(getDevices());
 
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(p.getInputStream()))) {
@@ -162,32 +189,37 @@ public class DeviceTracker implements Runnable {
     private void startStabilityCheck(String serial) {
         stableCounters.put(serial, 0);
 
-        ScheduledFuture<?> future = scheduler.scheduleWithFixedDelay(() -> {
-            if (!running) {
-                cancelStabilityCheck(serial);
-                return;
-            }
+        try {
+            ScheduledFuture<?> future = scheduler.get().scheduleWithFixedDelay(() -> {
+                if (!running) {
+                    cancelStabilityCheck(serial);
+                    return;
+                }
 
-            boolean alive = adbClient.isDeviceAlive(serial);
-            if (!alive) {
-                log.debug("Stability check failed for {}, resetting counter", serial);
-                stableCounters.put(serial, 0);
-                return;
-            }
+                boolean alive = adbClient.isDeviceAlive(serial);
+                if (!alive) {
+                    log.debug("Stability check failed for {}, resetting counter", serial);
+                    stableCounters.put(serial, 0);
+                    return;
+                }
 
             int count = stableCounters.merge(serial, 1, (a, b) -> a + b);
             log.debug("Stability check {}/{} for: {}", count, STABLE_CONFIRM_COUNT, serial);
 
-            if (count >= STABLE_CONFIRM_COUNT) {
-                cancelStabilityCheck(serial);
-                log.info("Device stable after {} checks, publishing CONNECTED: {}", STABLE_CONFIRM_COUNT, serial);
-                DeviceValidationResult result = validateSerialSafely(serial);
-                eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
-            }
+                if (count >= STABLE_CONFIRM_COUNT) {
+                    cancelStabilityCheck(serial);
+                    log.info("Device stable after {} checks, publishing CONNECTED: {}", STABLE_CONFIRM_COUNT, serial);
+                    DeviceValidationResult result = validateSerialSafely(serial);
+                    eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
+                }
 
-        }, STABLE_POLL_INTERVAL_MS, STABLE_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+            }, STABLE_POLL_INTERVAL_MS, STABLE_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
-        pendingChecks.put(serial, future);
+            pendingChecks.put(serial, future);
+        } catch (RejectedExecutionException e) {
+            stableCounters.remove(serial);
+            log.warn("Unable to schedule stability check for {}: {}", serial, e.getMessage());
+        }
     }
 
     private void cancelStabilityCheck(String serial) {
@@ -215,9 +247,5 @@ public class DeviceTracker implements Runnable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    public boolean isConnected(String hardwareId) {
-        return currentDevices.contains(hardwareId);
     }
 }

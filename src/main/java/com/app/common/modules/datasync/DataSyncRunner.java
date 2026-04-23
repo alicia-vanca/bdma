@@ -36,6 +36,7 @@ public class DataSyncRunner implements CommandLineRunner {
     }
 
     public synchronized void startDeviceTracker() {
+        startSyncWorker();
         if (trackerThread == null || !trackerThread.isAlive()) {
             trackerThread = new Thread(tracker, "device-tracker");
             trackerThread.setDaemon(true);
@@ -43,9 +44,23 @@ public class DataSyncRunner implements CommandLineRunner {
         }
     }
 
-    // Stop the tracker and interrupt worker threads when Spring context closes.
+    public synchronized void resetForLogout() {
+        tracker.stopTrackingAndResetState();
+
+        if (trackerThread != null) {
+            trackerThread.interrupt();
+            try {
+                trackerThread.join(3000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            trackerThread = null;
+        }
+    }
+
+    // Stop the tracker and worker threads when Spring context closes.
     @PreDestroy
-    public void shutdown() {
+    public synchronized void shutdown() {
         tracker.shutdown();
 
         if (trackerThread != null) {

@@ -110,7 +110,7 @@ public class LoginController {
             // Trigger background sync without blocking UI
             loginService.onLoginSuccess();
 
-            // Start device tracker after successful login
+            // Start a fresh device-tracking session after successful login.
             DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
             dataSyncRunner.startDeviceTracker();
 

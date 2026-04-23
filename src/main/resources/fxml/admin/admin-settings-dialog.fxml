@@ -9,7 +9,6 @@
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
-<?import javafx.scene.layout.Priority?>
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
@@ -87,6 +86,12 @@
                                         styleClass="btn-secondary"/>
                             </HBox>
                         </VBox>
+                        <Region prefHeight="8"/>
+                        <HBox alignment="CENTER_LEFT">
+                            <Button fx:id="btnRestore"
+                                    onAction="#onRestore"
+                                    styleClass="btn-secondary"/>
+                        </HBox>
                         <Separator/>
                         <VBox spacing="8" styleClass="settings-card">
                             <Label fx:id="lblAutoDeleteTitle" styleClass="section-label"/>

@@ -354,20 +354,9 @@ public class FolderManagerService {
         }
     }
 
-    public void restoreFromBackup(String fileName) throws IOException {
-        try {
-            withDataAndBackupUnlocked(() -> {
-                File source = new File(backupDir, fileName);
-                File target = new File(dataDir, fileName);
-                ensureParentDir(target);
-                Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                log.info("Restored {} from backup to save", fileName);
-                return null;
-            });
-        } catch (IOException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IOException("Failed to restore file: " + fileName, e);
-        }
+    public String stripDriveLetter(String absolutePath) {
+        Path path = Path.of(absolutePath);
+        Path root = path.getRoot();
+        return root != null ? root.relativize(path).toString() : absolutePath;
     }
 }
