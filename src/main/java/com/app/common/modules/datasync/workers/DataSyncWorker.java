@@ -629,7 +629,7 @@ public class DataSyncWorker implements Runnable {
                 log.warn("File size verification failed: {} (expected: {} bytes, actual: {} bytes)",
                         name(remotePath), expectedSize, actualSize);
             }
-            return PullResult.failure(I18n.get("device.sync.error.verification_failed"));
+            return PullResult.failure(I18n.get("device.sync.error.size_mismatch"));
         }
 
         return PullResult.success();
@@ -657,7 +657,7 @@ public class DataSyncWorker implements Runnable {
     private PullResult pullFile(String hardwareId, String remote, String local) {
         // Fail fast if device disconnected to avoid unnecessary ADB operations
         if (isDeviceDead(hardwareId)) {
-            return PullResult.failure(I18n.get("device.sync.error.transfer"));
+            return PullResult.failure(I18n.get("device.sync.error.disconnected"));
         }
 
         if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
@@ -675,7 +675,7 @@ public class DataSyncWorker implements Runnable {
             if (log.isWarnEnabled()) {
                 log.warn("ADB pull exception for {}: {}", name(remote), e.getMessage(), e);
             }
-            return PullResult.failure(I18n.get("device.sync.error.transfer"));
+            return PullResult.failure(I18n.get("adb_pull_failed"));
         }
     }
 
