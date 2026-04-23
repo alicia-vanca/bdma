@@ -4,19 +4,19 @@ import java.util.Set;
 
 /**
  * Parses file names with the following format:
- * DSJ_{deviceName}_{userName}_{yyyyMMdd}_{HHmmss}.ext
+ * DSJ_{cameraId}_{username}_{yyyyMMdd}_{HHmmss}.ext
  * <p>
  * Example:
  * DSJ_000003_000000_20260408_155023.jpg
- * → deviceName = "000003"
- * → userName = "000000"
+ * → cameraId = "000003"
+ * → username = "000000"
  * → createDate = "2026-04-08 15:50:23"
  * → size = file size in bytes
  * → type = folder category from remote path
  */
 public record FileInfo(
-        String deviceName,
-        String userName,
+        String cameraId,
+        String username,
         String createDate, // "yyyy-MM-dd HH:mm:ss"
         long size,
         String type) {
@@ -64,13 +64,13 @@ public record FileInfo(
             // Remove prefix "DSJ_"
             String body = base.substring(PREFIX.length());
 
-            // Split: deviceName _ userName _ yyyyMMdd _ HHmmss
+            // Split: cameraId _ userName _ yyyyMMdd _ HHmmss
             String[] parts = body.split("_");
             if (parts.length < 4)
                 return null;
 
-            String deviceName = parts[0];
-            String userName = parts[1];
+            String cameraId = parts[0];
+            String username = parts[1];
             String datePart = parts[2]; // yyyyMMdd
             String timePart = parts[3]; // HHmmss
 
@@ -85,7 +85,7 @@ public record FileInfo(
                     + timePart.substring(2, 4) + ":"
                     + timePart.substring(4, 6);
 
-            return new FileInfo(deviceName, userName, createDate, size, type);
+            return new FileInfo(cameraId, username, createDate, size, type);
 
         } catch (Exception e) {
             return null;

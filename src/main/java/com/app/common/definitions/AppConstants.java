@@ -29,6 +29,8 @@ public final class AppConstants {
     public static final String LANG_VI = "vi";
 
     // ────────────── App configs ──────────────
+    public static final String DATA_FOLDER_NAME = "data_bdma";
+    public static final String BACKUP_FOLDER_NAME = "backup_bdma";
     public static final String KEY_DATA_DIR = "dataSync.dataDir";
     public static final String KEY_BACKUP_DIR = "dataBackup.backupDir";
     public static final String KEY_IS_AUTO_DELETE_AFTER_SYNC = "dataSync.isAutoDeleteAfterSync";

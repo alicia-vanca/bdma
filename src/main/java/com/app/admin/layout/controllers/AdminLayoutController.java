@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import com.app.MainApp;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
+import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceSummary;
@@ -28,9 +29,11 @@ import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
+import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
+import com.app.common.services.AppConfigService;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.services.SyncProgressTracker;
@@ -62,6 +65,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DeviceSyncQueue deviceSyncQueue;
     private final DataSyncRunner syncRunner;
     private final SyncProgressTracker syncProgressTracker;
+    private final FolderManagerService folderManagerService;
+    private final AppConfigService appConfigService;
 
     @FXML
     private StackPane contentArea;
@@ -88,7 +93,9 @@ public class AdminLayoutController extends BaseLayoutController {
             AppNoticeService appNoticeService,
             DeviceSyncQueue deviceSyncQueue,
             SyncProgressTracker syncProgressTracker,
-            DataSyncRunner syncRunner) {
+            DataSyncRunner syncRunner,
+            FolderManagerService folderManagerService,
+            AppConfigService appConfigService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
@@ -98,6 +105,8 @@ public class AdminLayoutController extends BaseLayoutController {
         this.deviceSyncQueue = deviceSyncQueue;
         this.syncRunner = syncRunner;
         this.syncProgressTracker = syncProgressTracker;
+        this.folderManagerService = folderManagerService;
+        this.appConfigService = appConfigService;
     }
 
     @Override
@@ -364,6 +373,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @EventListener
+    @SuppressWarnings("unused")
     public void onSyncCompleted(DeviceSyncCompletedEvent event) {
         if (currentDashboardController != null) {
             currentDashboardController.onSyncCompleted();
@@ -371,6 +381,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @EventListener
+    @SuppressWarnings("unused")
     public void onBackupCompleted(FileBackupCompletedEvent event) {
         if (currentDashboardController != null) {
             currentDashboardController.onBackupCompleted();
@@ -387,8 +398,12 @@ public class AdminLayoutController extends BaseLayoutController {
 
     // Auto-sync device without confirmation dialog
     private void autoSyncDevice(String hardwareId, String deviceName) {
+        String isAutoDeleteStr = appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC);
+        boolean autoDelete = "true".equalsIgnoreCase(isAutoDeleteStr);
+
         boolean queued = deviceSyncQueue.add(hardwareId,
-                new SyncContext(session.getUser().getUsername(), session.isAdmin()));
+                new SyncContext(session.getUser().getUsername(), session.isAdmin(),
+                        folderManagerService.getDataDir(), autoDelete));
         if (queued) {
             showNoticeSuccess(I18n.get("device.sync.queued", deviceName));
         }

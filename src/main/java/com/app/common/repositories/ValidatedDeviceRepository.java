@@ -65,7 +65,7 @@ public class ValidatedDeviceRepository {
                 .orElse(new ValidatedDevice(null, cameraId, hardwareId, whitelistId, null, null, cameraId));
     }
 
-    public Optional<Long> findDeviceIdByName(String deviceName) {
+    public Optional<Long> findDeviceIdByCameraId(String cameraId) {
         String sql = """
                     SELECT id
                     FROM validated_device
@@ -75,7 +75,7 @@ public class ValidatedDeviceRepository {
 
         try {
             return Optional.of(
-                    jdbcTemplate.queryForObject(sql, Long.class, deviceName));
+                    jdbcTemplate.queryForObject(sql, Long.class, cameraId));
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
