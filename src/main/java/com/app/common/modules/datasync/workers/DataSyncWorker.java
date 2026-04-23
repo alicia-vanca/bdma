@@ -629,7 +629,7 @@ public class DataSyncWorker implements Runnable {
                 log.warn("File size verification failed: {} (expected: {} bytes, actual: {} bytes)",
                         name(remotePath), expectedSize, actualSize);
             }
-            return PullResult.failure(I18n.get("device.sync.error.size_mismatch"));
+            return PullResult.failure(I18n.get("device.sync.error.verification_failed"));
         }
 
         return PullResult.success();
@@ -657,23 +657,25 @@ public class DataSyncWorker implements Runnable {
     private PullResult pullFile(String hardwareId, String remote, String local) {
         // Fail fast if device disconnected to avoid unnecessary ADB operations
         if (isDeviceDead(hardwareId)) {
-            return PullResult.failure("Device disconnected");
+            return PullResult.failure(I18n.get("device.sync.error.transfer"));
         }
 
         if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
             String driveLetter = driveLetterCache.get(hardwareId);
             if (driveLetter == null) {
-                return PullResult.failure("No drive letter cached for mass storage");
+                return PullResult.failure(I18n.get("device.sync.error.transfer"));
             }
             boolean success = massStorageFileSource.copyFile(driveLetter, remote, local);
-            return success ? PullResult.success() : PullResult.failure("Mass storage copy failed");
+            return success ? PullResult.success() : PullResult.failure(I18n.get("device.sync.error.transfer"));
         }
         try {
             boolean success = adbClient.pullFile(hardwareId, remote, local);
-            return success ? PullResult.success() : PullResult.failure("ADB pull command returned false");
+            return success ? PullResult.success() : PullResult.failure(I18n.get("device.sync.error.adb_pull_failed"));
         } catch (Exception e) {
-            String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            return PullResult.failure(errorMsg);
+            if (log.isWarnEnabled()) {
+                log.warn("ADB pull exception for {}: {}", name(remote), e.getMessage(), e);
+            }
+            return PullResult.failure(I18n.get("device.sync.error.transfer"));
         }
     }
 

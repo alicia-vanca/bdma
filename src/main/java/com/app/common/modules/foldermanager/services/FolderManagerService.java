@@ -152,6 +152,7 @@ public class FolderManagerService {
             if (current.getFileName() != null &&
                     current.getFileName().toString().equals(AppConstants.DATA_FOLDER_NAME)) {
                 deepestDataFolder = current;
+                break;
             }
             current = current.getParent();
         }
