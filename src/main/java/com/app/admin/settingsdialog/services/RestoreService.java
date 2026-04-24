@@ -1,12 +1,5 @@
 package com.app.admin.settingsdialog.services;
 
-import com.app.common.modules.foldermanager.services.FolderManagerService;
-import com.app.common.repositories.FileRepository;
-import com.app.common.services.DriveResolverService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,18 +8,27 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.services.DriveResolverService;
+import com.app.common.services.FileService;
+
 @Service
 public class RestoreService {
 
     private static final Logger log = LoggerFactory.getLogger(RestoreService.class);
 
     private final FolderManagerService folderManager;
-    private final FileRepository fileRepo;
+    private final FileService fileService;
     private final DriveResolverService driveResolverService;
 
-    public RestoreService(FolderManagerService folderManager, FileRepository fileRepo, DriveResolverService driveResolverService) {
+    public RestoreService(FolderManagerService folderManager, FileService fileService,
+            DriveResolverService driveResolverService) {
         this.folderManager = folderManager;
-        this.fileRepo = fileRepo;
+        this.fileService = fileService;
         this.driveResolverService = driveResolverService;
     }
 
@@ -98,13 +100,14 @@ public class RestoreService {
         String newBackupRelative = folderManager.stripDriveLetter(
                 folderManager.getBackupDir().getAbsolutePath());
 
-        fileRepo.batchUpdatePaths(relativeNames, newDataRelative, newBackupRelative);
+        fileService.batchUpdatePaths(relativeNames, newDataRelative, newBackupRelative);
     }
 
     public record RestoreResult(boolean success, int count, String errorMessage) {
         public static RestoreResult success(int count) {
             return new RestoreResult(true, count, null);
         }
+
         public static RestoreResult failure(String message) {
             return new RestoreResult(false, 0, message);
         }

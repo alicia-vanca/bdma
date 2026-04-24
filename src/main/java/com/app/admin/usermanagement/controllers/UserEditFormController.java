@@ -1,25 +1,33 @@
 package com.app.admin.usermanagement.controllers;
 
-import com.app.admin.usermanagement.validation.PasswordValidation;
-import com.app.common.definitions.enums.Role;
-import com.app.common.exceptions.AppException;
-import com.app.common.exceptions.LastAdminException;
-import com.app.common.modules.i18n.I18n;
-import com.app.common.models.User;
-import com.app.common.services.UserService;
-
-import javafx.collections.FXCollections;
-import javafx.fxml.FXML;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.PasswordField;
-import javafx.scene.control.TextField;
-import javafx.stage.Stage;
-import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
+
+import com.app.admin.usermanagement.validation.PasswordValidation;
+import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.enums.Role;
+import com.app.common.events.ThemeChangedEvent;
+import com.app.common.exceptions.AppException;
+import com.app.common.exceptions.LastAdminException;
+import com.app.common.models.User;
+import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.theme.ThemeManager;
+import com.app.common.services.UserService;
+
+import javafx.collections.FXCollections;
+import javafx.fxml.FXML;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.MouseEvent;
+import javafx.stage.Stage;
+import lombok.Setter;
 
 @Component
 @Scope("prototype")
@@ -42,7 +50,15 @@ public class UserEditFormController {
     @FXML
     private PasswordField txtPassword;
     @FXML
+    private TextField txtPasswordVisible;
+    @FXML
+    private Button btnPeekPassword;
+    @FXML
     private PasswordField txtPasswordConfirm;
+    @FXML
+    private TextField txtPasswordConfirmVisible;
+    @FXML
+    private Button btnPeekPasswordConfirm;
     @FXML
     private ComboBox<Role> cbRole;
     @FXML
@@ -63,6 +79,9 @@ public class UserEditFormController {
     @Setter
     private Runnable onNoChange;
 
+    private ImageView passwordIconView;
+    private ImageView passwordConfirmIconView;
+
     public UserEditFormController(UserService userService) {
         this.userService = userService;
     }
@@ -72,10 +91,110 @@ public class UserEditFormController {
         cbRole.setItems(FXCollections.observableArrayList(Role.values()));
         resetForm();
 
+        // Setup password peek functionality
+        setupPasswordPeek();
+
         txtUsername.textProperty().addListener((obs, oldValue, newValue) -> validateUsernameAsTyped());
         txtPassword.textProperty().addListener((obs, oldValue, newValue) -> hideError());
         txtPasswordConfirm.textProperty().addListener((obs, oldValue, newValue) -> hideError());
         cbRole.valueProperty().addListener((obs, oldValue, newValue) -> hideError());
+    }
+
+    /**
+     * Sets up password peek buttons with hold-to-show functionality for both
+     * password fields.
+     * User can press and hold the button to temporarily reveal the password.
+     */
+    private void setupPasswordPeek() {
+        passwordIconView = new ImageView();
+        passwordIconView.setFitWidth(18);
+        passwordIconView.setFitHeight(18);
+        btnPeekPassword.setGraphic(passwordIconView);
+
+        passwordConfirmIconView = new ImageView();
+        passwordConfirmIconView.setFitWidth(18);
+        passwordConfirmIconView.setFitHeight(18);
+        btnPeekPasswordConfirm.setGraphic(passwordConfirmIconView);
+
+        setupPeekButton(btnPeekPassword, txtPassword, txtPasswordVisible, passwordIconView);
+        setupPeekButton(btnPeekPasswordConfirm, txtPasswordConfirm, txtPasswordConfirmVisible, passwordConfirmIconView);
+
+        // Load initial icons
+        updatePasswordIcon(passwordIconView, false);
+        updatePasswordIcon(passwordConfirmIconView, false);
+    }
+
+    private void setupPeekButton(Button btn, PasswordField passwordField, TextField visibleField,
+            ImageView iconView) {
+        // Bind text fields together
+        visibleField.textProperty().bindBidirectional(passwordField.textProperty());
+
+        // Show password on mouse press, hide on release
+        btn.addEventHandler(MouseEvent.MOUSE_PRESSED, e -> {
+            passwordField.setVisible(false);
+            passwordField.setManaged(false);
+            visibleField.setVisible(true);
+            visibleField.setManaged(true);
+            updatePasswordIcon(iconView, true);
+        });
+
+        btn.addEventHandler(MouseEvent.MOUSE_RELEASED, e -> {
+            visibleField.setVisible(false);
+            visibleField.setManaged(false);
+            passwordField.setVisible(true);
+            passwordField.setManaged(true);
+            updatePasswordIcon(iconView, false);
+        });
+
+        // Handle case when mouse exits button while pressed
+        btn.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
+            if (visibleField.isVisible()) {
+                visibleField.setVisible(false);
+                visibleField.setManaged(false);
+                passwordField.setVisible(true);
+                passwordField.setManaged(true);
+                updatePasswordIcon(iconView, false);
+            }
+        });
+    }
+
+    /**
+     * Updates a password peek icon based on current theme and visibility state.
+     *
+     * @param iconView the ImageView to update
+     * @param isOpen   true if password is currently visible, false if hidden
+     */
+    private void updatePasswordIcon(ImageView iconView, boolean isOpen) {
+        String theme = ThemeManager.getTheme();
+        boolean isDark = AppConstants.THEME_DARK.equals(theme);
+
+        String iconPath;
+        if (isOpen) {
+            iconPath = isDark ? "/image/eye-open-dark.png" : "/image/eye-open-light.png";
+        } else {
+            iconPath = isDark ? "/image/eye-closed-dark.png" : "/image/eye-closed-light.png";
+        }
+
+        Image icon = new Image(getClass().getResourceAsStream(iconPath));
+        iconView.setImage(icon);
+    }
+
+    /**
+     * Called by DialogHelper when theme changes to update password peek icons
+     * without full UI reload.
+     * Uses reflection invocation from DialogHelper's event listener.
+     *
+     * @param event the theme change event containing the new theme
+     */
+    public void onThemeChanged(ThemeChangedEvent event) {
+        // Skip if controller not yet initialized
+        if (txtPasswordVisible == null || passwordIconView == null) {
+            return;
+        }
+        boolean isPasswordVisible = txtPasswordVisible.isVisible();
+        boolean isPasswordConfirmVisible = txtPasswordConfirmVisible.isVisible();
+        updatePasswordIcon(passwordIconView, isPasswordVisible);
+        updatePasswordIcon(passwordConfirmIconView, isPasswordConfirmVisible);
     }
 
     public void prepareForCreate() {

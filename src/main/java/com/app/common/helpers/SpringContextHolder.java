@@ -1,11 +1,11 @@
 package com.app.common.helpers;
 
+import java.util.Objects;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
-
-import java.util.Objects;
 
 @SuppressWarnings("java:S1118")
 @Component
@@ -33,5 +33,13 @@ public class SpringContextHolder {
             throw new IllegalStateException("ApplicationContext is not initialized yet");
         }
         return currentContext.getBean(Objects.requireNonNull(clazz, "Bean class must not be null"));
+    }
+
+    public static ApplicationContext getContext() {
+        ApplicationContext currentContext = context;
+        if (currentContext == null) {
+            throw new IllegalStateException("ApplicationContext is not initialized yet");
+        }
+        return currentContext;
     }
 }

@@ -1,4 +1,6 @@
-package com.app.common.dtos;
+package com.app.common.events;
+
+import com.app.common.dtos.DeviceValidationResult;
 
 /**
  * Represents a device connection state change detected by DeviceTracker.

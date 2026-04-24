@@ -17,10 +17,10 @@ import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
-import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.dtos.SyncContext;
+import com.app.common.events.DeviceEvent;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
@@ -51,8 +51,8 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -437,10 +437,11 @@ public class AdminLayoutController extends BaseLayoutController {
             File dataDir = folderManagerService.getDataDir();
             File backupDir = folderManagerService.getBackupDir();
 
-            boolean sameParent = isSameParentFolder(dataDir,backupDir);
+            boolean sameParent = isSameParentFolder(dataDir, backupDir);
 
             boolean dataWarn = updateStorageBar("status.dataFolder", pbDataStorage, lblDataStorageUsage, dataDir);
-            boolean backupWarn = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageUsage, backupDir);
+            boolean backupWarn = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageUsage,
+                    backupDir);
 
             lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
             lblDriveConflictWarning.setVisible(sameParent);
@@ -489,7 +490,7 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         long total = statsTarget.getTotalSpace();
-        long free  = statsTarget.getFreeSpace();
+        long free = statsTarget.getFreeSpace();
 
         if (total <= 0) {
             File root = statsTarget.toPath().getRoot() != null ? statsTarget.toPath().getRoot().toFile() : null;
@@ -505,8 +506,8 @@ public class AdminLayoutController extends BaseLayoutController {
             return false;
         }
 
-        long used  = total - free;
-        double ratio =(double) used / total;
+        long used = total - free;
+        double ratio = (double) used / total;
 
         pb.setProgress(ratio);
         pb.getStyleClass().removeAll("storage-warn", "storage-critical");

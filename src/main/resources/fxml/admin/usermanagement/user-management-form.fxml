@@ -5,6 +5,8 @@
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.geometry.Insets?>
 <VBox spacing="10"
       alignment="CENTER"
       prefWidth="420"
@@ -50,20 +52,40 @@
                text="%user.password.label"
                GridPane.rowIndex="2"
                GridPane.columnIndex="0"/>
-              <PasswordField fx:id="txtPassword"
-                       promptText="%user.password.hint"
-                       styleClass="input"
-                       GridPane.rowIndex="2"
-                       GridPane.columnIndex="1"/>
+              <StackPane alignment="CENTER_RIGHT" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                     <PasswordField fx:id="txtPassword"
+                              promptText="%user.password.hint"
+                              styleClass="input"/>
+                     <TextField fx:id="txtPasswordVisible"
+                              promptText="%user.password.hint"
+                              styleClass="input"
+                              visible="false"
+                              managed="false"/>
+                     <Button fx:id="btnPeekPassword" styleClass="peek-btn">
+                            <StackPane.margin>
+                                   <Insets right="5"/>
+                            </StackPane.margin>
+                     </Button>
+              </StackPane>
               <Label fx:id="lblPasswordConfirmCaption"
                text="%user.password.confirm.label"
                GridPane.rowIndex="3"
                GridPane.columnIndex="0"/>
-              <PasswordField fx:id="txtPasswordConfirm"
-                       promptText="%user.password.confirm.hint"
-                       styleClass="input"
-                       GridPane.rowIndex="3"
-                       GridPane.columnIndex="1"/>
+              <StackPane alignment="CENTER_RIGHT" GridPane.rowIndex="3" GridPane.columnIndex="1">
+                     <PasswordField fx:id="txtPasswordConfirm"
+                              promptText="%user.password.confirm.hint"
+                              styleClass="input"/>
+                     <TextField fx:id="txtPasswordConfirmVisible"
+                              promptText="%user.password.confirm.hint"
+                              styleClass="input"
+                              visible="false"
+                              managed="false"/>
+                     <Button fx:id="btnPeekPasswordConfirm" styleClass="peek-btn">
+                            <StackPane.margin>
+                                   <Insets right="5"/>
+                            </StackPane.margin>
+                     </Button>
+              </StackPane>
        </GridPane>
        <Label fx:id="lblError" visible="false" styleClass="message-error"/>
        <HBox spacing="10" alignment="CENTER">

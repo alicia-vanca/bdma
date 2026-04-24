@@ -22,7 +22,7 @@
       alignment="CENTER"
       prefWidth="720"
       minWidth="720"
-      prefHeight="660">
+      prefHeight="740">
         <Region styleClass="popup-spacer"/>
         <Label fx:id="lblTitle" styleClass="title"/>
         <Region styleClass="popup-header-spacer"/>
@@ -86,13 +86,10 @@
                                         styleClass="btn-secondary"/>
                             </HBox>
                             <Label fx:id="lblDriveConflictWarning" wrapText="true" styleClass="settings-warning" managed="false" visible="false"/>
-                        </VBox>
-                        <Region prefHeight="8"/>
-                        <HBox alignment="CENTER_LEFT">
                             <Button fx:id="btnRestore"
                                     onAction="#onRestore"
                                     styleClass="btn-secondary"/>
-                        </HBox>
+                        </VBox>
                         <Separator/>
                         <VBox spacing="8" styleClass="settings-card">
                             <Label fx:id="lblAutoDeleteTitle" styleClass="section-label"/>

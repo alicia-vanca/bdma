@@ -1,24 +1,26 @@
 
 package com.app.common.modules.settingspopup.helpers;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.app.MainApp;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.helpers.SpringContextHolder;
+import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.controllers.SettingsPopupController;
-import com.app.MainApp;
-import com.app.common.modules.i18n.I18n;
 import com.app.common.services.UserSettingService;
+
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Bounds;
 import javafx.scene.control.Button;
 import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.HashMap;
-import java.util.Map;
 
 // Manage the shared settings popup so login/admin flows reuse the same language,
 // theme, sizing, and reopen behavior.
@@ -160,7 +162,8 @@ public class SettingsPopupHelper {
                             this::refreshIfOpen,
                             this::hidePopup,
                             onCheckUpdateAction,
-                            onInformationAction)));
+                            onInformationAction),
+                    SpringContextHolder.getContext()));
 
             VBox panel = loader.load();
             if (MainApp.getScene() != null) {

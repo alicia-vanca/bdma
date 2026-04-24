@@ -17,9 +17,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
-import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.FileInfo;
 import com.app.common.dtos.SyncContext;
+import com.app.common.events.DeviceEvent;
 import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;

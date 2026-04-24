@@ -16,3 +16,20 @@
 .error {
     -fx-text-fill: -danger;
 }
+
+/* PEEK BUTTON */
+.peek-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+    -fx-padding: 5;
+    -fx-alignment: center-right;
+}
+
+.peek-btn:hover {
+    -fx-opacity: 0.8;
+}
+
+.peek-btn:pressed {
+    -fx-opacity: 1.0;
+}
