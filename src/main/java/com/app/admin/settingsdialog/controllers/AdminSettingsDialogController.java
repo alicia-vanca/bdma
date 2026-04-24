@@ -6,42 +6,44 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-import com.app.admin.layout.controllers.AdminLayoutController;
-import com.app.admin.settingsdialog.services.RestoreService;
-import com.app.common.helpers.AlertHelper;
-import com.app.common.services.DriveResolverService;
-import javafx.application.Platform;
-import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
+import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
+import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.Language;
 import com.app.common.definitions.enums.Theme;
+import com.app.common.events.ThemeChangedEvent;
+import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.NoticeStackRenderer;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
+import com.app.common.services.DriveResolverService;
 import com.app.common.services.UserSettingService;
 
+import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
+import lombok.Setter;
 
 @SuppressWarnings("unused")
 @Component
@@ -53,8 +55,9 @@ public class AdminSettingsDialogController {
     private final Session session;
     private final UserSettingService userSettingService;
     private final AppUpdateController appUpdateController;
-    private final AdminLayoutController adminLayoutController;
     private final DriveResolverService driveResolverService;
+    private final AdminLayoutController adminLayoutController;
+    private final ApplicationEventPublisher eventPublisher;
 
     @FXML
     private VBox panel;
@@ -121,13 +124,15 @@ public class AdminSettingsDialogController {
             UserSettingService userSettingService,
             AppUpdateController appUpdateController,
             DriveResolverService driveResolverService,
-            AdminLayoutController adminLayoutController) {
+            AdminLayoutController adminLayoutController,
+            ApplicationEventPublisher eventPublisher) {
         this.adminSettingsService = adminSettingsService;
         this.session = session;
         this.userSettingService = userSettingService;
         this.appUpdateController = appUpdateController;
         this.driveResolverService = driveResolverService;
         this.adminLayoutController = adminLayoutController;
+        this.eventPublisher = eventPublisher;
     }
 
     @FXML
@@ -293,9 +298,10 @@ public class AdminSettingsDialogController {
         }
         ThemeManager.setTheme(theme);
         ThemeManager.apply(MainApp.getScene());
-        if (panel != null && panel.getScene() != null) {
-            ThemeManager.apply(panel.getScene());
-        }
+
+        // Notify listeners so any other open dialogs can refresh their scenes to match
+        // the new theme.
+        eventPublisher.publishEvent(new ThemeChangedEvent(this, theme));
     }
 
     private void applyActiveButton(Button activeButton, List<Button> buttons) {
@@ -335,12 +341,14 @@ public class AdminSettingsDialogController {
                 ? txtBackupPath.getText()
                 : txtSavePath.getText();
 
-        if (otherPath == null || otherPath.isBlank()) return false;
+        if (otherPath == null || otherPath.isBlank())
+            return false;
 
         Path selectedRoot = Path.of(selectedPath).getRoot();
         Path otherRoot = Path.of(otherPath).getRoot();
 
-        if (selectedRoot == null || otherRoot == null) return false;
+        if (selectedRoot == null || otherRoot == null)
+            return false;
 
         return selectedRoot.toString().equalsIgnoreCase(otherRoot.toString());
     }
@@ -401,19 +409,20 @@ public class AdminSettingsDialogController {
                 I18n.get("setting.storage.restore.confirm.content"));
 
         Optional<ButtonType> result = confirm.showAndWait();
-        if (result.isEmpty() || result.get() != ButtonType.OK) return;
+        if (result.isEmpty() || result.get() != ButtonType.OK)
+            return;
 
         btnRestore.setDisable(true);
         showNotice(I18n.get("setting.storage.restore.progress"), true);
 
         Thread.ofVirtual().start(() -> {
-            RestoreService.RestoreResult restoreResult  = adminSettingsService.restoreFromBackup();
+            RestoreService.RestoreResult restoreResult = adminSettingsService.restoreFromBackup();
             Platform.runLater(() -> {
                 btnRestore.setDisable(false);
-                if (restoreResult .success()) {
-                    showNotice(I18n.get("setting.storage.restore.success", restoreResult .count()), true);
+                if (restoreResult.success()) {
+                    showNotice(I18n.get("setting.storage.restore.success", restoreResult.count()), true);
                 } else {
-                    showNotice(I18n.get("setting.storage.restore.error", restoreResult .errorMessage()), false);
+                    showNotice(I18n.get("setting.storage.restore.error", restoreResult.errorMessage()), false);
                 }
             });
         });
@@ -430,6 +439,4 @@ public class AdminSettingsDialogController {
         lblDriveConflictWarning.setVisible(conflict);
         lblDriveConflictWarning.setManaged(conflict);
     }
-
-
 }

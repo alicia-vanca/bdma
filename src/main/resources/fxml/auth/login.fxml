@@ -20,7 +20,15 @@
         </Label>
         <VBox spacing="10">
             <TextField fx:id="username" promptText="%login.username" styleClass="input"/>
-            <PasswordField fx:id="password" promptText="%login.password" styleClass="input"/>
+            <StackPane alignment="CENTER_RIGHT">
+                <PasswordField fx:id="password" promptText="%login.password" styleClass="input"/>
+                <TextField fx:id="passwordVisible" promptText="%login.password" styleClass="input" visible="false" managed="false"/>
+                <Button fx:id="btnPeekPassword" styleClass="peek-btn">
+                    <StackPane.margin>
+                        <Insets right="5"/>
+                    </StackPane.margin>
+                </Button>
+            </StackPane>
         </VBox>
         <Label fx:id="message" styleClass="message-error"/>
         <Button text="%login.button" onAction="#handleLogin" styleClass="login-btn"/>

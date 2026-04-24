@@ -19,8 +19,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
-import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceValidationResult;
+import com.app.common.events.DeviceEvent;
 
 @Component
 public class DeviceTracker implements Runnable {
@@ -37,7 +37,8 @@ public class DeviceTracker implements Runnable {
     // Holds the active adb track-devices process so shutdown() can destroy it
     // immediately without waiting for the read loop to time out.
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
-    private AtomicReference<ScheduledExecutorService> scheduler = new AtomicReference<>(Executors.newScheduledThreadPool(2));
+    private AtomicReference<ScheduledExecutorService> scheduler = new AtomicReference<>(
+            Executors.newScheduledThreadPool(2));
     private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingChecks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Integer> stableCounters = new ConcurrentHashMap<>();
 
@@ -176,7 +177,8 @@ public class DeviceTracker implements Runnable {
 
         for (String serial : new HashSet<>(currentDevices)) {
             if (!newSet.contains(serial)) {
-                // Cancel stability check nếu disconnect trong lúc đang chờ
+                // Cancel the stability check if the device disconnects while validation is
+                // pending.
                 cancelStabilityCheck(serial);
                 eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, null));
             }
@@ -203,8 +205,8 @@ public class DeviceTracker implements Runnable {
                     return;
                 }
 
-            int count = stableCounters.merge(serial, 1, (a, b) -> a + b);
-            log.debug("Stability check {}/{} for: {}", count, STABLE_CONFIRM_COUNT, serial);
+                int count = stableCounters.merge(serial, 1, (a, b) -> a + b);
+                log.debug("Stability check {}/{} for: {}", count, STABLE_CONFIRM_COUNT, serial);
 
                 if (count >= STABLE_CONFIRM_COUNT) {
                     cancelStabilityCheck(serial);

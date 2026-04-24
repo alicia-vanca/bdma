@@ -1,23 +1,27 @@
 package com.app.common.modules.settingspopup.controllers;
 
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.app.MainApp;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.Language;
 import com.app.common.definitions.enums.Theme;
+import com.app.common.events.ThemeChangedEvent;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.services.UserSettingService;
+
 import javafx.beans.binding.Bindings;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
 
 public class SettingsPopupController {
 
@@ -120,14 +124,17 @@ public class SettingsPopupController {
 
     private final UserSettingService userSettingService;
     private final Actions actions;
+    private final ApplicationEventPublisher eventPublisher;
 
     public SettingsPopupController(
             Session session,
             UserSettingService userSettingService,
-            Actions actions) {
+            Actions actions,
+            ApplicationEventPublisher eventPublisher) {
         this.session = Objects.requireNonNull(session, "session must not be null");
         this.userSettingService = Objects.requireNonNull(userSettingService, "userSettingService must not be null");
         this.actions = Objects.requireNonNull(actions, "actions must not be null");
+        this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher must not be null");
     }
 
     @FXML
@@ -228,13 +235,22 @@ public class SettingsPopupController {
         actions.reloadUi();
     }
 
+    /**
+     * Switches the application theme and notifies all listeners.
+     * Applies theme to main scene, refreshes popup, and publishes event for
+     * dialogs.
+     *
+     * @param theme the theme constant (THEME_LIGHT or THEME_DARK)
+     */
     private void switchTheme(String theme) {
-        // Apply theme immediately and refresh popup styling to keep controls in sync.
         Theme themeEnum = AppConstants.THEME_DARK.equals(theme) ? Theme.DARK : Theme.LIGHT;
         saveUserConfig(themeEnum, null);
         ThemeManager.setTheme(theme);
         ThemeManager.apply(MainApp.getScene());
         actions.refreshPopup();
+
+        // Publish theme change event for dialogs to update their styling
+        eventPublisher.publishEvent(new ThemeChangedEvent(this, theme));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

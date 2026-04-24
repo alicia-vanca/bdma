@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Callable;
 
-import com.app.common.services.DriveResolverService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +16,7 @@ import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.services.AppConfigService;
+import com.app.common.services.DriveResolverService;
 
 import lombok.Getter;
 
@@ -341,7 +341,7 @@ public class FolderManagerService {
         }
     }
 
-    public void backupFromSave(String fileName) throws IOException {
+    public void backupFromSave(String nonDriverLetterPath) throws IOException {
         if (backupDir == null) {
             throw new IOException("Backup directory not configured");
         }
@@ -353,8 +353,9 @@ public class FolderManagerService {
                             + backupDir.getAbsolutePath());
                 }
 
-                Path source = driveResolverService.resolve(fileName)
-                        .orElseThrow(() -> new IOException("Source file not found on any drive: " + fileName));
+                Path source = driveResolverService.resolve(nonDriverLetterPath)
+                        .orElseThrow(
+                                () -> new IOException("Source file not found on any drive: " + nonDriverLetterPath));
 
                 String relativeFromData = toRelativeDataPath(source.toString());
 
@@ -367,7 +368,7 @@ public class FolderManagerService {
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException("Failed to back up file: " + fileName, e);
+            throw new IOException("Failed to back up file: " + nonDriverLetterPath, e);
         }
     }
 

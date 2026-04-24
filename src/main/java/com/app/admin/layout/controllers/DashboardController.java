@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
-import com.app.common.dtos.DeviceEvent;
 import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
+import com.app.common.events.DeviceEvent;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;

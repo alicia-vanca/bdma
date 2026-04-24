@@ -1,6 +1,5 @@
 package com.app.common.repositories;
 
-import java.nio.file.Path;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -231,28 +230,22 @@ public class FileRepository {
                 rs.getString("device_name"));
     }
 
-    public void batchUpdatePaths(List<String> relativeNames, String newDataRoot, String newBackupRoot) {
+    /**
+     * Batch updates synced_path, backed_up_path, and status for multiple files.
+     * Each batch argument array contains: [syncedPath, backedUpPath, status,
+     * fileName]
+     */
+    public void batchUpdatePaths(List<Object[]> batchArgs) {
         String sql = """
-            UPDATE files
-            SET synced_path     = ? || '\\' || name,
-                backed_up_path  = ? || '\\' || name,
-                status          = ?
-            WHERE name = ?
-            """;
-
-        List<Object[]> batchArgs = relativeNames.stream()
-                .map(rel -> {
-                    String fileName = Path.of(rel).getFileName().toString();
-                    // rebuild full relative path per file
-                    String newSyncedPath  = Path.of(newDataRoot,   rel).toString();
-                    String newBackupPath  = Path.of(newBackupRoot, rel).toString();
-                    return new Object[]{ newSyncedPath, newBackupPath,
-                            AppConstants.FILE_STATUS_BACKEDUP, fileName };
-                })
-                .toList();
+                UPDATE files
+                SET synced_path    = ?,
+                    backed_up_path = ?,
+                    status         = ?
+                WHERE name = ?
+                """;
 
         try {
-            jdbcTemplate.batchUpdate(sql, batchArgs);
+            jdbcTemplate.batchUpdate(sql, new ArrayList<>(batchArgs));
         } catch (Exception e) {
             throw new RepositoryException("batchUpdatePaths failed", e);
         }
