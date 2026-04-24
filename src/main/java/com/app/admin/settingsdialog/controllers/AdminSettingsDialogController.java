@@ -6,10 +6,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.services.DriveResolverService;
 import javafx.application.Platform;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -51,6 +53,7 @@ public class AdminSettingsDialogController {
     private final Session session;
     private final UserSettingService userSettingService;
     private final AppUpdateController appUpdateController;
+    private final AdminLayoutController adminLayoutController;
     private final DriveResolverService driveResolverService;
 
     @FXML
@@ -105,8 +108,11 @@ public class AdminSettingsDialogController {
     private VBox noticeContainer;
     @FXML
     private Button btnRestore;
+    @FXML
+    private Label lblDriveConflictWarning;
 
     private NoticeStackRenderer noticeRenderer;
+    @Setter
     private Runnable onLanguageChangedAction;
 
     public AdminSettingsDialogController(
@@ -114,16 +120,14 @@ public class AdminSettingsDialogController {
             Session session,
             UserSettingService userSettingService,
             AppUpdateController appUpdateController,
-            DriveResolverService driveResolverService) {
+            DriveResolverService driveResolverService,
+            AdminLayoutController adminLayoutController) {
         this.adminSettingsService = adminSettingsService;
         this.session = session;
         this.userSettingService = userSettingService;
         this.appUpdateController = appUpdateController;
         this.driveResolverService = driveResolverService;
-    }
-
-    public void setOnLanguageChangedAction(Runnable onLanguageChangedAction) {
-        this.onLanguageChangedAction = onLanguageChangedAction;
+        this.adminLayoutController = adminLayoutController;
     }
 
     @FXML
@@ -161,6 +165,7 @@ public class AdminSettingsDialogController {
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         chkStartWithWindows.setText(I18n.get("setting.startWithWindows.checkbox"));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
+        lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
     }
 
     // Bind each pair of segment buttons to equal widths within their row.
@@ -193,6 +198,7 @@ public class AdminSettingsDialogController {
         adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
         chkAutoDelete.setSelected(adminSettingsService.getAutoDelete());
         chkStartWithWindows.setSelected(adminSettingsService.getStartWithWindows());
+        checkAndShowDriveConflict();
     }
 
     @FXML
@@ -315,13 +321,13 @@ public class AdminSettingsDialogController {
         Stage stage = (Stage) txtField.getScene().getWindow();
         File selected = chooser.showDialog(stage);
         if (selected != null) {
-            if (isDriveConflict(selected.getAbsolutePath(), type)) {
-                showNotice(I18n.get("setting.storage.error.same_drive"), false);
-                return;
-            }
             txtField.setText(selected.getAbsolutePath());
+            checkAndShowDriveConflict();
             persistFolder(txtField, type);
         }
+
+        adminLayoutController.refreshStorageStatus();
+
     }
 
     private boolean isDriveConflict(String selectedPath, FolderType selectedType) {
@@ -331,10 +337,12 @@ public class AdminSettingsDialogController {
 
         if (otherPath == null || otherPath.isBlank()) return false;
 
-        String selectedDrive = Path.of(selectedPath).getRoot().toString();
-        String otherDrive    = Path.of(otherPath).getRoot().toString();
+        Path selectedRoot = Path.of(selectedPath).getRoot();
+        Path otherRoot = Path.of(otherPath).getRoot();
 
-        return selectedDrive.equalsIgnoreCase(otherDrive);
+        if (selectedRoot == null || otherRoot == null) return false;
+
+        return selectedRoot.toString().equalsIgnoreCase(otherRoot.toString());
     }
 
     private void persistFolder(TextField txtField, FolderType type) {
@@ -410,5 +418,18 @@ public class AdminSettingsDialogController {
             });
         });
     }
+
+    private void checkAndShowDriveConflict() {
+        String savePath = txtSavePath.getText();
+        String backupPath = txtBackupPath.getText();
+
+        boolean conflict = savePath != null && !savePath.isBlank()
+                && backupPath != null && !backupPath.isBlank()
+                && isDriveConflict(savePath, FolderType.SAVE);
+
+        lblDriveConflictWarning.setVisible(conflict);
+        lblDriveConflictWarning.setManaged(conflict);
+    }
+
 
 }

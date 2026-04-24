@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Callable;
 
+import com.app.common.services.DriveResolverService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,10 +46,13 @@ public class FolderManagerService {
 
     private final AppConfigService appConfigService;
     private final boolean storageProtectionEnabled;
+    private final DriveResolverService driveResolverService;
 
     public FolderManagerService(AppConfigService appConfigService,
+            DriveResolverService driveResolverService,
             @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled) {
         this.appConfigService = appConfigService;
+        this.driveResolverService = driveResolverService;
         this.storageProtectionEnabled = storageProtectionEnabled;
         this.tempDir = new File(AppDataPaths.appTmpDir());
     }
@@ -338,13 +342,26 @@ public class FolderManagerService {
     }
 
     public void backupFromSave(String fileName) throws IOException {
+        if (backupDir == null) {
+            throw new IOException("Backup directory not configured");
+        }
+
         try {
             withDataAndBackupUnlocked(() -> {
-                File source = new File(dataDir, fileName);
-                File target = new File(backupDir, fileName);
-                ensureParentDir(target);
-                Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                log.info("Backed up to backup dir: {}", fileName);
+                if (!backupDir.exists()) {
+                    throw new IOException("Backup directory not found after unlock: "
+                            + backupDir.getAbsolutePath());
+                }
+
+                Path source = driveResolverService.resolve(fileName)
+                        .orElseThrow(() -> new IOException("Source file not found on any drive: " + fileName));
+
+                String relativeFromData = toRelativeDataPath(source.toString());
+
+                Path target = backupDir.toPath().resolve(relativeFromData);
+                ensureParentDir(target.toFile());
+                Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+                log.info("Backed up to backup dir: {}", relativeFromData);
                 return null;
             });
         } catch (IOException e) {

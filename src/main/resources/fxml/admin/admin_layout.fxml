@@ -42,6 +42,55 @@
         <center>
             <StackPane fx:id="contentArea" styleClass="content-shell"/>
         </center>
+        <bottom>
+            <VBox fx:id="statusBar" styleClass="status-bar" spacing="0">
+
+                <HBox fx:id="warningStrip"
+                      alignment="CENTER_LEFT"
+                      spacing="8"
+                      styleClass="status-warning-strip"
+                      managed="false"
+                      visible="false">
+                    <padding><Insets top="4" right="12" bottom="4" left="12"/></padding>
+                    <Label text="⚠" styleClass="status-warning-icon"/>
+                    <Label fx:id="lblStatusWarning"
+                           wrapText="false"
+                           styleClass="status-warning-label"
+                           HBox.hgrow="ALWAYS"/>
+                </HBox>
+
+                <HBox alignment="CENTER_LEFT" spacing="16" styleClass="status-storage-row">
+                    <padding><Insets top="5" right="12" bottom="5" left="12"/></padding>
+
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
+                        <Label text="%status.dataFolder" styleClass="status-storage-name"/>
+                        <ProgressBar fx:id="pbDataStorage"
+                                     progress="0"
+                                     styleClass="storage-progress"
+                                     prefWidth="140"
+                                     HBox.hgrow="ALWAYS"
+                                     maxWidth="1.7976931348623157E308"/>
+                        <Label fx:id="lblDataStorageUsage" styleClass="status-storage-usage"/>
+                    </HBox>
+
+                    <Separator orientation="VERTICAL"/>
+
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
+                        <Label text="%status.backupFolder" styleClass="status-storage-name"/>
+                        <ProgressBar fx:id="pbBackupStorage"
+                                     progress="0"
+                                     styleClass="storage-progress"
+                                     prefWidth="140"
+                                     HBox.hgrow="ALWAYS"
+                                     maxWidth="1.7976931348623157E308"/>
+                        <Label fx:id="lblBackupStorageUsage" styleClass="status-storage-usage"/>
+                    </HBox>
+                </HBox>
+                <HBox>
+                    <Label fx:id="lblDriveConflictWarning" wrapText="true" styleClass="settings-warning" managed="false" visible="false"/>
+                </HBox>
+            </VBox>
+        </bottom>
     </BorderPane>
     <VBox fx:id="noticeContainer"
           spacing="8"

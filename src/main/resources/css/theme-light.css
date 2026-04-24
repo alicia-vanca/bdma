@@ -27,6 +27,8 @@
     -table-odd: #f8fafc;
     -table-hover: #e0f2fe;
     -table-selected: #bfdbfe;
+
+    -warning-color: #f59e0b;
 }
 
 /* ===== ROOT ===== */
@@ -43,6 +45,10 @@
 /* ===== TEXT ===== */
 .label {
     -fx-text-fill: -text-color;
+}
+
+.settings-warning {
+    -fx-text-fill: #f59e0b;
 }
 
 /* ===== SIDEBAR ===== */

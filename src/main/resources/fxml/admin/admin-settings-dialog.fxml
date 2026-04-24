@@ -85,6 +85,7 @@
                                         onAction="#onSelectBackupFolder"
                                         styleClass="btn-secondary"/>
                             </HBox>
+                            <Label fx:id="lblDriveConflictWarning" wrapText="true" styleClass="settings-warning" managed="false" visible="false"/>
                         </VBox>
                         <Region prefHeight="8"/>
                         <HBox alignment="CENTER_LEFT">
