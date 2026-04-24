@@ -219,7 +219,7 @@ public class UserEditFormController {
         txtUsername.setText(user.getUsername());
         lblUsername.setText(user.getUsername());
         cbRole.setValue(user.getRole());
-        lblRole.setText(user.getRole().name());
+        lblRole.setText(user.getRole().getLocalizedName());
         txtPassword.clear();
         txtPasswordConfirm.clear();
         hideError();

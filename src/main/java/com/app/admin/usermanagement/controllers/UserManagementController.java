@@ -12,6 +12,7 @@ import com.app.MainApp;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.Role;
+import com.app.common.definitions.enums.UserStatus;
 import com.app.common.exceptions.CannotDeleteSelfException;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
@@ -48,7 +49,6 @@ public class UserManagementController {
 
     private static final Logger log = LoggerFactory.getLogger(UserManagementController.class);
 
-    private static final String FILTER_ALL_ROLES = AppConstants.FILTER_ALL_ROLES;
     @FXML
     private TableView<User> table;
     @FXML
@@ -58,11 +58,15 @@ public class UserManagementController {
     @FXML
     private TableColumn<User, String> colRole;
     @FXML
+    private TableColumn<User, String> colStatus;
+    @FXML
     private TableColumn<User, Void> colAction;
     @FXML
     private TextField txtSearch;
     @FXML
     private ComboBox<String> cbRole;
+    @FXML
+    private ComboBox<String> cbStatus;
     @FXML
     private StackPane root;
     @FXML
@@ -93,6 +97,7 @@ public class UserManagementController {
     // and restore them in initialize() instead of always defaulting to empty/all.
     private String savedSearchText = "";
     private String savedRoleFilter = null; // null = use locale-default "All"
+    private String savedStatusFilter = null; // null = use locale-default "All"
 
     public UserManagementController(UserService userService,
             ViewLoader viewLoader,
@@ -114,23 +119,41 @@ public class UserManagementController {
             return;
         }
         setupRoleComboBox();
+        setupStatusComboBox();
         setupFilterListeners();
         setupTableColumns();
         setupPageSizeComboBox();
         addActionColumn();
+        table.setPlaceholder(new Label(I18n.get("user.empty")));
         loadData();
         restoreFilterState();
+        // Re-apply filters after restoring UI state to keep table consistent with
+        // filter controls
+        onSearch();
         // Refresh user list when sync auto-creates a new account
         dataSyncService.setOnUserAutoCreated(username -> Platform.runLater(this::loadData));
     }
 
     private void setupRoleComboBox() {
-        cbRole.getItems().addAll(I18n.get(FILTER_ALL_ROLES), Role.ADMIN.toString(), Role.USER.toString());
+        cbRole.getItems().addAll(
+                I18n.get(AppConstants.FILTER_ALL_ROLES),
+                Role.ADMIN.getLocalizedName(),
+                Role.USER.getLocalizedName());
         // Restore previous role selection if the user had a non-default filter active,
         // translating the "All" sentinel to the current locale's string.
-        String roleToRestore = (savedRoleFilter == null) ? I18n.get(FILTER_ALL_ROLES) : savedRoleFilter;
+        String roleToRestore = (savedRoleFilter == null) ? I18n.get(AppConstants.FILTER_ALL_ROLES) : savedRoleFilter;
 
         cbRole.setValue(roleToRestore);
+    }
+
+    private void setupStatusComboBox() {
+        cbStatus.getItems().addAll(
+                I18n.get(AppConstants.FILTER_ALL_STATUS),
+                UserStatus.ACTIVE.getLocalizedName(),
+                UserStatus.INACTIVE.getLocalizedName());
+        String statusToRestore = (savedStatusFilter == null) ? I18n.get(AppConstants.FILTER_ALL_STATUS)
+                : savedStatusFilter;
+        cbStatus.setValue(statusToRestore);
     }
 
     // Keep username filtering responsive while typing without requiring
@@ -142,7 +165,13 @@ public class UserManagementController {
         });
         cbRole.valueProperty().addListener((obs, oldValue, newValue) -> {
             // Store null for the "All" sentinel so it re-translates correctly on reload.
-            savedRoleFilter = (newValue == null || newValue.equals(I18n.get(FILTER_ALL_ROLES))) ? null : newValue;
+            savedRoleFilter = (newValue == null || newValue.equals(I18n.get(AppConstants.FILTER_ALL_ROLES))) ? null
+                    : newValue;
+            onSearch();
+        });
+        cbStatus.valueProperty().addListener((obs, oldValue, newValue) -> {
+            savedStatusFilter = (newValue == null || newValue.equals(I18n.get(AppConstants.FILTER_ALL_STATUS))) ? null
+                    : newValue;
             onSearch();
         });
     }
@@ -176,7 +205,13 @@ public class UserManagementController {
             }
         });
 
-        colRole.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getRole().toString()));
+        colRole.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getRole().getLocalizedName()));
+
+        colStatus.setCellValueFactory(c -> {
+            boolean isActive = c.getValue().isActive();
+            UserStatus status = isActive ? UserStatus.ACTIVE : UserStatus.INACTIVE;
+            return new SimpleStringProperty(status.getLocalizedName());
+        });
     }
 
     private void setupPageSizeComboBox() {
@@ -218,13 +253,15 @@ public class UserManagementController {
     private void onSearch() {
         String keyword = txtSearch.getText() == null ? "" : txtSearch.getText().toLowerCase().trim();
         String role = cbRole.getValue();
+        String status = cbStatus.getValue();
 
         filteredUsers = allUsers.stream()
                 .filter(u -> {
                     boolean matchUsername = u.getUsername().toLowerCase().contains(keyword);
-                    boolean matchRole = role == null || role.equals(I18n.get(FILTER_ALL_ROLES)) ||
-                            u.getRole().toString().equals(role);
-                    return matchUsername && matchRole;
+                    boolean matchRole = role == null || role.equals(I18n.get(AppConstants.FILTER_ALL_ROLES)) ||
+                            u.getRole().getLocalizedName().equals(role);
+                    boolean matchStatus = matchesStatusFilter(u, status);
+                    return matchUsername && matchRole && matchStatus;
                 })
                 .toList();
 
@@ -232,10 +269,24 @@ public class UserManagementController {
         setupPagination();
     }
 
+    private boolean matchesStatusFilter(User user, String statusFilter) {
+        if (statusFilter == null || statusFilter.equals(I18n.get(AppConstants.FILTER_ALL_STATUS))) {
+            return true;
+        }
+        if (statusFilter.equals(UserStatus.ACTIVE.getLocalizedName())) {
+            return user.isActive();
+        }
+        if (statusFilter.equals(UserStatus.INACTIVE.getLocalizedName())) {
+            return !user.isActive();
+        }
+        return false;
+    }
+
     @FXML
     private void onReset() {
         txtSearch.clear();
-        cbRole.setValue(I18n.get(FILTER_ALL_ROLES));
+        cbRole.setValue(I18n.get(AppConstants.FILTER_ALL_ROLES));
+        cbStatus.setValue(I18n.get(AppConstants.FILTER_ALL_STATUS));
         filteredUsers = new ArrayList<>(allUsers);
         currentPageIndex = 0;
         setupPagination();
@@ -263,53 +314,86 @@ public class UserManagementController {
         colAction.setCellFactory(param -> new TableCell<>() {
 
             private final Button btnEdit = new Button(I18n.get("common.edit"));
-            private final Button btnDelete = new Button(I18n.get("common.delete"));
-            private final HBox actions = new HBox(10, btnEdit, btnDelete);
+            private final Button btnToggleActive = new Button();
+            private final HBox actions = new HBox(10, btnEdit, btnToggleActive);
 
             {
                 btnEdit.getStyleClass().add("btn-edit");
-                btnDelete.getStyleClass().add("btn-delete");
                 actions.setAlignment(Pos.CENTER_LEFT);
 
                 btnEdit.setOnAction(e -> openForm(getTableView().getItems().get(getIndex())));
-                btnDelete.setOnAction(e -> onDeleteClicked(getTableView().getItems().get(getIndex())));
+                btnToggleActive.setOnAction(e -> onToggleActiveClicked(getTableView().getItems().get(getIndex())));
             }
 
             @Override
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                setGraphic(empty ? null : actions);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    int index = getIndex();
+                    if (index < 0 || index >= getTableView().getItems().size()) {
+                        setGraphic(null);
+                        return;
+                    }
+
+                    User user = getTableView().getItems().get(index);
+                    boolean isActive = user.isActive();
+
+                    if (isActive) {
+                        btnToggleActive.setText(I18n.get("user.deactivate"));
+                        btnToggleActive.getStyleClass().setAll("button", "btn-delete");
+                    } else {
+                        btnToggleActive.setText(I18n.get("user.reactivate"));
+                        btnToggleActive.getStyleClass().setAll("button", "btn-reactivate");
+                    }
+
+                    setGraphic(actions);
+                }
             }
         });
     }
 
-    private void onDeleteClicked(User user) {
-        if (isCurrentSessionUser(user)) {
-            showError(I18n.get("user.delete.self.error"));
+    private void onToggleActiveClicked(User user) {
+        if (user == null) {
             return;
         }
+
+        if (isCurrentSessionUser(user)) {
+            showError(I18n.get("user.deactivate.self.error"));
+            return;
+        }
+
+        boolean isActive = user.isActive();
+        String confirmKey = isActive ? "user.deactivate.confirm" : "user.reactivate.confirm";
 
         Alert confirm = AlertHelper.createConfirmation(
                 I18n.get("common.confirm"),
                 null,
-                I18n.get("user.delete.confirm"));
+                I18n.get(confirmKey));
 
         confirm.showAndWait()
                 .filter(type -> type == ButtonType.OK)
-                .ifPresent(type -> deleteUser(user));
+                .ifPresent(type -> toggleUserActive(user, isActive));
     }
 
-    private void deleteUser(User user) {
+    private void toggleUserActive(User user, boolean currentlyActive) {
         try {
-            userService.delete(user.getId());
-            log.info("Deleted user '{}'", user.getUsername());
+            if (currentlyActive) {
+                userService.deactivate(user.getId());
+                log.info("Deactivated user '{}'", user.getUsername());
+                showSuccess(I18n.get("user.deactivate.success"));
+            } else {
+                userService.reactivate(user.getId());
+                log.info("Reactivated user '{}'", user.getUsername());
+                showSuccess(I18n.get("user.reactivate.success"));
+            }
             loadData();
-            showSuccess(I18n.get("user.delete.success"));
         } catch (CannotDeleteSelfException ex) {
-            showError(I18n.get("user.delete.self.error"));
+            showError(I18n.get("user.deactivate.self.error"));
         } catch (Exception ex) {
-            log.error("Failed to delete user '{}'", user.getUsername(), ex);
-            showError(I18n.get("user.delete.error"));
+            log.error("Failed to toggle active status for user '{}'", user.getUsername(), ex);
+            showError(I18n.get("user.toggle.error"));
         }
     }
 

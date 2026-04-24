@@ -58,6 +58,21 @@ public class FileRepository {
     }
 
     /**
+     * Updates file status by synced_path.
+     */
+    public void updateStatusBySyncedPath(String syncedPath, String status) {
+        String sql = """
+                    UPDATE files SET status = ? WHERE synced_path = ?
+                """;
+
+        try {
+            jdbcTemplate.update(sql, status, syncedPath);
+        } catch (Exception e) {
+            throw new RepositoryException("updateStatusBySyncedPath failed: " + syncedPath, e);
+        }
+    }
+
+    /**
      * Updates file status and backed_up_path after successful backup.
      */
     public void updateStatusAndBackupPath(String syncedPath, String backedUpPath, String status) {

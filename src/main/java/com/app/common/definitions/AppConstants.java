@@ -48,6 +48,7 @@ public final class AppConstants {
     public static final String MESSAGE_SUCCESS = "message-success";
     public static final String COMMON_ALL = "common.all";
     public static final String FILTER_ALL_ROLES = "filter.allRoles";
+    public static final String FILTER_ALL_STATUS = "filter.allStatus";
     public static final int PAGE_SIZE = 10;
 
     // ────────────── File Status ──────────────
