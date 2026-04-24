@@ -2,13 +2,13 @@ package com.app.common.definitions.enums;
 
 import com.app.common.modules.i18n.I18n;
 
-public enum Role {
-    ADMIN("user.role.admin"),
-    USER("user.role.user");
+public enum UserStatus {
+    ACTIVE("user.status.active"),
+    INACTIVE("user.status.inactive");
 
     private final String messageKey;
 
-    Role(String messageKey) {
+    UserStatus(String messageKey) {
         this.messageKey = messageKey;
     }
 
@@ -18,13 +18,5 @@ public enum Role {
 
     public String getLocalizedName() {
         return I18n.get(messageKey);
-    }
-
-    @Override
-    public String toString() {
-        return switch (this) {
-            case ADMIN -> "Administrator";
-            case USER -> "User";
-        };
     }
 }

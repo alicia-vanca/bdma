@@ -96,29 +96,40 @@ public class LoginController {
             return;
         }
 
-        User user = userService.login(usernameText, passwordText);
+        UserService.LoginResponse response = userService.loginWithStatus(usernameText, passwordText);
 
-        if (user != null) {
-            log.info("User '{}' logged in successfully", usernameText);
+        switch (response.result()) {
+            case SUCCESS:
+                User user = response.user();
+                log.info("User '{}' logged in successfully", usernameText);
 
-            // Initialize session for the authenticated user
-            session.setUser(user);
+                // Initialize session for the authenticated user
+                session.setUser(user);
 
-            // Apply user-specific runtime settings
-            userSettingService.applyRuntimeSettings(user.getId());
+                // Apply user-specific runtime settings
+                userSettingService.applyRuntimeSettings(user.getId());
 
-            // Trigger background sync without blocking UI
-            loginService.onLoginSuccess();
+                // Trigger background sync without blocking UI
+                loginService.onLoginSuccess();
 
-            // Start a fresh device-tracking session after successful login.
-            DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
-            dataSyncRunner.startDeviceTracker();
+                // Start a fresh device-tracking session after successful login.
+                DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
+                dataSyncRunner.startDeviceTracker();
 
-            // Navigate to main screen
-            MainApp.showAdmin();
-        } else {
-            log.warn("Failed login attempt for username '{}'", usernameText);
-            showError("login.error.invalid");
+                // Navigate to main screen
+                MainApp.showAdmin();
+                break;
+
+            case ACCOUNT_DEACTIVATED:
+                log.warn("Login attempt for deactivated account: '{}'", usernameText);
+                showError("login.error.account.deactivated");
+                break;
+
+            case INVALID_CREDENTIALS:
+            default:
+                log.warn("Failed login attempt for username '{}'", usernameText);
+                showError("login.error.invalid");
+                break;
         }
     }
 

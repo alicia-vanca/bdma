@@ -1,5 +1,6 @@
 package com.app.user.userdetail.controllers;
 
+import com.app.common.definitions.enums.UserStatus;
 import com.app.common.models.User;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -20,6 +21,8 @@ public class UserInfoController {
     private Label lblUsername;
     @FXML
     private Label lblRole;
+    @FXML
+    private Label lblStatus;
     @FXML
     private Button btnBack;
     @FXML
@@ -45,7 +48,10 @@ public class UserInfoController {
         }
 
         lblUsername.setText(user.getUsername());
-        lblRole.setText(user.getRole().name());
+        lblRole.setText(user.getRole().getLocalizedName());
+
+        UserStatus status = user.isActive() ? UserStatus.ACTIVE : UserStatus.INACTIVE;
+        lblStatus.setText(status.getLocalizedName());
 
         applyUI();
     }
