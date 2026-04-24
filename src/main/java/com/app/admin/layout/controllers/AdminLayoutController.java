@@ -1,5 +1,6 @@
 package com.app.admin.layout.controllers;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +49,9 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -80,6 +83,20 @@ public class AdminLayoutController extends BaseLayoutController {
     private Button btnUser;
     @FXML
     private VBox noticeContainer;
+    @FXML
+    private HBox warningStrip;
+    @FXML
+    private Label lblStatusWarning;
+    @FXML
+    private ProgressBar pbDataStorage;
+    @FXML
+    private ProgressBar pbBackupStorage;
+    @FXML
+    private Label lblDataStorageUsage;
+    @FXML
+    private Label lblBackupStorageUsage;
+    @FXML
+    private Label lblDriveConflictWarning;
 
     private SettingsPopupHelper settingsPopupHelper;
     private DashboardController currentDashboardController;
@@ -149,6 +166,7 @@ public class AdminLayoutController extends BaseLayoutController {
         syncProgressTracker.setOnProgressChanged(this::refreshDashboardIfActive);
 
         openDefaultTab();
+        refreshStorageStatus();
     }
 
     @FXML
@@ -379,6 +397,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (currentDashboardController != null) {
             currentDashboardController.onSyncCompleted();
         }
+        refreshStorageStatus();
     }
 
     @EventListener
@@ -387,6 +406,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (currentDashboardController != null) {
             currentDashboardController.onBackupCompleted();
         }
+        refreshStorageStatus();
     }
 
     private void handleRequestValidate(DeviceSummary summary) {
@@ -409,5 +429,94 @@ public class AdminLayoutController extends BaseLayoutController {
             showNoticeSuccess(I18n.get("device.sync.queued", deviceName));
         }
         refreshDashboardIfActive();
+    }
+
+    public void refreshStorageStatus() {
+        Platform.runLater(() -> {
+            boolean sameParent = isSameParentFolder(
+                    folderManagerService.getDataDir(),
+                    folderManagerService.getBackupDir());
+
+            boolean dataWarn   = updateStorageBar(pbDataStorage,   lblDataStorageUsage,   folderManagerService.getDataDir());
+            boolean backupWarn = updateStorageBar(pbBackupStorage, lblBackupStorageUsage, folderManagerService.getBackupDir());
+
+            lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
+            lblDriveConflictWarning.setVisible(sameParent);
+            lblDriveConflictWarning.setManaged(sameParent);
+
+            updateStorageWarning(dataWarn, backupWarn);
+        });
+    }
+
+    private boolean isSameParentFolder(File dataDir, File backupDir) {
+        File dataParent   = dataDir   != null ? dataDir.getParentFile()   : null;
+        File backupParent = backupDir != null ? backupDir.getParentFile() : null;
+        return dataParent != null
+                && backupParent != null
+                && dataParent.getAbsolutePath().equalsIgnoreCase(backupParent.getAbsolutePath());
+    }
+
+    private void updateStorageWarning(boolean dataWarn, boolean backupWarn) {
+        if (!dataWarn && !backupWarn) {
+            clearStatusWarning();
+            return;
+        }
+        showStatusWarning(I18n.get(resolveStorageWarningKey(dataWarn, backupWarn)));
+    }
+
+    private String resolveStorageWarningKey(boolean dataWarn, boolean backupWarn) {
+        if (dataWarn && backupWarn) {
+            return "status.storage.both.critical";
+        }
+        if (dataWarn) {
+            return "status.storage.data.critical";
+        }
+        return "status.storage.backup.critical";
+    }
+
+    private boolean updateStorageBar(ProgressBar pb, Label lbl, File folder) {
+        if (folder == null || !folder.exists()) {
+            pb.setProgress(0);
+            lbl.setText("—");
+            return false;
+        }
+
+        long total = folder.getTotalSpace();
+        long free  = folder.getFreeSpace();
+        long used  = total - free;
+        double ratio = total > 0 ? (double) used / total : 0;
+
+        pb.setProgress(ratio);
+        pb.getStyleClass().removeAll("storage-warn", "storage-critical");
+
+        if (ratio >= 0.90) {
+            pb.getStyleClass().add("storage-critical");
+        } else if (ratio >= 0.75) {
+            pb.getStyleClass().add("storage-warn");
+        }
+
+        lbl.setText(String.format("%s / %s  (%.0f%%)",
+                formatBytes(used), formatBytes(total), ratio * 100));
+
+        return ratio >= 0.90;
+    }
+
+    private void showStatusWarning(String message) {
+        lblStatusWarning.setText(message);
+        warningStrip.setVisible(true);
+        warningStrip.setManaged(true);
+    }
+
+    private void clearStatusWarning() {
+        warningStrip.setVisible(false);
+        warningStrip.setManaged(false);
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes >= 1_073_741_824L)
+            return String.format("%.1f GB", bytes / 1_073_741_824.0);
+        if (bytes >= 1_048_576L)
+            return String.format("%.1f MB", bytes / 1_048_576.0);
+        return String.format("%d KB", bytes / 1_024);
     }
 }

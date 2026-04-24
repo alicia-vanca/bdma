@@ -10,10 +10,6 @@ import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.databackup.services.DataBackupService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Path;
-
 /**
  * Worker thread responsible for backing up files from dataDir to backupDir.
  * Flow:
@@ -51,9 +47,9 @@ public class DataBackupWorker implements Runnable {
 
                 if (folderManager.isBackupDirConfigured()) {
 
-                    String relativeName = extractRelativeFromData(localPath);
+                    String relativeName = folderManager.toRelativeDataPath(localPath);
 
-                    folderManager.backupFromSave(relativeName);
+                    folderManager.backupFromSave(localPath);
 
                     String absoluteBackupPath = folderManager.getBackupPath(relativeName);
                     String relativeBackupPath = folderManager.stripDriveLetter(absoluteBackupPath);
@@ -80,20 +76,5 @@ public class DataBackupWorker implements Runnable {
                 }
             }
         }
-    }
-
-    private String extractRelativeFromData(String relativePath) throws IOException {
-        File dataDir = folderManager.getDataDir();
-        if (dataDir == null) throw new IOException("DataDir not configured");
-
-        String dataDirRelative = folderManager.stripDriveLetter(dataDir.getAbsolutePath());
-
-        Path base = Path.of(dataDirRelative).normalize();
-        Path target = Path.of(relativePath).normalize();
-
-        if (!target.startsWith(base)) {
-            throw new IOException("Path is outside data directory: " + relativePath);
-        }
-        return base.relativize(target).toString();
     }
 }
