@@ -19,7 +19,8 @@
         </HBox>
         <HBox spacing="10" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34">
             <TextField fx:id="txtSearch" promptText="%user.search" styleClass="input"/>
-            <ComboBox fx:id="cbRole" promptText="%user.role.all"/>
+            <ComboBox fx:id="cbRole" promptText="%filter.allRoles"/>
+            <ComboBox fx:id="cbStatus" promptText="%filter.allStatus"/>
             <Button text="%common.reset" onAction="#onReset" styleClass="btn-secondary"/>
         </HBox>
         <TableView fx:id="table" VBox.vgrow="ALWAYS" fixedCellSize="40">
@@ -30,6 +31,7 @@
                 <TableColumn fx:id="colSTT" text="%common.stt" minWidth="10" maxWidth="60" sortable="false"/>
                 <TableColumn fx:id="colUsername" text="%user.username" prefWidth="30"/>
                 <TableColumn fx:id="colRole" text="%user.role" prefWidth="20"/>
+                <TableColumn fx:id="colStatus" text="%user.status" prefWidth="15" sortable="false"/>
                 <TableColumn fx:id="colAction" text="%common.action" prefWidth="40" sortable="false"/>
             </columns>
         </TableView>

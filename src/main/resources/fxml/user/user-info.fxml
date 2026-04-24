@@ -17,6 +17,8 @@
         <Label fx:id="lblUsername" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
         <Label text="%user.role.label" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
         <Label fx:id="lblRole" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+        <Label text="%user.status.label" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+        <Label fx:id="lblStatus" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
     </GridPane>
     <HBox fx:id="hboxBack" spacing="10" managed="false" visible="false">
         <Button fx:id="btnBack"
