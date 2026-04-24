@@ -1,6 +1,7 @@
 package com.app.admin.layout.controllers;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -433,12 +434,13 @@ public class AdminLayoutController extends BaseLayoutController {
 
     public void refreshStorageStatus() {
         Platform.runLater(() -> {
-            boolean sameParent = isSameParentFolder(
-                    folderManagerService.getDataDir(),
-                    folderManagerService.getBackupDir());
+            File dataDir = folderManagerService.getDataDir();
+            File backupDir = folderManagerService.getBackupDir();
 
-            boolean dataWarn   = updateStorageBar(pbDataStorage,   lblDataStorageUsage,   folderManagerService.getDataDir());
-            boolean backupWarn = updateStorageBar(pbBackupStorage, lblBackupStorageUsage, folderManagerService.getBackupDir());
+            boolean sameParent = isSameParentFolder(dataDir,backupDir);
+
+            boolean dataWarn = updateStorageBar("status.dataFolder", pbDataStorage, lblDataStorageUsage, dataDir);
+            boolean backupWarn = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageUsage, backupDir);
 
             lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
             lblDriveConflictWarning.setVisible(sameParent);
@@ -449,11 +451,15 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private boolean isSameParentFolder(File dataDir, File backupDir) {
-        File dataParent   = dataDir   != null ? dataDir.getParentFile()   : null;
-        File backupParent = backupDir != null ? backupDir.getParentFile() : null;
-        return dataParent != null
-                && backupParent != null
-                && dataParent.getAbsolutePath().equalsIgnoreCase(backupParent.getAbsolutePath());
+        if (dataDir == null || backupDir == null) {
+            return false;
+        }
+        Path dataRoot = Path.of(dataDir.getAbsolutePath()).getRoot();
+        Path backupRoot = Path.of(backupDir.getAbsolutePath()).getRoot();
+        if (dataRoot == null || backupRoot == null) {
+            return false;
+        }
+        return dataRoot.toString().equalsIgnoreCase(backupRoot.toString());
     }
 
     private void updateStorageWarning(boolean dataWarn, boolean backupWarn) {
@@ -474,17 +480,33 @@ public class AdminLayoutController extends BaseLayoutController {
         return "status.storage.backup.critical";
     }
 
-    private boolean updateStorageBar(ProgressBar pb, Label lbl, File folder) {
-        if (folder == null || !folder.exists()) {
+    private boolean updateStorageBar(String labelKey, ProgressBar pb, Label lbl, File folder) {
+        File statsTarget = resolveStorageStatsTarget(folder);
+        if (statsTarget == null || !statsTarget.exists()) {
             pb.setProgress(0);
             lbl.setText("—");
             return false;
         }
 
-        long total = folder.getTotalSpace();
-        long free  = folder.getFreeSpace();
+        long total = statsTarget.getTotalSpace();
+        long free  = statsTarget.getFreeSpace();
+
+        if (total <= 0) {
+            File root = statsTarget.toPath().getRoot() != null ? statsTarget.toPath().getRoot().toFile() : null;
+            if (root != null && root.exists()) {
+                total = root.getTotalSpace();
+                free = root.getFreeSpace();
+            }
+        }
+
+        if (total <= 0) {
+            pb.setProgress(0);
+            lbl.setText("—");
+            return false;
+        }
+
         long used  = total - free;
-        double ratio = total > 0 ? (double) used / total : 0;
+        double ratio =(double) used / total;
 
         pb.setProgress(ratio);
         pb.getStyleClass().removeAll("storage-warn", "storage-critical");
@@ -495,10 +517,48 @@ public class AdminLayoutController extends BaseLayoutController {
             pb.getStyleClass().add("storage-warn");
         }
 
-        lbl.setText(String.format("%s / %s  (%.0f%%)",
-                formatBytes(used), formatBytes(total), ratio * 100));
+        String driveLetter = extractDriveLetter(statsTarget);
+        String storageText = String.format("%s / %s  (%.0f%%)",
+                formatBytes(used), formatBytes(total), ratio * 100);
+        String folderName = I18n.get(labelKey);
+        String displayText;
+        if (driveLetter != null && !driveLetter.isEmpty()) {
+            displayText = String.format("%s (%s)  %s", folderName, driveLetter, storageText);
+        } else {
+            displayText = folderName + "  " + storageText;
+        }
+        lbl.setText(displayText);
 
         return ratio >= 0.90;
+    }
+
+    // Storage-protected folders can be renamed/hidden when locked, so the exact
+    // configured path may not exist at UI refresh time. Use nearest existing path
+    // (or drive root) to read volume metrics reliably.
+    private File resolveStorageStatsTarget(File folder) {
+        if (folder == null) {
+            return null;
+        }
+        if (folder.exists()) {
+            return folder;
+        }
+
+        File current = folder.getAbsoluteFile();
+        while (current != null && !current.exists()) {
+            current = current.getParentFile();
+        }
+        return current;
+    }
+
+    private String extractDriveLetter(File file) {
+        if (file == null) {
+            return null;
+        }
+        Path root = Path.of(file.getAbsolutePath()).getRoot();
+        if (root == null) {
+            return null;
+        }
+        return root.toString();
     }
 
     private void showStatusWarning(String message) {
