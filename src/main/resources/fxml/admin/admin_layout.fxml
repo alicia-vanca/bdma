@@ -63,27 +63,25 @@
                     <padding><Insets top="5" right="12" bottom="5" left="12"/></padding>
 
                     <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
-                        <Label text="%status.dataFolder" styleClass="status-storage-name"/>
+                        <Label fx:id="lblDataStorageUsage" styleClass="status-storage-usage"/>
                         <ProgressBar fx:id="pbDataStorage"
                                      progress="0"
                                      styleClass="storage-progress"
                                      prefWidth="140"
                                      HBox.hgrow="ALWAYS"
                                      maxWidth="1.7976931348623157E308"/>
-                        <Label fx:id="lblDataStorageUsage" styleClass="status-storage-usage"/>
                     </HBox>
 
                     <Separator orientation="VERTICAL"/>
 
                     <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
-                        <Label text="%status.backupFolder" styleClass="status-storage-name"/>
+                        <Label fx:id="lblBackupStorageUsage" styleClass="status-storage-usage"/>
                         <ProgressBar fx:id="pbBackupStorage"
                                      progress="0"
                                      styleClass="storage-progress"
                                      prefWidth="140"
                                      HBox.hgrow="ALWAYS"
                                      maxWidth="1.7976931348623157E308"/>
-                        <Label fx:id="lblBackupStorageUsage" styleClass="status-storage-usage"/>
                     </HBox>
                 </HBox>
                 <HBox>
