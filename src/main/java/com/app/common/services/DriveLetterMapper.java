@@ -15,6 +15,7 @@ public class DriveLetterMapper {
 
     private static final Logger log = LoggerFactory.getLogger(DriveLetterMapper.class);
     private static final int POWERSHELL_TIMEOUT_SECONDS = 10;
+    private static final String SAFE_SERIAL_PATTERN = "^[A-Za-z0-9_\\-:.]+$";
 
     /**
      * Resolves the Windows drive letter for a given ADB serial number.
@@ -27,10 +28,18 @@ public class DriveLetterMapper {
         if (adbSerial == null || adbSerial.isBlank()) {
             return null;
         }
+
+        String serial = adbSerial.trim();
+
+        if (!serial.matches(SAFE_SERIAL_PATTERN)) {
+            log.warn("Rejected unsafe ADB serial: {}", serial);
+            return null;
+        }
+
         try {
-            String diskNumber = getDiskNumber(adbSerial.trim());
+            String diskNumber = getDiskNumber(serial);
             if (diskNumber == null) {
-                log.debug("No disk found for serial: {}", adbSerial);
+                log.debug("No disk found for serial: {}", serial);
                 return null;
             }
 
@@ -40,16 +49,15 @@ public class DriveLetterMapper {
                 return null;
             }
 
-            log.info("Resolved drive letter for {}: {}", adbSerial, driveLetter);
+            log.info("Resolved drive letter for {}: {}", serial, driveLetter);
             return driveLetter;
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("DriveLetterMapper interrupted for {}", adbSerial);
+            log.warn("DriveLetterMapper interrupted for serial: {}", serial);
             return null;
-
         } catch (IOException e) {
-            log.debug("DriveLetterMapper failed for {}: {}", adbSerial, e.getMessage());
+            log.warn("DriveLetterMapper I/O error for serial {}: {}", serial, e.getMessage());
             return null;
         }
     }
@@ -59,13 +67,23 @@ public class DriveLetterMapper {
      */
     private String getDiskNumber(String serial) throws IOException, InterruptedException {
         String script = String.format(
-                "Get-Disk | Where-Object { $_.SerialNumber.Trim() -eq '%s' } " +
+                "Get-Disk | Where-Object { $_.SerialNumber -ne $null -and $_.SerialNumber.Trim() -eq '%s' } " +
                         "| Select-Object -ExpandProperty Number",
                 serial
         );
 
         String result = runPowerShell(script).trim();
-        return result.isBlank() ? null : result;
+
+        if (result.isBlank()) {
+            return null;
+        }
+
+        if (!result.matches("\\d+")) {
+            log.warn("Unexpected disk number output: '{}'", result);
+            return null;
+        }
+
+        return result;
     }
 
     /**
@@ -73,15 +91,25 @@ public class DriveLetterMapper {
      */
     private String getDriveLetter(String diskNumber) throws IOException, InterruptedException {
         String script = String.format(
-                "Get-Partition -DiskNumber %s " +
-                        "| Get-Volume " +
-                        "| Where-Object { $_.DriveLetter } " +
+                "Get-Partition -DiskNumber %s -ErrorAction SilentlyContinue " +
+                        "| Get-Volume -ErrorAction SilentlyContinue " +
+                        "| Where-Object { $_.DriveLetter -ne $null } " +
                         "| Select-Object -ExpandProperty DriveLetter -First 1",
                 diskNumber
         );
 
         String result = runPowerShell(script).trim();
-        return result.isBlank() ? null : result + ":\\";
+
+        if (result.isBlank()) {
+            return null;
+        }
+
+        if (!result.matches("[A-Za-z]")) {
+            log.warn("Unexpected drive letter output: '{}'", result);
+            return null;
+        }
+
+        return result.toUpperCase() + ":\\";
     }
 
     private String runPowerShell(String script) throws IOException, InterruptedException {
@@ -91,18 +119,32 @@ public class DriveLetterMapper {
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
-        String output;
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream()))) {
-            output = reader.lines().collect(Collectors.joining("\n"));
-        }
+        try {
+            String output;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()))) {
+                output = reader.lines().collect(Collectors.joining("\n"));
+            }
 
-        boolean finished = process.waitFor(POWERSHELL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!finished) {
-            process.destroyForcibly();
-            log.warn("PowerShell timed out resolving drive letter");
-            return "";
+            boolean finished = process.waitFor(POWERSHELL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+            if (!finished) {
+                log.warn("PowerShell timed out after {}s", POWERSHELL_TIMEOUT_SECONDS);
+                return "";
+            }
+
+            int exitCode = process.exitValue();
+            if (exitCode != 0) {
+                log.warn("PowerShell exited with code {}: {}", exitCode, output);
+                return "";
+            }
+
+            return output;
+
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
         }
-        return output;
     }
 }
