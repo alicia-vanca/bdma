@@ -29,6 +29,9 @@
     -table-selected: #1d4ed8;
 
     -warning-color: #f59e0b;
+    -warn-strip-bg: rgba(245, 158, 11, 0.13);
+    -warn-strip-border: rgba(245, 158, 11, 0.38);
+    -storage-track: #2d3f55;
 }
 
 /* ===== ROOT ===== */
