@@ -98,6 +98,16 @@ public class AdminLayoutController extends BaseLayoutController {
     private Label lblBackupStorageUsage;
     @FXML
     private Label lblDriveConflictWarning;
+    @FXML
+    private HBox driveConflictRow;
+    @FXML
+    private Label lblDataStorageTitle;
+    @FXML
+    private Label lblDataStoragePercent;
+    @FXML
+    private Label lblBackupStorageTitle;
+    @FXML
+    private Label lblBackupStoragePercent;
 
     private SettingsPopupHelper settingsPopupHelper;
     private DashboardController currentDashboardController;
@@ -439,13 +449,12 @@ public class AdminLayoutController extends BaseLayoutController {
 
             boolean sameParent = isSameParentFolder(dataDir, backupDir);
 
-            boolean dataWarn = updateStorageBar("status.dataFolder", pbDataStorage, lblDataStorageUsage, dataDir);
-            boolean backupWarn = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageUsage,
-                    backupDir);
+            boolean dataWarn = updateStorageBar("status.dataFolder", pbDataStorage, lblDataStorageTitle, lblDataStoragePercent, lblDataStorageUsage, dataDir);
+            boolean backupWarn = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageTitle, lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
 
             lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
-            lblDriveConflictWarning.setVisible(sameParent);
-            lblDriveConflictWarning.setManaged(sameParent);
+            driveConflictRow.setVisible(sameParent);
+            driveConflictRow.setManaged(sameParent);
 
             updateStorageWarning(dataWarn, backupWarn);
         });
@@ -481,11 +490,14 @@ public class AdminLayoutController extends BaseLayoutController {
         return "status.storage.backup.critical";
     }
 
-    private boolean updateStorageBar(String labelKey, ProgressBar pb, Label lbl, File folder) {
+    private boolean updateStorageBar(String labelKey, ProgressBar pb,
+            Label titleLbl, Label percentLbl, Label usageLbl, File folder) {
         File statsTarget = resolveStorageStatsTarget(folder);
         if (statsTarget == null || !statsTarget.exists()) {
             pb.setProgress(0);
-            lbl.setText("—");
+            titleLbl.setText(I18n.get(labelKey));
+            percentLbl.setText("—");
+            usageLbl.setText("—");
             return false;
         }
 
@@ -502,13 +514,14 @@ public class AdminLayoutController extends BaseLayoutController {
 
         if (total <= 0) {
             pb.setProgress(0);
-            lbl.setText("—");
+            titleLbl.setText(I18n.get(labelKey));
+            percentLbl.setText("—");
+            usageLbl.setText("—");
             return false;
         }
 
-        long used = total - free;
+        long used  = total - free;
         double ratio = (double) used / total;
-
         pb.setProgress(ratio);
         pb.getStyleClass().removeAll("storage-warn", "storage-critical");
 
@@ -519,16 +532,14 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         String driveLetter = extractDriveLetter(statsTarget);
-        String storageText = String.format("%s / %s  (%.0f%%)",
-                formatBytes(used), formatBytes(total), ratio * 100);
         String folderName = I18n.get(labelKey);
-        String displayText;
         if (driveLetter != null && !driveLetter.isEmpty()) {
-            displayText = String.format("%s (%s)  %s", folderName, driveLetter, storageText);
+            titleLbl.setText(String.format("%s (%s)", folderName, driveLetter));
         } else {
-            displayText = folderName + "  " + storageText;
+            titleLbl.setText(folderName);
         }
-        lbl.setText(displayText);
+        percentLbl.setText(String.format("%.0f%%", ratio * 100));
+        usageLbl.setText(String.format("%s / %s", formatBytes(used), formatBytes(total)));
 
         return ratio >= 0.90;
     }
@@ -559,7 +570,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (root == null) {
             return null;
         }
-        return root.toString();
+        return root.toString().replace("\\", "").stripTrailing();
     }
 
     private void showStatusWarning(String message) {

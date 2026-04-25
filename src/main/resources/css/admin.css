@@ -86,3 +86,80 @@
 .settings-warning {
     -fx-font-size: 14px;
 }
+
+/* ===== STATUS BAR / FOOTER ===== */
+.status-bar {
+    -fx-background-color: -sidebar-bg;
+    -fx-border-color: -border-color;
+    -fx-border-width: 1 0 0 0;
+}
+
+.status-storage-row {
+    /* spacing and padding defined in FXML */
+}
+
+/* Warning strip */
+.status-warning-strip {
+    -fx-background-color: -warn-strip-bg;
+    -fx-border-color: -warn-strip-border;
+    -fx-border-width: 0 0 1 0;
+}
+
+.status-warning-icon {
+    -fx-text-fill: -warning-color;
+    -fx-font-size: 13px;
+}
+
+.status-warning-label {
+    -fx-text-fill: -warning-color;
+    -fx-font-size: 12px;
+}
+
+/* Storage panel labels */
+.storage-title {
+    -fx-font-size: 12px;
+    -fx-font-weight: 600;
+}
+
+.storage-percent {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+}
+
+.storage-detail {
+    -fx-font-size: 11px;
+    -fx-opacity: 0.65;
+}
+
+/* Storage progress bar */
+.storage-progress {
+    -fx-pref-height: 7px;
+    -fx-min-height: 7px;
+    -fx-max-height: 7px;
+    -fx-background-radius: 4;
+    -fx-accent: -primary;
+}
+
+.storage-progress > .bar {
+    -fx-background-radius: 4;
+    -fx-background-insets: 0;
+}
+
+.storage-progress > .track {
+    -fx-background-radius: 4;
+    -fx-background-insets: 0;
+    -fx-background-color: -storage-track;
+}
+
+.storage-progress.storage-warn {
+    -fx-accent: -warning-color;
+}
+
+.storage-progress.storage-critical {
+    -fx-accent: -danger;
+}
+
+/* Vertical separator between panels */
+.storage-separator {
+    -fx-background-color: -border-color;
+}
