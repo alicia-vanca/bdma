@@ -20,7 +20,7 @@ import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileInfo;
 import com.app.common.dtos.SyncContext;
 import com.app.common.events.DeviceEvent;
-import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
+import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
@@ -40,7 +40,7 @@ public class DataSyncWorker implements Runnable {
     private static final String EXTERNAL_SUFFIX = "/Android/data/com.bodycamera.nettysocket/cache";
 
     private final DeviceSyncQueue queue;
-    private final DataSyncService service;
+    private final DataSyncService dataSyncService;
     private final FolderManagerService folderManagerService;
     private final AdbClient adbClient;
     private final SyncProgressTracker progressTracker;
@@ -53,10 +53,11 @@ public class DataSyncWorker implements Runnable {
     private final Set<String> disconnectedDevices = ConcurrentHashMap.newKeySet();
 
     // Records and inner classes
-    private record SyncFile(String remotePath, String localPath, FileInfo info) {
+    private record SyncFile(String remotePath, String localPath, String relativeLocalPath, FileInfo info) {
     }
 
-    private record PendingFile(String remotePath, String localPath, FileInfo info, String failureReason) {
+    private record PendingFile(String remotePath, String localPath, String relativeLocalPath, FileInfo info,
+            String failureReason) {
     }
 
     private record PullResult(boolean succeeded, String failureReason) {
@@ -98,11 +99,11 @@ public class DataSyncWorker implements Runnable {
         private final Map<String, Long> userIds = new HashMap<>();
 
         private Long deviceId(String cameraId) {
-            return deviceIds.computeIfAbsent(cameraId, service::resolveDeviceId);
+            return deviceIds.computeIfAbsent(cameraId, dataSyncService::resolveDeviceId);
         }
 
         private Long userId(String userName) {
-            return userIds.computeIfAbsent(userName, service::resolveUserId);
+            return userIds.computeIfAbsent(userName, dataSyncService::resolveUserId);
         }
     }
 
@@ -112,7 +113,7 @@ public class DataSyncWorker implements Runnable {
     }
 
     public DataSyncWorker(DeviceSyncQueue queue,
-            DataSyncService service,
+            DataSyncService dataSyncService,
             FolderManagerService folderManagerService,
             AdbClient adbClient,
             SyncProgressTracker progressTracker,
@@ -121,7 +122,7 @@ public class DataSyncWorker implements Runnable {
             DriveLetterMapper driveLetterMapper,
             MassStorageFileSource massStorageFileSource) {
         this.queue = queue;
-        this.service = service;
+        this.dataSyncService = dataSyncService;
         this.folderManagerService = folderManagerService;
         this.adbClient = adbClient;
         this.progressTracker = progressTracker;
@@ -149,16 +150,13 @@ public class DataSyncWorker implements Runnable {
     private void processDevice(DeviceSyncQueue.Entry entry) {
         String hardwareId = entry.hardwareId();
         SyncContext syncContext = entry.context();
-        boolean syncStarted = false;
         long startedAt = System.currentTimeMillis();
 
         try {
-            Long deviceId = service.validateDevice(hardwareId);
-            Long userId = service.resolveUserId(syncContext.username());
+            Long deviceId = dataSyncService.validateDevice(hardwareId);
+            Long userId = dataSyncService.resolveUserId(syncContext.username());
             if (deviceId == null || userId == null)
                 return;
-
-            syncStarted = true;
 
             boolean autoDelete = syncContext.autoDelete();
 
@@ -183,7 +181,9 @@ public class DataSyncWorker implements Runnable {
             List<PendingFile> failedList = new ArrayList<>();
             processSyncFiles(hardwareId, syncContext, preparedSyncFiles, filesToBeProcessed, failedList, counters);
 
-            retryFailed(hardwareId, syncContext, preparedSyncFiles, failedList, counters);
+            if (!failedList.isEmpty()) {
+                retryFailed(hardwareId, syncContext, preparedSyncFiles, failedList, counters);
+            }
 
             long elapsedMs = System.currentTimeMillis() - startedAt;
             log.info("Finished sync for {}: total={}, passed={}, failed={}, elapsedMs={}",
@@ -192,17 +192,22 @@ public class DataSyncWorker implements Runnable {
             disconnectedDevices.remove(hardwareId);
             driveLetterCache.remove(hardwareId);
             queue.done(hardwareId);
-            if (syncStarted) {
-                publisher.publishEvent(new DeviceSyncCompletedEvent(hardwareId));
-            }
         }
     }
 
     // Discover and prepare files for sync from device
     private SyncPreparation prepareSyncFiles(String hardwareId, Long deviceId, SyncContext syncContext,
             boolean autoDelete) {
-        Set<String> syncedPaths = service.loadSyncedPaths(deviceId);
-
+        Set<String> syncedPaths = dataSyncService.loadSyncedPaths(deviceId);
+        Set<String> relativeSyncedPaths = new java.util.HashSet<>();
+        for (String syncedPath : syncedPaths) {
+            try {
+                relativeSyncedPaths.add(folderManagerService.toRelativeDataPath(syncedPath));
+            } catch (IOException e) {
+                log.warn("Failed to normalize synced path: {}", syncedPath);
+                relativeSyncedPaths.add(syncedPath);
+            }
+        }
         List<String> remoteFilePaths = new ArrayList<>(findFiles(hardwareId, INTERNAL_ROOT));
 
         String ext = getExternalStorage(hardwareId);
@@ -216,10 +221,11 @@ public class DataSyncWorker implements Runnable {
         }
 
         LookupCache lookupCache = new LookupCache();
-        SyncFileCollection fileCollection = collectSyncFiles(hardwareId, syncContext, remoteFilePaths, syncedPaths,
+        SyncFileCollection fileCollection = collectSyncFiles(hardwareId, syncContext, remoteFilePaths,
+                relativeSyncedPaths,
                 lookupCache, autoDelete);
 
-        return new SyncPreparation(fileCollection, syncedPaths, lookupCache);
+        return new SyncPreparation(fileCollection, relativeSyncedPaths, lookupCache);
     }
 
     private List<String> findFilesFromMassStorage(String hardwareId) {
@@ -280,8 +286,7 @@ public class DataSyncWorker implements Runnable {
             SyncFile syncFile = buildSyncFile(path, syncContext, lookupCache);
             if (syncFile != null) {
                 allSyncFiles.add(syncFile);
-                String relPath = folderManagerService.stripDriveLetter(syncFile.localPath());
-                if (!syncedPaths.contains(relPath)) {
+                if (!syncedPaths.contains(syncFile.relativeLocalPath())) {
                     unsyncedFiles.add(syncFile);
                 } else {
                     alreadySyncedCount++;
@@ -314,7 +319,7 @@ public class DataSyncWorker implements Runnable {
     private SyncFile createFileWithSize(SyncFile file, long size) {
         FileInfo updatedInfo = new FileInfo(file.info().cameraId(), file.info().username(),
                 file.info().createDate(), size, file.info().type());
-        return new SyncFile(file.remotePath(), file.localPath(), updatedInfo);
+        return new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), updatedInfo);
     }
 
     // Update a file in the list by matching remote path
@@ -335,6 +340,7 @@ public class DataSyncWorker implements Runnable {
 
     // Build SyncFile from remote path, validating user permissions and database
     // references. Size is retrieved later only for unsynced files.
+    // Returns null if relative path cannot be determined or validation fails.
     private SyncFile buildSyncFile(String path, SyncContext syncContext, LookupCache lookupCache) {
         String type = extractType(path);
         FileInfo info = FileInfo.parse(name(path), 0, type);
@@ -350,7 +356,16 @@ public class DataSyncWorker implements Runnable {
             return null;
         }
 
-        return new SyncFile(path, localPath, info);
+        // Fail fast if relative path cannot be determined
+        String relativeLocalPath;
+        try {
+            relativeLocalPath = folderManagerService.toRelativeDataPath(localPath);
+        } catch (IOException e) {
+            log.warn("Failed to convert to relative path, skipping file: {}", localPath);
+            return null;
+        }
+
+        return new SyncFile(path, localPath, relativeLocalPath, info);
     }
 
     private ProcessResult processFile(String hardwareId, SyncContext syncContext, SyncPreparation prep, SyncFile file,
@@ -360,7 +375,7 @@ public class DataSyncWorker implements Runnable {
         LookupCache lookupCache = prep.lookupCache();
 
         // If file already synced, handle based on auto-delete setting
-        if (syncedPaths.contains(file.localPath())) {
+        if (syncedPaths.contains(file.relativeLocalPath())) {
             if (syncContext.autoDelete()) {
                 deleteRemoteFile(hardwareId, file.remotePath());
             }
@@ -372,17 +387,21 @@ public class DataSyncWorker implements Runnable {
         if (dId == null || uId == null) {
             String reason = dId == null ? I18n.get("device.sync.error.device_not_found")
                     : I18n.get("device.sync.error.user_not_found");
-            failed.add(new PendingFile(file.remotePath(), file.localPath(), file.info(), reason));
+            failed.add(new PendingFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(),
+                    reason));
             return ProcessResult.FAILED;
         }
 
         PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size(),
                 syncContext.saveDir());
         if (result.isSuccess()) {
-            String relPath = folderManagerService.stripDriveLetter(file.localPath());
-            service.saveFile(uId, dId, name(file.remotePath()), relPath, file.info());
-            syncedPaths.add(relPath);
+            String nonDriverLetterSyncedPath = folderManagerService.stripDriveLetter(file.localPath());
+            dataSyncService.saveFile(uId, dId, name(file.remotePath()), nonDriverLetterSyncedPath, file.info());
+            syncedPaths.add(file.relativeLocalPath());
             logSyncedFile(file.localPath(), counters.passed + 1, counters.total);
+
+            publisher.publishEvent(new FileSyncCompletedEvent(hardwareId, file.relativeLocalPath()));
+
             if (syncContext.autoDelete()) {
                 deleteRemoteFile(hardwareId, file.remotePath());
             }
@@ -390,8 +409,8 @@ public class DataSyncWorker implements Runnable {
         }
 
         cleanupIncompleteFile(file.localPath());
-        String relPath = folderManagerService.stripDriveLetter(file.localPath());
-        failed.add(new PendingFile(file.remotePath(), relPath, file.info(), result.failureReason()));
+        failed.add(new PendingFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(),
+                result.failureReason()));
         return ProcessResult.FAILED;
     }
 
@@ -467,13 +486,16 @@ public class DataSyncWorker implements Runnable {
             return false;
         }
 
-        service.saveFile(uId, dId, name(pf.remotePath()), pf.localPath(), pf.info());
-        prep.syncedPaths().add(pf.localPath());
+        String nonDriverLetterSyncedPath = folderManagerService.stripDriveLetter(pf.localPath());
+        dataSyncService.saveFile(uId, dId, name(pf.remotePath()), nonDriverLetterSyncedPath, pf.info());
+        prep.syncedPaths().add(pf.relativeLocalPath());
         logSyncedFile(pf.localPath(), counters.passed + 1, counters.total);
+
+        publisher.publishEvent(new FileSyncCompletedEvent(hardwareId, pf.relativeLocalPath()));
+
         if (syncContext.autoDelete()) {
             deleteRemoteFile(hardwareId, pf.remotePath());
         }
-
         return true;
     }
 

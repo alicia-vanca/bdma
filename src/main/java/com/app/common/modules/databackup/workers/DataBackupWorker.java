@@ -9,9 +9,12 @@ import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.databackup.services.DataBackupService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.services.SyncProgressTracker;
 
 /**
  * Worker thread responsible for backing up files from dataDir to backupDir.
+ * Waits for sync to complete before processing backup queue.
+ * Pauses if sync becomes active mid-backup (finishes current file first).
  * Flow:
  * BackupQueue.take() → FolderManagerService.backupFromSave() →
  * BackupService.markBackup()
@@ -25,15 +28,18 @@ public class DataBackupWorker implements Runnable {
     private final FolderManagerService folderManager;
     private final DataBackupService dataBackupService;
     private final ApplicationEventPublisher publisher;
+    private final SyncProgressTracker syncProgressTracker;
 
     public DataBackupWorker(DataBackupQueue dataBackupQueue,
             FolderManagerService folderManager,
             DataBackupService dataBackupService,
-            ApplicationEventPublisher publisher) {
+            ApplicationEventPublisher publisher,
+            SyncProgressTracker syncProgressTracker) {
         this.dataBackupQueue = dataBackupQueue;
         this.folderManager = folderManager;
         this.dataBackupService = dataBackupService;
         this.publisher = publisher;
+        this.syncProgressTracker = syncProgressTracker;
     }
 
     @Override
@@ -41,25 +47,28 @@ public class DataBackupWorker implements Runnable {
         log.info("BackupWorker started");
 
         while (true) {
-            String localPath = null;
+            String nonDriveLetterSyncedPath = null;
             try {
-                localPath = dataBackupQueue.take();
+                nonDriveLetterSyncedPath = dataBackupQueue.take();
+
+                // Wait until no sync is active before processing backup
+                waitForSyncToComplete();
 
                 if (folderManager.isBackupDirConfigured()) {
 
-                    String relativeName = folderManager.toRelativeDataPath(localPath);
+                    String relativeName = folderManager.toRelativeDataPath(nonDriveLetterSyncedPath);
 
-                    folderManager.backupFromSave(localPath);
+                    folderManager.backupFromSave(nonDriveLetterSyncedPath);
 
                     String absoluteBackupPath = folderManager.getBackupPath(relativeName);
-                    String relativeBackupPath = folderManager.stripDriveLetter(absoluteBackupPath);
+                    String nonDriveLetterBackedUpPath = folderManager.stripDriveLetter(absoluteBackupPath);
 
-                    dataBackupService.markBackup(localPath, relativeBackupPath);
+                    dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);
 
-                    publisher.publishEvent(new FileBackupCompletedEvent(localPath));
+                    publisher.publishEvent(new FileBackupCompletedEvent(nonDriveLetterSyncedPath));
 
                 } else {
-                    log.warn("BackupDir not configured, skipping: {}", localPath);
+                    log.warn("BackupDir not configured, skipping: {}", nonDriveLetterSyncedPath);
                 }
 
             } catch (InterruptedException e) {
@@ -68,13 +77,26 @@ public class DataBackupWorker implements Runnable {
                 break;
 
             } catch (Exception e) {
-                log.error("Backup failed: {}", localPath, e);
+                log.error("Backup failed: {}", nonDriveLetterSyncedPath, e);
 
             } finally {
-                if (localPath != null) {
-                    dataBackupQueue.done(localPath);
+                if (nonDriveLetterSyncedPath != null) {
+                    dataBackupQueue.done(nonDriveLetterSyncedPath);
                 }
             }
         }
+    }
+
+    // Wait until sync is not active (SYNCING or QUEUED)
+    private void waitForSyncToComplete() throws InterruptedException {
+        while (isSyncActive()) {
+            log.debug("Sync active, backup paused. Waiting...");
+            Thread.sleep(1000);
+        }
+    }
+
+    // Check if any device has active sync
+    private boolean isSyncActive() {
+        return syncProgressTracker.isAnySyncActive();
     }
 }

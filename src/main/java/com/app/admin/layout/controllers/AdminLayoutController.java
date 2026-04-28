@@ -29,7 +29,7 @@ import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.DataSyncRunner;
-import com.app.common.modules.datasync.events.DeviceSyncCompletedEvent;
+import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
@@ -404,18 +404,18 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @EventListener
     @SuppressWarnings("unused")
-    public void onSyncCompleted(DeviceSyncCompletedEvent event) {
+    public void onFileSyncCompleted(FileSyncCompletedEvent event) {
         if (currentDashboardController != null) {
-            currentDashboardController.onSyncCompleted();
+            currentDashboardController.onFileSyncCompleted();
         }
         refreshStorageStatus();
     }
 
     @EventListener
     @SuppressWarnings("unused")
-    public void onBackupCompleted(FileBackupCompletedEvent event) {
+    public void onFileBackupCompleted(FileBackupCompletedEvent event) {
         if (currentDashboardController != null) {
-            currentDashboardController.onBackupCompleted();
+            currentDashboardController.onFileBackupCompleted();
         }
         refreshStorageStatus();
     }
@@ -449,8 +449,10 @@ public class AdminLayoutController extends BaseLayoutController {
 
             boolean sameParent = isSameParentFolder(dataDir, backupDir);
 
-            boolean dataWarn = updateStorageBar("status.dataFolder", pbDataStorage, lblDataStorageTitle, lblDataStoragePercent, lblDataStorageUsage, dataDir);
-            boolean backupWarn = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageTitle, lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
+            boolean dataWarn = updateStorageBar("status.dataFolder", pbDataStorage, lblDataStorageTitle,
+                    lblDataStoragePercent, lblDataStorageUsage, dataDir);
+            boolean backupWarn = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageTitle,
+                    lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
 
             lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
             driveConflictRow.setVisible(sameParent);
@@ -520,7 +522,7 @@ public class AdminLayoutController extends BaseLayoutController {
             return false;
         }
 
-        long used  = total - free;
+        long used = total - free;
         double ratio = (double) used / total;
         pb.setProgress(ratio);
         pb.getStyleClass().removeAll("storage-warn", "storage-critical");

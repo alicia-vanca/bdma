@@ -1,15 +1,16 @@
 package com.app.common.modules.databackup.services;
 
-import com.app.common.definitions.AppConstants;
-import com.app.common.modules.databackup.queues.DataBackupQueue;
-import com.app.common.repositories.FileRepository;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+import com.app.common.definitions.AppConstants;
+import com.app.common.modules.databackup.queues.DataBackupQueue;
+import com.app.common.repositories.FileRepository;
 
 @Service
 public class DataBackupService {
@@ -44,8 +45,8 @@ public class DataBackupService {
     /**
      * Enqueues a file after successful sync.
      */
-    public void enqueue(String localPath) {
-        dataBackupQueue.add(localPath);
+    public void enqueue(String nonDriverLetterSyncedPath) {
+        dataBackupQueue.add(nonDriverLetterSyncedPath);
     }
 
     /**

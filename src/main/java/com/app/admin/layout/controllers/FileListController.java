@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileView;
+import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.services.FileService;
@@ -75,6 +76,7 @@ public class FileListController {
     private final FileService fileService;
     private final UserService userService;
     private final Session session;
+    private final FolderManagerService folderManagerService;
 
     private String activeHardwareId;
     private boolean initializing = true;
@@ -83,10 +85,12 @@ public class FileListController {
     private int currentPageIndex = 0;
     private Runnable onClearFilter;
 
-    public FileListController(FileService fileService, UserService userService, Session session) {
+    public FileListController(FileService fileService, UserService userService, Session session,
+            FolderManagerService folderManagerService) {
         this.fileService = fileService;
         this.userService = userService;
         this.session = session;
+        this.folderManagerService = folderManagerService;
     }
 
     @FXML
@@ -131,13 +135,31 @@ public class FileListController {
     }
 
     private void setupColumns() {
-        colName.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().name()));
+        colName.setCellValueFactory(c -> new SimpleStringProperty(formatFileName(c.getValue())));
         colDevice.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().deviceName()));
         colUser.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().username()));
         colSize.setCellValueFactory(c -> new SimpleStringProperty(formatSize(c.getValue().fileSize())));
         colStatus.setCellValueFactory(c -> new SimpleStringProperty(formatStatus(c.getValue().status())));
         colType.setCellValueFactory(c -> new SimpleStringProperty(formatType(c.getValue().type())));
         colDate.setCellValueFactory(c -> new SimpleStringProperty(formatDate(c.getValue().createDate())));
+    }
+
+    // Check if file exists and add (MISSING) prefix if not found
+    private String formatFileName(FileView fileView) {
+        String fileName = fileView.name();
+        String syncedPath = fileView.syncedPath();
+
+        // TODO: this only checks if the file exists in current data dir, need to decide
+        // and implement correct logic to solve missing files case
+        if (syncedPath == null || syncedPath.isEmpty()) {
+            return "(MISSING) " + fileName;
+        }
+
+        if (folderManagerService.findAbsolutePathFromNonDriveSyncedPath(syncedPath) == null) {
+            return "(MISSING) " + fileName;
+        }
+
+        return fileName;
     }
 
     public void filterByDevice(String hardwareId) {
@@ -368,11 +390,11 @@ public class FileListController {
         typeFilterCombo.getSelectionModel().selectFirst();
     }
 
-    public void onSyncCompleted() {
+    public void onFileSyncCompleted() {
         Platform.runLater(() -> refresh(buildFilter()));
     }
 
-    public void onBackupCompleted() {
+    public void onFileBackupCompleted() {
         Platform.runLater(() -> refresh(buildFilter()));
     }
 }

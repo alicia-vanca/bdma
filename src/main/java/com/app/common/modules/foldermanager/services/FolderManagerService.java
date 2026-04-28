@@ -16,7 +16,6 @@ import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.services.AppConfigService;
-import com.app.common.services.DriveResolverService;
 
 import lombok.Getter;
 
@@ -46,13 +45,20 @@ public class FolderManagerService {
 
     private final AppConfigService appConfigService;
     private final boolean storageProtectionEnabled;
-    private final DriveResolverService driveResolverService;
+
+    private static class ResolvedPath {
+        final Path filePath;
+        final FolderSecurityService security;
+
+        ResolvedPath(Path filePath, FolderSecurityService security) {
+            this.filePath = filePath;
+            this.security = security;
+        }
+    }
 
     public FolderManagerService(AppConfigService appConfigService,
-            DriveResolverService driveResolverService,
             @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled) {
         this.appConfigService = appConfigService;
-        this.driveResolverService = driveResolverService;
         this.storageProtectionEnabled = storageProtectionEnabled;
         this.tempDir = new File(AppDataPaths.appTmpDir());
     }
@@ -90,6 +96,8 @@ public class FolderManagerService {
 
     // ── File operations ──────────────────────────────────────────────────────
 
+    // TODO: fileName (relativePath?) may not exist in current dataDir but old
+    // syncedPaths. Fix that or remove this method if not needed.
     public File openFileToTemp(String fileName) throws IOException {
         try {
             return withDataDirUnlocked(() -> {
@@ -108,20 +116,33 @@ public class FolderManagerService {
         }
     }
 
-    public void saveFileFromTemp(String fileName) throws IOException {
+    public void saveFileFromTemp(String nonDriverLetterSyncedPath) throws IOException {
+        ResolvedPath resolved = null;
         try {
-            withDataDirUnlocked(() -> {
-                File target = new File(dataDir, fileName);
-                ensureParentDir(target);
-                Files.copy(new File(tempDir, fileName).toPath(), target.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING);
-                log.info("Saved {} from temp to data", fileName);
-                return null;
-            });
+            // Try each drive to find and unlock the directory
+            resolved = resolveAndUnlockDataPath(nonDriverLetterSyncedPath);
+            String fileName = resolved.filePath.getFileName().toString();
+
+            File target = resolved.filePath.toFile();
+            ensureParentDir(target);
+            Files.copy(new File(tempDir, fileName).toPath(), target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING);
+            log.info("Saved {} from temp to data", fileName);
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException("Failed to save file from temp: " + fileName, e);
+            throw new IOException("Failed to save file from temp: " + nonDriverLetterSyncedPath, e);
+        } finally {
+            if (resolved != null) {
+                boolean wasInterrupted = Thread.interrupted();
+                try {
+                    resolved.security.ensureLocked();
+                } finally {
+                    if (wasInterrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
         }
     }
 
@@ -245,6 +266,150 @@ public class FolderManagerService {
         }
     }
 
+    // ── Path Resolution ──────────────────────────────────────────────────────
+
+    /**
+     * Find absolute path from non-drive-letter synced path by checking all
+     * available drives.
+     * Handles locked directories by temporarily unlocking them to check existence.
+     * Returns null if file not found on any drive.
+     */
+    public Path findAbsolutePathFromNonDriveSyncedPath(String nonDriverLetterSyncedPath) {
+        try {
+            ResolvedPath resolved = resolveAndUnlockDataPath(nonDriverLetterSyncedPath);
+            // Lock it back since caller doesn't need it unlocked
+            resolved.security.ensureLocked();
+            return resolved.filePath;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Find absolute path from non-drive-letter backed up path by checking all
+     * available drives.
+     * Handles locked directories by temporarily unlocking them to check existence.
+     * Returns null if file not found on any drive.
+     */
+    public Path findAbsolutePathFromNonDriveBackedUpPath(String nonDriverLetterBackedUpPath) {
+        try {
+            ResolvedPath resolved = resolveAndUnlockBackupPath(nonDriverLetterBackedUpPath);
+            // Lock it back since caller doesn't need it unlocked
+            resolved.security.ensureLocked();
+            return resolved.filePath;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    // Find the deepest data_bdma folder in a path
+    private Path findDeepestDataFolder(Path path) {
+        Path current = path;
+        while (current != null) {
+            if (current.getFileName() != null &&
+                    current.getFileName().toString().equals(AppConstants.DATA_FOLDER_NAME)) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
+    }
+
+    // Find the deepest backup_bdma folder in a path
+    private Path findDeepestBackupFolder(Path path) {
+        Path current = path;
+        while (current != null) {
+            if (current.getFileName() != null &&
+                    current.getFileName().toString().equals(AppConstants.BACKUP_FOLDER_NAME)) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
+    }
+
+    /**
+     * Try each drive letter to find and unlock the data directory containing the
+     * file.
+     * Returns the resolved file path and the unlocked directory.
+     */
+    private ResolvedPath resolveAndUnlockDataPath(String nonDriverLetterSyncedPath) throws IOException {
+        return resolveAndUnlock(nonDriverLetterSyncedPath, FolderType.SAVE);
+    }
+
+    /**
+     * Try each drive letter to find and unlock the backup directory containing
+     * the file.
+     * Returns the resolved file path and the unlocked directory.
+     */
+    private ResolvedPath resolveAndUnlockBackupPath(String nonDriverLetterBackedUpPath) throws IOException {
+        return resolveAndUnlock(nonDriverLetterBackedUpPath, FolderType.BACKUP);
+    }
+
+    /**
+     * Generic method to find and unlock a directory containing a file.
+     * Searches across all drives based on folder type.
+     */
+    private ResolvedPath resolveAndUnlock(String nonDriverLetterPath, FolderType folderType) throws IOException {
+        String folderName;
+
+        for (Path root : java.nio.file.FileSystems.getDefault().getRootDirectories()) {
+            Path candidatePath = root.resolve(nonDriverLetterPath);
+
+            // Find the deepest target folder in the path
+            Path deepestFolder;
+            if (folderType == FolderType.BACKUP) {
+                folderName = AppConstants.BACKUP_FOLDER_NAME;
+                deepestFolder = findDeepestBackupFolder(candidatePath);
+            } else {
+                folderName = AppConstants.DATA_FOLDER_NAME;
+                deepestFolder = findDeepestDataFolder(candidatePath);
+            }
+
+            if (deepestFolder == null) {
+                log.warn("No {} folder found in path on drive {}: {}", folderName, root, candidatePath);
+                continue;
+            }
+
+            // The directory to unlock is the parent of the deepest folder
+            File dirToUnlock = deepestFolder.getParent().toFile();
+
+            // Skip if directory doesn't exist on this drive
+            if (!dirToUnlock.exists()) {
+                log.info("Directory not found on drive {}: {}", root, dirToUnlock.getAbsolutePath());
+                continue;
+            }
+
+            // Create temporary security service for this directory
+            FolderSecurityService tempSecurity = new FolderSecurityService(
+                    deepestFolder.toString(),
+                    folderType,
+                    storageProtectionEnabled);
+
+            try {
+                tempSecurity.ensureUnlocked();
+
+                // Check if file exists now that folder is unlocked
+                if (Files.exists(candidatePath)) {
+                    log.info("Found file on drive {}: {}", root, nonDriverLetterPath);
+                    return new ResolvedPath(candidatePath, tempSecurity);
+                }
+
+                // File not here, lock it back
+                tempSecurity.ensureLocked();
+                log.info("File not found on drive {} after unlock: {}", root, nonDriverLetterPath);
+            } catch (Exception e) {
+                log.info("Failed to check drive {}: {}", root, e.getMessage());
+                try {
+                    tempSecurity.ensureLocked();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        throw new IOException("File not found on any drive: " + nonDriverLetterPath);
+    }
+
     // ── Private ──────────────────────────────────────────────────────────────
 
     private void initDataDir(String configuredPath) {
@@ -341,34 +506,40 @@ public class FolderManagerService {
         }
     }
 
-    public void backupFromSave(String nonDriverLetterPath) throws IOException {
+    public void backupFromSave(String nonDriverLetterSyncedPath) throws IOException {
         if (backupDir == null) {
             throw new IOException("Backup directory not configured");
         }
 
+        ResolvedPath resolved = null;
         try {
-            withDataAndBackupUnlocked(() -> {
-                if (!backupDir.exists()) {
-                    throw new IOException("Backup directory not found after unlock: "
-                            + backupDir.getAbsolutePath());
-                }
+            // Try each drive to find and unlock the directory
+            resolved = resolveAndUnlockDataPath(nonDriverLetterSyncedPath);
 
-                Path source = driveResolverService.resolve(nonDriverLetterPath)
-                        .orElseThrow(
-                                () -> new IOException("Source file not found on any drive: " + nonDriverLetterPath));
+            // Ensure backup directory exists
+            ensureDir(backupDir);
 
-                String relativeFromData = toRelativeDataPath(source.toString());
+            String relativeFromData = toRelativeDataPath(resolved.filePath.toString());
 
-                Path target = backupDir.toPath().resolve(relativeFromData);
-                ensureParentDir(target.toFile());
-                Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-                log.info("Backed up to backup dir: {}", relativeFromData);
-                return null;
-            });
+            Path target = backupDir.toPath().resolve(relativeFromData);
+            ensureParentDir(target.toFile());
+            Files.copy(resolved.filePath, target, StandardCopyOption.REPLACE_EXISTING);
+            log.info("Backed up to backup dir: {}", relativeFromData);
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException("Failed to back up file: " + nonDriverLetterPath, e);
+            throw new IOException("Failed to back up file: " + nonDriverLetterSyncedPath, e);
+        } finally {
+            if (resolved != null) {
+                boolean wasInterrupted = Thread.interrupted();
+                try {
+                    resolved.security.ensureLocked();
+                } finally {
+                    if (wasInterrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
         }
     }
 

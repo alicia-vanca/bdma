@@ -155,11 +155,16 @@ public class FileRepository {
         return path.substring(path.lastIndexOf("\\") + 1);
     }
 
+    /**
+     * Queries files by filter criteria with user and device information.
+     * Returns file metadata including synced_path for file existence validation.
+     */
     @SuppressWarnings("null")
     public List<FileView> findByFilter(FileFilter filter) {
         StringBuilder sql = new StringBuilder("""
                     SELECT f.file_id,
                            f.name,
+                           f.synced_path,
                            f.device_id,
                            f.user_id,
                            f.file_size,
@@ -219,6 +224,7 @@ public class FileRepository {
         f.setDeviceId(rs.getLong("device_id"));
         f.setUserId(rs.getLong("user_id"));
         f.setName(rs.getString("name"));
+        f.setSyncedPath(rs.getString("synced_path"));
         f.setFileSize(rs.getLong("file_size"));
         f.setType(rs.getString("type"));
         f.setStatus(rs.getString("status"));
