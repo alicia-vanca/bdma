@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileView;
+import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
@@ -155,8 +156,14 @@ public class FileListController {
             return "(MISSING) " + fileName;
         }
 
-        if (folderManagerService.findAbsolutePathFromNonDriveSyncedPath(syncedPath) == null) {
+        PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveSyncedPath(syncedPath);
+
+        if (result.isNotFound()) {
             return "(MISSING) " + fileName;
+        }
+
+        if (result.isError()) {
+            return "(ERROR) " + fileName;
         }
 
         return fileName;
