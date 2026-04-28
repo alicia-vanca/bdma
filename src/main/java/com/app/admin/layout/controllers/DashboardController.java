@@ -189,7 +189,7 @@ public class DashboardController extends BaseLayoutController {
                 name.setText(newName);
 
                 if (fileListController != null) {
-                    fileListController.onSyncCompleted();
+                    fileListController.onFileSyncCompleted();
                 }
             }
 
@@ -495,15 +495,15 @@ public class DashboardController extends BaseLayoutController {
         deviceListView.getSelectionModel().clearSelection();
     }
 
-    public void onSyncCompleted() {
+    public void onFileSyncCompleted() {
         if (fileListController != null) {
-            fileListController.onSyncCompleted();
+            fileListController.onFileSyncCompleted();
         }
     }
 
-    public void onBackupCompleted() {
+    public void onFileBackupCompleted() {
         if (fileListController != null) {
-            fileListController.onBackupCompleted();
+            fileListController.onFileBackupCompleted();
         }
     }
 }

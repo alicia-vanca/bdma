@@ -1,10 +1,5 @@
 package com.app.common.modules.foldermanager.services;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.app.common.definitions.enums.FolderType;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -12,6 +7,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.app.common.definitions.enums.FolderType;
 
 public class FolderSecurityService {
 
@@ -123,7 +123,8 @@ public class FolderSecurityService {
         try {
             int renameCode = runCommand("cmd", "/c", "ren", unlockedFolderName, lockedPath.getFileName().toString());
             if (renameCode != 0 || !lockedPath.toFile().exists()) {
-                log.error("Lock failed — rename exit code: {}", renameCode);
+                log.error("Lock failed — rename exit code: {}, from: {}, to: {}",
+                        renameCode, unlockedPath, lockedPath);
                 return;
             }
 
@@ -150,7 +151,8 @@ public class FolderSecurityService {
 
             int renameCode = runCommand("cmd", "/c", "ren", lockedPath.getFileName().toString(), unlockedFolderName);
             if (renameCode != 0 || !unlockedPath.toFile().exists()) {
-                log.error("Unlock failed — rename exit code: {}", renameCode);
+                log.error("Unlock failed — rename exit code: {}, from: {}, to: {}",
+                        renameCode, lockedPath, unlockedPath);
                 return;
             }
 
@@ -271,7 +273,8 @@ public class FolderSecurityService {
         try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                if (!sb.isEmpty()) sb.append('\n');
+                if (!sb.isEmpty())
+                    sb.append('\n');
                 sb.append(line);
             }
         }
