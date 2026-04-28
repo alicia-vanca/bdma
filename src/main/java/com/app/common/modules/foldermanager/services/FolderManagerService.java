@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.definitions.enums.FolderType;
+import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
+import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.services.AppConfigService;
 
 import lombok.Getter;
@@ -23,9 +25,6 @@ import lombok.Getter;
  * Manages a protected data folder and a temporary working folder.
  * Typical lifecycle:
  * init() -> ensure data folder exists and is locked, then clear temp.
- * openFileToTemp() -> unlock data, copy file to temp, lock data again.
- * saveFileFromTemp() -> unlock data, copy file from temp to data, lock data
- * again.
  * shutdown() -> lock data and clear temp before application exit.
  */
 @Service
@@ -92,58 +91,6 @@ public class FolderManagerService {
             backupSecurity.ensureLocked();
         clearTemp();
         log.info("DataFolderManager shut down");
-    }
-
-    // ── File operations ──────────────────────────────────────────────────────
-
-    // TODO: fileName (relativePath?) may not exist in current dataDir but old
-    // syncedPaths. Fix that or remove this method if not needed.
-    public File openFileToTemp(String fileName) throws IOException {
-        try {
-            return withDataDirUnlocked(() -> {
-                ensureDir(tempDir);
-
-                File dest = new File(tempDir, fileName);
-                Files.copy(new File(dataDir, fileName).toPath(), dest.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING);
-                log.info("Opened {} to temp", fileName);
-                return dest;
-            });
-        } catch (IOException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IOException("Failed to open file to temp: " + fileName, e);
-        }
-    }
-
-    public void saveFileFromTemp(String nonDriverLetterSyncedPath) throws IOException {
-        ResolvedPath resolved = null;
-        try {
-            // Try each drive to find and unlock the directory
-            resolved = resolveAndUnlockDataPath(nonDriverLetterSyncedPath);
-            String fileName = resolved.filePath.getFileName().toString();
-
-            File target = resolved.filePath.toFile();
-            ensureParentDir(target);
-            Files.copy(new File(tempDir, fileName).toPath(), target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING);
-            log.info("Saved {} from temp to data", fileName);
-        } catch (IOException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IOException("Failed to save file from temp: " + nonDriverLetterSyncedPath, e);
-        } finally {
-            if (resolved != null) {
-                boolean wasInterrupted = Thread.interrupted();
-                try {
-                    resolved.security.ensureLocked();
-                } finally {
-                    if (wasInterrupted) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            }
-        }
     }
 
     // ── Accessors ────────────────────────────────────────────────────────────
@@ -272,16 +219,19 @@ public class FolderManagerService {
      * Find absolute path from non-drive-letter synced path by checking all
      * available drives.
      * Handles locked directories by temporarily unlocking them to check existence.
-     * Returns null if file not found on any drive.
+     * Returns result that distinguishes between "not found" and other I/O errors.
      */
-    public Path findAbsolutePathFromNonDriveSyncedPath(String nonDriverLetterSyncedPath) {
+    public PathResolutionResult findAbsolutePathFromNonDriveSyncedPath(String nonDriverLetterSyncedPath) {
         try {
             ResolvedPath resolved = resolveAndUnlockDataPath(nonDriverLetterSyncedPath);
             // Lock it back since caller doesn't need it unlocked
             resolved.security.ensureLocked();
-            return resolved.filePath;
+            return PathResolutionResult.found(resolved.filePath);
+        } catch (FileNotFoundOnAnyDriveException e) {
+            return PathResolutionResult.notFound();
         } catch (IOException e) {
-            return null;
+            log.error("Unexpected I/O error resolving path: {}", nonDriverLetterSyncedPath, e);
+            return PathResolutionResult.error(e);
         }
     }
 
@@ -289,16 +239,19 @@ public class FolderManagerService {
      * Find absolute path from non-drive-letter backed up path by checking all
      * available drives.
      * Handles locked directories by temporarily unlocking them to check existence.
-     * Returns null if file not found on any drive.
+     * Returns result that distinguishes between "not found" and other I/O errors.
      */
-    public Path findAbsolutePathFromNonDriveBackedUpPath(String nonDriverLetterBackedUpPath) {
+    public PathResolutionResult findAbsolutePathFromNonDriveBackedUpPath(String nonDriverLetterBackedUpPath) {
         try {
             ResolvedPath resolved = resolveAndUnlockBackupPath(nonDriverLetterBackedUpPath);
             // Lock it back since caller doesn't need it unlocked
             resolved.security.ensureLocked();
-            return resolved.filePath;
+            return PathResolutionResult.found(resolved.filePath);
+        } catch (FileNotFoundOnAnyDriveException e) {
+            return PathResolutionResult.notFound();
         } catch (IOException e) {
-            return null;
+            log.error("Unexpected I/O error resolving backup path: {}", nonDriverLetterBackedUpPath, e);
+            return PathResolutionResult.error(e);
         }
     }
 
@@ -331,7 +284,10 @@ public class FolderManagerService {
     /**
      * Try each drive letter to find and unlock the data directory containing the
      * file.
-     * Returns the resolved file path and the unlocked directory.
+     * // Include the throwable so the warning retains the full failure context for
+     * diagnostics.
+     * log.warn("Failed to check drive {} for {}: {}", root, nonDriverLetterPath,
+     * e.getMessage(), e);
      */
     private ResolvedPath resolveAndUnlockDataPath(String nonDriverLetterSyncedPath) throws IOException {
         return resolveAndUnlock(nonDriverLetterSyncedPath, FolderType.SAVE);
@@ -399,15 +355,16 @@ public class FolderManagerService {
                 tempSecurity.ensureLocked();
                 log.info("File not found on drive {} after unlock: {}", root, nonDriverLetterPath);
             } catch (Exception e) {
-                log.info("Failed to check drive {}: {}", root, e.getMessage());
+                log.warn("Failed to check drive {} for {}: {}", root, nonDriverLetterPath, e.getMessage());
                 try {
                     tempSecurity.ensureLocked();
                 } catch (Exception ignored) {
                 }
+                // Continue to next drive rather than failing completely
             }
         }
 
-        throw new IOException("File not found on any drive: " + nonDriverLetterPath);
+        throw new FileNotFoundOnAnyDriveException(nonDriverLetterPath);
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
