@@ -1,5 +1,7 @@
 package com.app.auth.login.controllers;
 
+import com.app.common.repositories.RecentUsernameRepository;
+import javafx.geometry.Side;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -29,9 +31,13 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
+
+import java.util.List;
 
 @Component
 public class LoginController {
@@ -56,17 +62,23 @@ public class LoginController {
     private final AppUpdateController appUpdateController;
     private final UserSettingService userSettingService;
     private final LoginService loginService; // Triggers background sync after login
+    private final RecentUsernameRepository recentUsernameRepository;
 
     private SettingsPopupHelper settingsPopupHelper;
     private ImageView passwordIconView;
 
-    public LoginController(Session session, UserService userService, AppUpdateController appUpdateController,
-            UserSettingService userSettingService, LoginService loginService) {
+    public LoginController(Session session,
+           UserService userService,
+           AppUpdateController appUpdateController,
+           UserSettingService userSettingService,
+           LoginService loginService,
+           RecentUsernameRepository recentUsernameRepository) {
         this.session = session;
         this.userService = userService;
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
         this.loginService = loginService;
+        this.recentUsernameRepository = recentUsernameRepository;
     }
 
     @FXML
@@ -89,6 +101,9 @@ public class LoginController {
         // Setup password peek functionality
         setupPasswordPeek();
 
+        // Setup username dropdown with recent usernames
+        setupUsernameDropdown();
+        
         username.textProperty().addListener((obs, oldVal, newVal) -> hideError());
         password.textProperty().addListener((obs, oldVal, newVal) -> hideError());
 
@@ -142,6 +157,47 @@ public class LoginController {
     }
 
     /**
+     * Sets up username dropdown showing recent usernames as context menu.
+     * When user clicks on username field, displays a menu with recent usernames.
+     * Menu is hidden when user starts typing.
+     */
+    private void setupUsernameDropdown() {
+        ContextMenu contextMenu = new ContextMenu();
+        contextMenu.setStyle("-fx-min-width: 300px;");
+
+        // Hide menu when user starts typing
+        username.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && !newVal.isEmpty()) {
+                contextMenu.hide();
+            }
+        });
+
+        // Show menu when clicking on empty field
+        username.setOnMouseClicked(e -> {
+            List<String> recents = recentUsernameRepository.findRecent();
+            contextMenu.getItems().clear();
+
+            if (!recents.isEmpty()) {
+                for (String recent : recents) {
+                    MenuItem item = new MenuItem(recent);
+                    item.setStyle("-fx-padding: 8px 16px;");
+                    item.setOnAction(action -> {
+                        username.setText(recent);
+                        contextMenu.hide();
+                    });
+                    contextMenu.getItems().add(item);
+                }
+
+                javafx.application.Platform.runLater(() -> {
+                    double width = username.getWidth();
+                    contextMenu.setPrefWidth(width > 0 ? width : 300);
+                    contextMenu.show(username, Side.BOTTOM, 0, 0);
+                });
+            }
+        });
+    }
+
+    /**
      * Updates the password peek icon based on current theme and visibility state.
      *
      * @param isOpen true if password is currently visible, false if hidden
@@ -180,6 +236,7 @@ public class LoginController {
 
         switch (response.result()) {
             case SUCCESS:
+                recentUsernameRepository.upsert(usernameText);
                 User user = response.user();
                 log.info("User '{}' logged in successfully", usernameText);
 
