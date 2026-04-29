@@ -192,6 +192,7 @@ public class DataSyncWorker implements Runnable {
             disconnectedDevices.remove(hardwareId);
             driveLetterCache.remove(hardwareId);
             queue.done(hardwareId);
+            adbClient.startCameraService(hardwareId);
         }
     }
 
@@ -208,6 +209,15 @@ public class DataSyncWorker implements Runnable {
                 relativeSyncedPaths.add(syncedPath);
             }
         }
+        adbClient.stopCameraService(hardwareId);
+        adbClient.setUsbFunctionsNone(hardwareId);
+
+        try {
+            Thread.sleep(3_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
         List<String> remoteFilePaths = new ArrayList<>(findFiles(hardwareId, INTERNAL_ROOT));
 
         String ext = getExternalStorage(hardwareId);
@@ -392,8 +402,7 @@ public class DataSyncWorker implements Runnable {
             return ProcessResult.FAILED;
         }
 
-        PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size(),
-                syncContext.saveDir());
+        PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size());
         if (result.isSuccess()) {
             String nonDriverLetterSyncedPath = folderManagerService.stripDriveLetter(file.localPath());
             dataSyncService.saveFile(uId, dId, name(file.remotePath()), nonDriverLetterSyncedPath, file.info());
@@ -480,8 +489,7 @@ public class DataSyncWorker implements Runnable {
             return false;
         }
 
-        PullResult result = pullAndVerify(hardwareId, pf.remotePath(), pf.localPath(), pf.info().size(),
-                syncContext.saveDir());
+        PullResult result = pullAndVerify(hardwareId, pf.remotePath(), pf.localPath(), pf.info().size());
         if (!result.isSuccess()) {
             return false;
         }
@@ -568,10 +576,10 @@ public class DataSyncWorker implements Runnable {
     }
 
     // Pull file from device and verify size matches expected
-    private PullResult pullAndVerify(String hardwareId, String remote, String local, long remoteSize, File saveDir) {
+    private PullResult pullAndVerify(String hardwareId, String remote, String local, long remoteSize) {
         try {
             return folderManagerService
-                    .withSpecificDirUnlocked(saveDir,
+                    .withSpecificDirUnlocked(new File(local),
                             () -> pullAndVerifyInternal(hardwareId, remote, local, remoteSize));
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
@@ -583,11 +591,6 @@ public class DataSyncWorker implements Runnable {
 
     private PullResult pullAndVerifyInternal(String hardwareId, String remote, String local, long remoteSize) {
         File f = new File(local);
-        File parent = f.getParentFile();
-
-        if (!ensureParentDirectory(parent)) {
-            return PullResult.failure(I18n.get("device.sync.error.directory_creation_failed"));
-        }
 
         if (!deleteExistingFile(f, local)) {
             return PullResult.failure(I18n.get("device.sync.error.permission_denied"));
@@ -603,6 +606,7 @@ public class DataSyncWorker implements Runnable {
 
         if (!f.exists()) {
             if (log.isWarnEnabled()) {
+                File parent = f.getParentFile();
                 log.warn("File not created after successful pull: {} (parent exists: {}, parent writable: {})",
                         local, parent != null && parent.exists(), parent != null && parent.canWrite());
             }

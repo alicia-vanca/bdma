@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Callable;
 
+import com.app.common.services.WindowsCommandService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +45,7 @@ public class FolderManagerService {
 
     private final AppConfigService appConfigService;
     private final boolean storageProtectionEnabled;
+    private final WindowsCommandService windowsCommandService;
 
     private static class ResolvedPath {
         final Path filePath;
@@ -56,9 +58,11 @@ public class FolderManagerService {
     }
 
     public FolderManagerService(AppConfigService appConfigService,
-            @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled) {
+                                @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled,
+                                WindowsCommandService windowsCommandService) {
         this.appConfigService = appConfigService;
         this.storageProtectionEnabled = storageProtectionEnabled;
+        this.windowsCommandService = windowsCommandService;
         this.tempDir = new File(AppDataPaths.appTmpDir());
     }
 
@@ -169,7 +173,8 @@ public class FolderManagerService {
             security = new FolderSecurityService(
                     specificDir.getAbsolutePath(),
                     FolderType.SAVE,
-                    storageProtectionEnabled);
+                    storageProtectionEnabled,
+                    windowsCommandService);
         }
 
         security.ensureUnlocked();
@@ -340,7 +345,8 @@ public class FolderManagerService {
             FolderSecurityService tempSecurity = new FolderSecurityService(
                     deepestFolder.toString(),
                     folderType,
-                    storageProtectionEnabled);
+                    storageProtectionEnabled,
+                    windowsCommandService);
 
             try {
                 tempSecurity.ensureUnlocked();
@@ -377,7 +383,8 @@ public class FolderManagerService {
         this.dataSecurity = new FolderSecurityService(
                 dataDir.getAbsolutePath(),
                 FolderType.SAVE,
-                storageProtectionEnabled);
+                storageProtectionEnabled,
+                windowsCommandService);
         dataSecurity.ensureExists();
         if (storageProtectionEnabled) {
             dataSecurity.ensureLocked();
@@ -396,7 +403,8 @@ public class FolderManagerService {
         this.backupSecurity = new FolderSecurityService(
                 backupDir.getAbsolutePath(),
                 FolderType.BACKUP,
-                storageProtectionEnabled);
+                storageProtectionEnabled,
+                windowsCommandService);
         backupSecurity.ensureExists();
         if (storageProtectionEnabled) {
             backupSecurity.ensureLocked();

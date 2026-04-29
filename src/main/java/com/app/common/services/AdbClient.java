@@ -412,4 +412,48 @@ public class AdbClient {
             throw new AppException("ADB interrupted: " + label, e);
         }
     }
+
+    public boolean stopCameraService(String serial) {
+        String adbPath = getAdbPath();
+        if (adbPath == null) return false;
+
+        ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
+                "am", "stopservice",
+                "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
+        try {
+            return runWithTimeout(pb, QUICK_TIMEOUT, "stopCameraService") == 0;
+        } catch (AppException e) {
+            log.warn("[{}] stopCameraService failed: {}", serial, e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean startCameraService(String serial) {
+        String adbPath = getAdbPath();
+        if (adbPath == null) return false;
+
+        ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
+                "am", "startservice",
+                "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
+        try {
+            return runWithTimeout(pb, QUICK_TIMEOUT, "startCameraService") == 0;
+        } catch (AppException e) {
+            log.warn("[{}] startCameraService failed: {}", serial, e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean setUsbFunctionsNone(String serial) {
+        String adbPath = getAdbPath();
+        if (adbPath == null) return false;
+
+        ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
+                "svc", "usb", "setFunctions", "none");
+        try {
+            return runWithTimeout(pb, QUICK_TIMEOUT, "setUsbFunctionsNone") == 0;
+        } catch (AppException e) {
+            log.warn("[{}] setUsbFunctionsNone failed: {}", serial, e.getMessage());
+            return false;
+        }
+    }
 }

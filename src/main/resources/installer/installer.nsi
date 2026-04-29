@@ -188,6 +188,9 @@ Section "Main" SecMain
   CreateShortcut "$SMPROGRAMS\BDMA\BDMA.lnk" "$INSTDIR\BDMA.exe"
   CreateShortcut "$SMPROGRAMS\BDMA\Gỡ cài đặt.lnk" "$INSTDIR\BDMA-Setup.exe"
 
+  ; Disable AutoPlay to prevent Windows popup when body camera connected
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun" 0xFF
+
   MessageBox MB_OK "Cài đặt BDMA thành công!"
 SectionEnd
 
@@ -206,6 +209,7 @@ Function DoUninstall
 
   DeleteRegKey HKLM "Software\BDMA"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BDMA"
+  DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun"
 
   StrCpy $0 "$TEMP\bdma-cleanup.cmd"
   FileOpen $1 $0 w

@@ -30,7 +30,8 @@ public class DeviceTracker implements Runnable {
     private final AdbClient adbClient;
     private final DeviceValidationService deviceValidationService;
     private final ApplicationEventPublisher eventPublisher;
-    private final Set<String> currentDevices = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, DeviceState> deviceStates = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> gracePeriodTasks = new ConcurrentHashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private volatile boolean running;
 
@@ -38,12 +39,14 @@ public class DeviceTracker implements Runnable {
     // immediately without waiting for the read loop to time out.
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
     private AtomicReference<ScheduledExecutorService> scheduler = new AtomicReference<>(
-            Executors.newScheduledThreadPool(2));
+            Executors.newScheduledThreadPool(Math.max(8, Runtime.getRuntime().availableProcessors())));
     private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingChecks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Integer> stableCounters = new ConcurrentHashMap<>();
+    private static final long STABILITY_DURATION_MS = 3_000;  // device must stay alive continuously for this long
+    private static final long STABILITY_TIMEOUT_MS = 15_000;  // max time allowed for stability check before dropping
+    private static final long GRACE_PERIOD_MS = 8_000;        // buffer before publishing DISCONNECTED
+    private static final long STABILITY_POLL_MS = 500;        // interval between isDeviceAlive() checks
 
-    private static final int STABLE_CONFIRM_COUNT = 5;
-    private static final int STABLE_POLL_INTERVAL_MS = 1000;
+    private enum DeviceState { STABILIZING, CONNECTED, DISCONNECTING }
 
     public DeviceTracker(AdbClient adbClient,
             DeviceValidationService deviceValidationService,
@@ -78,8 +81,8 @@ public class DeviceTracker implements Runnable {
         }
     }
 
-    // Stop the current login session and clear all tracked device state so the
-    // next login starts from a clean snapshot.
+    // Stops the current session, cancels all pending stability checks and grace periods.
+    // Clears device state so the next login starts from a clean snapshot.
     public void stopTrackingAndResetState() {
         running = false;
         cancelAllStabilityChecks();
@@ -88,30 +91,36 @@ public class DeviceTracker implements Runnable {
         if (p != null) {
             p.destroyForcibly();
         }
-        // Clear device state so next start will re-validate all connected devices
-        currentDevices.clear();
     }
 
-    // Signals the tracker to stop and destroys the active adb process so the
-    // OS-level process exits instead of being abandoned in the task manager.
+    // Signals the tracker to stop, destroys the active adb process.
+    // Shuts down the scheduler to release all threads.
     public void shutdown() {
         stopTrackingAndResetState();
-        ScheduledExecutorService currentScheduler = scheduler.getAndSet(Executors.newScheduledThreadPool(2));
-        currentScheduler.shutdownNow();
+        scheduler.get().shutdownNow();
     }
 
+    // Cancels all pending stability checks and grace period timers, then clears device state.
+    // Called on session stop or shutdown.
     private void cancelAllStabilityChecks() {
         for (ScheduledFuture<?> future : pendingChecks.values()) {
             future.cancel(false);
         }
         pendingChecks.clear();
-        stableCounters.clear();
+
+        for (ScheduledFuture<?> future : gracePeriodTasks.values()) {
+            future.cancel(false);
+        }
+        gracePeriodTasks.clear();
+
+        deviceStates.clear();
     }
 
+    // Recreates the scheduler if it was shut down (e.g. after logout/login cycle).
     private void ensureScheduler() {
         ScheduledExecutorService current = scheduler.get();
         if (current.isShutdown() || current.isTerminated()) {
-            scheduler.compareAndSet(current, Executors.newScheduledThreadPool(2));
+            scheduler.compareAndSet(current, Executors.newScheduledThreadPool(Math.max(8, Runtime.getRuntime().availableProcessors())));
         }
     }
 
@@ -163,33 +172,48 @@ public class DeviceTracker implements Runnable {
         }
     }
 
-    // Diff the current device set against the live snapshot and publish
-    // connect/disconnect events only for devices that actually changed state.
+
+    // Diffs the live device snapshot against current tracked states.
+    // New devices enter STABILIZING, missing CONNECTED devices enter DISCONNECTING
+    // (grace period), missing STABILIZING devices are dropped immediately.
     private void handle(List<String> newDevices) {
         Set<String> newSet = new HashSet<>(newDevices);
 
         for (String serial : newSet) {
-            if (!currentDevices.contains(serial) && !pendingChecks.containsKey(serial)) {
-                log.info("New device detected, starting stability check: {}", serial);
-                startStabilityCheck(serial);
+            deviceStates.computeIfAbsent(serial, s -> {
+                if (!pendingChecks.containsKey(s)) {
+                    log.info("[{}] New device detected, starting stability check", s);
+                    startStabilityCheck(s);
+                }
+                return DeviceState.STABILIZING;
+            });
+
+            if (deviceStates.replace(serial, DeviceState.DISCONNECTING, DeviceState.CONNECTED)) {
+                cancelGracePeriod(serial);
+                log.info("[{}] Device reconnected within grace period", serial);
             }
         }
 
-        for (String serial : new HashSet<>(currentDevices)) {
+        for (String serial : new HashSet<>(deviceStates.keySet())) {
             if (!newSet.contains(serial)) {
-                // Cancel the stability check if the device disconnects while validation is
-                // pending.
-                cancelStabilityCheck(serial);
-                eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, null));
+                DeviceState state = deviceStates.get(serial);
+                if (state == DeviceState.CONNECTED) {
+                    deviceStates.put(serial, DeviceState.DISCONNECTING);
+                    startGracePeriod(serial);
+                } else if (state == DeviceState.STABILIZING) {
+                    deviceStates.remove(serial);
+                    cancelStabilityCheck(serial);
+                }
             }
         }
-
-        currentDevices.clear();
-        currentDevices.addAll(newSet);
     }
 
+    // Polls isDeviceAlive() every STABILITY_POLL_MS.
+    // Device must remain alive continuously for STABILITY_DURATION_MS before being considered stable.
+    // Drops device if not stable within STABILITY_TIMEOUT_MS total.
     private void startStabilityCheck(String serial) {
-        stableCounters.put(serial, 0);
+        long startedAt = System.currentTimeMillis();
+        long[] stableSince = {0};
 
         try {
             ScheduledFuture<?> future = scheduler.get().scheduleWithFixedDelay(() -> {
@@ -198,29 +222,39 @@ public class DeviceTracker implements Runnable {
                     return;
                 }
 
-                boolean alive = adbClient.isDeviceAlive(serial);
-                if (!alive) {
-                    log.debug("Stability check failed for {}, resetting counter", serial);
-                    stableCounters.put(serial, 0);
+                if (System.currentTimeMillis() - startedAt > STABILITY_TIMEOUT_MS) {
+                    log.warn("[{}] Stability check timed out, dropping device", serial);
+                    deviceStates.remove(serial);
+                    cancelStabilityCheck(serial);
                     return;
                 }
 
-                int count = stableCounters.merge(serial, 1, (a, b) -> a + b);
-                log.debug("Stability check {}/{} for: {}", count, STABLE_CONFIRM_COUNT, serial);
-
-                if (count >= STABLE_CONFIRM_COUNT) {
-                    cancelStabilityCheck(serial);
-                    log.info("Device stable after {} checks, publishing CONNECTED: {}", STABLE_CONFIRM_COUNT, serial);
-                    DeviceValidationResult result = validateSerialSafely(serial);
-                    eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
+                boolean alive = adbClient.isDeviceAlive(serial);
+                if (!alive) {
+                    stableSince[0] = 0;
+                    return;
                 }
 
-            }, STABLE_POLL_INTERVAL_MS, STABLE_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+                if (stableSince[0] == 0) {
+                    stableSince[0] = System.currentTimeMillis();
+                }
+
+                if (System.currentTimeMillis() - stableSince[0] >= STABILITY_DURATION_MS) {
+                    cancelStabilityCheck(serial);
+                    if (deviceStates.replace(serial, DeviceState.STABILIZING, DeviceState.CONNECTED)) {
+                        log.info("[{}] Device stable, publishing CONNECTED", serial);
+                        DeviceValidationResult result = validateSerialSafely(serial);
+                        eventPublisher.publishEvent(
+                                new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
+                    }
+                }
+
+            }, STABILITY_POLL_MS, STABILITY_POLL_MS, TimeUnit.MILLISECONDS);
 
             pendingChecks.put(serial, future);
         } catch (RejectedExecutionException e) {
-            stableCounters.remove(serial);
-            log.warn("Unable to schedule stability check for {}: {}", serial, e.getMessage());
+            deviceStates.remove(serial);
+            log.warn("[{}] Unable to schedule stability check: {}", serial, e.getMessage());
         }
     }
 
@@ -229,7 +263,6 @@ public class DeviceTracker implements Runnable {
         if (future != null) {
             future.cancel(false);
         }
-        stableCounters.remove(serial);
     }
 
     // Validation failures should not stop device tracking; emit an invalid result
@@ -248,6 +281,32 @@ public class DeviceTracker implements Runnable {
             Thread.sleep(ms);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    // Waits GRACE_PERIOD_MS before publishing DISCONNECTED to allow transient.
+    // Disconnects (e.g. USB mode change) to recover without triggering a full reconnect cycle.
+    private void startGracePeriod(String serial) {
+        try {
+            ScheduledFuture<?> future = scheduler.get().schedule(() -> {
+                if (deviceStates.remove(serial, DeviceState.DISCONNECTING)) {
+                    log.info("[{}] Grace period expired, publishing DISCONNECTED", serial);
+                    eventPublisher.publishEvent(
+                            new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, null));
+                }
+                gracePeriodTasks.remove(serial);
+            }, GRACE_PERIOD_MS, TimeUnit.MILLISECONDS);
+            gracePeriodTasks.put(serial, future);
+        } catch (RejectedExecutionException e) {
+            deviceStates.remove(serial);
+            log.warn("[{}] Unable to schedule grace period: {}", serial, e.getMessage());
+        }
+    }
+
+    private void cancelGracePeriod(String serial) {
+        ScheduledFuture<?> future = gracePeriodTasks.remove(serial);
+        if (future != null) {
+            future.cancel(false);
         }
     }
 }
