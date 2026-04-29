@@ -1,9 +1,6 @@
 package com.app.common.modules.foldermanager.services;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -12,13 +9,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.app.common.definitions.enums.FolderType;
+import com.app.common.services.WindowsCommandService;
 
 public class FolderSecurityService {
 
     private static final Logger log = LoggerFactory.getLogger(FolderSecurityService.class);
 
     private static final String MSG_LOCK_INTERRUPTED = "Lock interrupted";
-
     private static final String MSG_LOCK_FAILED = "Lock failed";
 
     private final Path parentPath;
@@ -26,12 +23,10 @@ public class FolderSecurityService {
     private final Path unlockedPath;
     private final Path lockedPath;
     private final boolean protectionEnabled;
+    private final WindowsCommandService windowsCommandService;
 
-    public FolderSecurityService(String folderPath, FolderType folderType) {
-        this(folderPath, folderType, true);
-    }
-
-    public FolderSecurityService(String folderPath, FolderType folderType, boolean protectionEnabled) {
+    public FolderSecurityService(String folderPath, FolderType folderType,
+                                 boolean protectionEnabled, WindowsCommandService windowsCommandService) {
         this.unlockedPath = Path.of(folderPath);
         Path parent = unlockedPath.getParent();
         if (parent == null) {
@@ -41,6 +36,7 @@ public class FolderSecurityService {
         this.unlockedFolderName = unlockedPath.getFileName().toString();
         this.lockedPath = parentPath.resolve(folderType.getLockedName());
         this.protectionEnabled = protectionEnabled;
+        this.windowsCommandService = windowsCommandService;
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -94,9 +90,7 @@ public class FolderSecurityService {
     public synchronized void lock() {
         if (!protectionEnabled) {
             ensureExists();
-            if (lockedPath.toFile().exists()) {
-                unlock();
-            }
+            if (lockedPath.toFile().exists()) unlock();
             return;
         }
 
@@ -121,7 +115,8 @@ public class FolderSecurityService {
         }
 
         try {
-            int renameCode = runCommand("cmd", "/c", "ren", unlockedFolderName, lockedPath.getFileName().toString());
+            int renameCode = windowsCommandService.renameFolder(
+                    parentPath.toFile(), unlockedFolderName, lockedPath.getFileName().toString());
             if (renameCode != 0 || !lockedPath.toFile().exists()) {
                 log.error("Lock failed — rename exit code: {}, from: {}, to: {}",
                         renameCode, unlockedPath, lockedPath);
@@ -149,7 +144,8 @@ public class FolderSecurityService {
             unlockLockedPathForMaintenance();
             reconcileDuplicateUnlockedFolder();
 
-            int renameCode = runCommand("cmd", "/c", "ren", lockedPath.getFileName().toString(), unlockedFolderName);
+            int renameCode = windowsCommandService.renameFolder(
+                    parentPath.toFile(), lockedPath.getFileName().toString(), unlockedFolderName);
             if (renameCode != 0 || !unlockedPath.toFile().exists()) {
                 log.error("Unlock failed — rename exit code: {}, from: {}, to: {}",
                         renameCode, lockedPath, unlockedPath);
@@ -169,13 +165,13 @@ public class FolderSecurityService {
     // ── Private ──────────────────────────────────────────────────────────────
 
     private void unlockLockedPathForMaintenance() throws IOException, InterruptedException {
-        runCommand("cmd", "/c", "attrib", "-h", "-s", lockedPath.toString());
-        removeDeleteProtection(lockedPath.toString());
+        windowsCommandService.removeHiddenSystem(lockedPath.toString());
+        windowsCommandService.removeDeleteProtection(lockedPath.toString());
     }
 
     private void applyLockedAttributes() throws IOException, InterruptedException {
-        runCommand("cmd", "/c", "attrib", "+h", "+s", lockedPath.toString());
-        applyDeleteProtection(lockedPath.toString());
+        windowsCommandService.applyHiddenSystem(lockedPath.toString());
+        windowsCommandService.applyDeleteProtection(lockedPath.toString());
     }
 
     private void reconcileDuplicateUnlockedFolder() throws IOException {
@@ -227,64 +223,5 @@ public class FolderSecurityService {
         }
 
         Files.deleteIfExists(dir);
-    }
-
-    private void applyDeleteProtection(String path) {
-        try {
-            String user = System.getProperty("user.name");
-            int code = runCommand("icacls", path, "/deny", user + ":(D)");
-            if (code == 0) {
-                log.debug("Delete protection applied");
-            } else {
-                log.warn("Delete protection failed, exit code: {}", code);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Failed to apply delete protection", e);
-        } catch (IOException e) {
-            log.error("Failed to apply delete protection", e);
-        }
-    }
-
-    private void removeDeleteProtection(String path) {
-        try {
-            String user = System.getProperty("user.name");
-            int code = runCommand("icacls", path, "/remove:d", user);
-            if (code == 0) {
-                log.debug("Delete protection removed");
-            } else {
-                log.warn("Remove delete protection failed, exit code: {}", code);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Failed to remove delete protection", e);
-        } catch (IOException e) {
-            log.error("Failed to remove delete protection", e);
-        }
-    }
-
-    private int runCommand(String... command) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(command)
-                .directory(parentPath.toFile())
-                .redirectErrorStream(true)
-                .start();
-
-        StringBuilder sb = new StringBuilder();
-        try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (!sb.isEmpty())
-                    sb.append('\n');
-                sb.append(line);
-            }
-        }
-        String output = sb.toString().trim();
-        int code = process.waitFor();
-
-        if (!output.isEmpty()) {
-            log.debug("[cmd] {}", output);
-        }
-
-        return code;
     }
 }

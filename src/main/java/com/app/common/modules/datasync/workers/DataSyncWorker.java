@@ -192,6 +192,7 @@ public class DataSyncWorker implements Runnable {
             disconnectedDevices.remove(hardwareId);
             driveLetterCache.remove(hardwareId);
             queue.done(hardwareId);
+            adbClient.startCameraService(hardwareId);
         }
     }
 
@@ -208,6 +209,15 @@ public class DataSyncWorker implements Runnable {
                 relativeSyncedPaths.add(syncedPath);
             }
         }
+        adbClient.stopCameraService(hardwareId);
+        adbClient.setUsbFunctionsNone(hardwareId);
+
+        try {
+            Thread.sleep(3_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
         List<String> remoteFilePaths = new ArrayList<>(findFiles(hardwareId, INTERNAL_ROOT));
 
         String ext = getExternalStorage(hardwareId);
@@ -392,8 +402,7 @@ public class DataSyncWorker implements Runnable {
             return ProcessResult.FAILED;
         }
 
-        PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size(),
-                syncContext.saveDir());
+        PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size());
         if (result.isSuccess()) {
             String nonDriverLetterSyncedPath = folderManagerService.stripDriveLetter(file.localPath());
             dataSyncService.saveFile(uId, dId, name(file.remotePath()), nonDriverLetterSyncedPath, file.info());
@@ -480,8 +489,7 @@ public class DataSyncWorker implements Runnable {
             return false;
         }
 
-        PullResult result = pullAndVerify(hardwareId, pf.remotePath(), pf.localPath(), pf.info().size(),
-                syncContext.saveDir());
+        PullResult result = pullAndVerify(hardwareId, pf.remotePath(), pf.localPath(), pf.info().size());
         if (!result.isSuccess()) {
             return false;
         }
@@ -567,17 +575,25 @@ public class DataSyncWorker implements Runnable {
         return parts.length >= 3 ? parts[parts.length - 3] : null;
     }
 
-    // Pull file from device and verify size matches expected
-    private PullResult pullAndVerify(String hardwareId, String remote, String local, long remoteSize, File saveDir) {
+    // Pull file from device into a temp sibling folder, then move it into locked data after unlock.
+    private PullResult pullAndVerify(String hardwareId, String remote, String local, long remoteSize) {
+        File tempFile = null;
         try {
-            return folderManagerService
-                    .withSpecificDirUnlocked(saveDir,
-                            () -> pullAndVerifyInternal(hardwareId, remote, local, remoteSize));
+            tempFile = folderManagerService.createSyncTempFile(local);
+            PullResult result = pullAndVerifyInternal(hardwareId, remote, tempFile.getAbsolutePath(), remoteSize);
+            if (!result.isSuccess()) {
+                return result;
+            }
+
+            folderManagerService.moveSyncTempFileToData(tempFile, new File(local));
+            return PullResult.success();
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
                 log.warn("Exception during pullAndVerify for {} -> {}: {}", name(remote), local, e.getMessage(), e);
             }
             return PullResult.failure(I18n.get("device.sync.error.exception"));
+        } finally {
+            folderManagerService.cleanupSyncTempDir();
         }
     }
 
