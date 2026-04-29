@@ -29,6 +29,7 @@ public class DataSyncRunner implements CommandLineRunner {
 
     public synchronized void startSyncWorker() {
         if (syncThread == null || !syncThread.isAlive()) {
+            worker.resetShutdownFlag();
             syncThread = new Thread(worker, "sync-worker");
             syncThread.setDaemon(true);
             syncThread.start();
@@ -49,12 +50,27 @@ public class DataSyncRunner implements CommandLineRunner {
 
         if (trackerThread != null) {
             trackerThread.interrupt();
-            try {
-                trackerThread.join(3000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
             trackerThread = null;
+        }
+
+        // Request graceful shutdown without blocking UI
+        if (syncThread != null) {
+            worker.requestShutdown();
+            Thread shutdownThread = syncThread;
+            syncThread = null;
+            
+            // Clean up in background to avoid blocking logout UI
+            new Thread(() -> {
+                try {
+                    shutdownThread.join(5000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                // Force interrupt if still running after timeout
+                if (shutdownThread.isAlive()) {
+                    shutdownThread.interrupt();
+                }
+            }, "sync-shutdown").start();
         }
     }
 
