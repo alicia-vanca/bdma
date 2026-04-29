@@ -249,9 +249,6 @@ public class FileListController {
             filter = new FileFilter();
         }
 
-        // Clear verification cache on refresh
-        fileVerificationCache.clear();
-
         List<FileView> files = fileService.query(filter);
         filteredFiles = new ArrayList<>(files);
         currentPageIndex = 0;
