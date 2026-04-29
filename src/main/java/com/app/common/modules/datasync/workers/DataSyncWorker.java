@@ -575,35 +575,22 @@ public class DataSyncWorker implements Runnable {
         return parts.length >= 3 ? parts[parts.length - 3] : null;
     }
 
-    // Pull file from device into a temp sibling folder, then move it into locked data after unlock.
+    // Pull file from device and verify size matches expected
     private PullResult pullAndVerify(String hardwareId, String remote, String local, long remoteSize) {
-        File tempFile = null;
         try {
-            tempFile = folderManagerService.createSyncTempFile(local);
-            PullResult result = pullAndVerifyInternal(hardwareId, remote, tempFile.getAbsolutePath(), remoteSize);
-            if (!result.isSuccess()) {
-                return result;
-            }
-
-            folderManagerService.moveSyncTempFileToData(tempFile, new File(local));
-            return PullResult.success();
+            return folderManagerService
+                    .withSpecificDirUnlocked(new File(local),
+                            () -> pullAndVerifyInternal(hardwareId, remote, local, remoteSize));
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
                 log.warn("Exception during pullAndVerify for {} -> {}: {}", name(remote), local, e.getMessage(), e);
             }
             return PullResult.failure(I18n.get("device.sync.error.exception"));
-        } finally {
-            folderManagerService.cleanupSyncTempDir();
         }
     }
 
     private PullResult pullAndVerifyInternal(String hardwareId, String remote, String local, long remoteSize) {
         File f = new File(local);
-        File parent = f.getParentFile();
-
-        if (!ensureParentDirectory(parent)) {
-            return PullResult.failure(I18n.get("device.sync.error.directory_creation_failed"));
-        }
 
         if (!deleteExistingFile(f, local)) {
             return PullResult.failure(I18n.get("device.sync.error.permission_denied"));
@@ -619,6 +606,7 @@ public class DataSyncWorker implements Runnable {
 
         if (!f.exists()) {
             if (log.isWarnEnabled()) {
+                File parent = f.getParentFile();
                 log.warn("File not created after successful pull: {} (parent exists: {}, parent writable: {})",
                         local, parent != null && parent.exists(), parent != null && parent.canWrite());
             }
