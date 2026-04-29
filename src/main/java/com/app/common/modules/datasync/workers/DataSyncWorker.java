@@ -409,7 +409,7 @@ public class DataSyncWorker implements Runnable {
             syncedPaths.add(file.relativeLocalPath());
             logSyncedFile(file.localPath(), counters.passed + 1, counters.total);
 
-            publisher.publishEvent(new FileSyncCompletedEvent(hardwareId, file.relativeLocalPath()));
+            publisher.publishEvent(new FileSyncCompletedEvent(hardwareId, nonDriverLetterSyncedPath));
 
             if (syncContext.autoDelete()) {
                 deleteRemoteFile(hardwareId, file.remotePath());
@@ -499,7 +499,7 @@ public class DataSyncWorker implements Runnable {
         prep.syncedPaths().add(pf.relativeLocalPath());
         logSyncedFile(pf.localPath(), counters.passed + 1, counters.total);
 
-        publisher.publishEvent(new FileSyncCompletedEvent(hardwareId, pf.relativeLocalPath()));
+        publisher.publishEvent(new FileSyncCompletedEvent(hardwareId, nonDriverLetterSyncedPath));
 
         if (syncContext.autoDelete()) {
             deleteRemoteFile(hardwareId, pf.remotePath());
