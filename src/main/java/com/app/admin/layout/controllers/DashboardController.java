@@ -320,6 +320,11 @@ public class DashboardController extends BaseLayoutController {
     public void resetState() {
         deviceItems.clear();
         deviceStateInitialized = false;
+
+        // Cleanup file list controller resources to prevent thread leaks
+        if (fileListController != null) {
+            fileListController.cleanup();
+        }
     }
 
     // Handle device connection/disconnection events from DeviceTracker

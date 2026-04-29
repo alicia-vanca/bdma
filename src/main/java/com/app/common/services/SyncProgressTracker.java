@@ -82,11 +82,6 @@ public class SyncProgressTracker {
         return progressMap.getOrDefault(hardwareId, SyncProgress.idle());
     }
 
-    public boolean isAnySyncActive() {
-        return progressMap.values().stream()
-                .anyMatch(p -> p.status() == SyncStatus.SYNCING || p.status() == SyncStatus.QUEUED);
-    }
-
     private void notifyProgressChanged() {
         if (onProgressChanged != null) {
             Platform.runLater(onProgressChanged);

@@ -24,6 +24,8 @@ import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.modules.foldermanager.services.FolderSecurityService;
+import com.app.common.modules.foldermanager.utils.FilePathHasher;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.services.AdbClient;
 import com.app.common.services.AppNoticeService;
@@ -51,6 +53,7 @@ public class DataSyncWorker implements Runnable {
 
     private final Map<String, String> driveLetterCache = new ConcurrentHashMap<>();
     private final Set<String> disconnectedDevices = ConcurrentHashMap.newKeySet();
+    private volatile boolean shutdownRequested = false;
 
     // Records and inner classes
     private record SyncFile(String remotePath, String localPath, String relativeLocalPath, FileInfo info) {
@@ -134,7 +137,7 @@ public class DataSyncWorker implements Runnable {
 
     @Override
     public void run() {
-        while (!Thread.currentThread().isInterrupted()) {
+        while (!shutdownRequested && !Thread.currentThread().isInterrupted()) {
             try {
                 DeviceSyncQueue.Entry entry = queue.take();
                 processDevice(entry);
@@ -145,6 +148,21 @@ public class DataSyncWorker implements Runnable {
                 log.error("SyncWorker error", e);
             }
         }
+        log.info("Sync worker stopped gracefully");
+    }
+
+    /**
+     * Request graceful shutdown. Worker will finish current file then stop.
+     */
+    public void requestShutdown() {
+        shutdownRequested = true;
+    }
+
+    /**
+     * Reset shutdown flag when restarting the worker.
+     */
+    public void resetShutdownFlag() {
+        shutdownRequested = false;
     }
 
     private void processDevice(DeviceSyncQueue.Entry entry) {
@@ -256,9 +274,9 @@ public class DataSyncWorker implements Runnable {
 
         for (SyncFile file : syncFiles) {
 
-            if (Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
+            if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
                 if (log.isWarnEnabled()) {
-                    log.warn("Device disconnected. Break sync file loop");
+                    log.warn("Logged out or Device disconnected. Break sync file loop");
                 }
                 break;
             }
@@ -435,7 +453,7 @@ public class DataSyncWorker implements Runnable {
 
         // Retry each file N times before moving to next file
         for (PendingFile pf : failedList) {
-            if (Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
+            if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
                 // Device disconnected mid-retry, skip remaining files
                 failedFilesRemaining.add(pf);
                 counters.failed += 1;
@@ -462,7 +480,7 @@ public class DataSyncWorker implements Runnable {
     private boolean retryFileWithAttempts(String hardwareId, PendingFile pf, SyncPreparation prep,
             SyncContext syncContext, SyncCounters counters) {
         for (int attempt = 1; attempt <= AppConstants.MAX_RETRY; attempt++) {
-            if (Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
+            if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
                 return false;
             }
 
@@ -556,7 +574,7 @@ public class DataSyncWorker implements Runnable {
     }
 
     // Build local file path from FileInfo and remote path structure using captured
-    // saveDir
+    // saveDir. Applies filename hashing with CLSID suffix for obfuscation.
     private String resolveLocalPath(FileInfo info, String remotePath, File saveDir) {
         String[] parts = remotePath.split("/");
         if (parts.length < 3)
@@ -566,7 +584,8 @@ public class DataSyncWorker implements Runnable {
             return null;
 
         File dir = new File(new File(saveDir, info.username()), parts[parts.length - 3]);
-        return new File(dir, parts[parts.length - 1]).getAbsolutePath();
+        String logicalPath = new File(dir, parts[parts.length - 1]).getAbsolutePath();
+        return FilePathHasher.toPhysicalPath(logicalPath);
     }
 
     // Extract folder type from remote path (third-to-last path component)
@@ -613,20 +632,17 @@ public class DataSyncWorker implements Runnable {
             return PullResult.failure(I18n.get("device.sync.error.file_not_created"));
         }
 
-        return verifyFileSize(f, remoteSize, remote);
-    }
-
-    private boolean ensureParentDirectory(File parent) {
-        if (parent != null && !parent.exists()) {
-            boolean created = parent.mkdirs();
-            if (!created && !parent.exists()) {
+        PullResult sizeVerification = verifyFileSize(f, remoteSize, remote);
+        if (sizeVerification.isSuccess()) {
+            try {
+                FolderSecurityService.lockTarget(local);
+            } catch (IOException e) {
                 if (log.isWarnEnabled()) {
-                    log.warn("Failed to create parent directory: {}", parent.getAbsolutePath());
+                    log.warn("Failed to lock file after pull: {} - {}", local, e.getMessage());
                 }
-                return false;
             }
         }
-        return true;
+        return sizeVerification;
     }
 
     private boolean deleteExistingFile(File file, String path) {

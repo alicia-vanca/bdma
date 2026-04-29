@@ -9,12 +9,10 @@ import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.databackup.services.DataBackupService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
-import com.app.common.services.SyncProgressTracker;
 
 /**
  * Worker thread responsible for backing up files from dataDir to backupDir.
- * Waits for sync to complete before processing backup queue.
- * Pauses if sync becomes active mid-backup (finishes current file first).
+ * Processes backup queue independently of sync operations.
  * Flow:
  * BackupQueue.take() → FolderManagerService.backupFromSave() →
  * BackupService.markBackup()
@@ -28,18 +26,15 @@ public class DataBackupWorker implements Runnable {
     private final FolderManagerService folderManager;
     private final DataBackupService dataBackupService;
     private final ApplicationEventPublisher publisher;
-    private final SyncProgressTracker syncProgressTracker;
 
     public DataBackupWorker(DataBackupQueue dataBackupQueue,
             FolderManagerService folderManager,
             DataBackupService dataBackupService,
-            ApplicationEventPublisher publisher,
-            SyncProgressTracker syncProgressTracker) {
+            ApplicationEventPublisher publisher) {
         this.dataBackupQueue = dataBackupQueue;
         this.folderManager = folderManager;
         this.dataBackupService = dataBackupService;
         this.publisher = publisher;
-        this.syncProgressTracker = syncProgressTracker;
     }
 
     @Override
@@ -50,9 +45,6 @@ public class DataBackupWorker implements Runnable {
             String nonDriveLetterSyncedPath = null;
             try {
                 nonDriveLetterSyncedPath = dataBackupQueue.take();
-
-                // Wait until no sync is active before processing backup
-                waitForSyncToComplete();
 
                 if (folderManager.isBackupDirConfigured()) {
 
@@ -85,18 +77,5 @@ public class DataBackupWorker implements Runnable {
                 }
             }
         }
-    }
-
-    // Wait until sync is not active (SYNCING or QUEUED)
-    private void waitForSyncToComplete() throws InterruptedException {
-        while (isSyncActive()) {
-            log.debug("Sync active, backup paused. Waiting...");
-            Thread.sleep(1000);
-        }
-    }
-
-    // Check if any device has active sync
-    private boolean isSyncActive() {
-        return syncProgressTracker.isAnySyncActive();
     }
 }

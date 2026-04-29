@@ -43,9 +43,6 @@ public final class AppConstants {
     public static final String STARTUP_REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     public static final String STARTUP_REG_VALUE = "BDMA";
 
-    public static final String SYNC_TEMP_FOLDER_NAME = ".sync_tmp";
-    public static final String BACKUP_TEMP_FOLDER_NAME = ".backup_tmp";
-
     // ────────────── UI ──────────────
     public static final String MESSAGE_ERROR = "message-error";
     public static final String MESSAGE_SUCCESS = "message-success";

@@ -4,9 +4,15 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +41,8 @@ import javafx.util.StringConverter;
 @Component
 @Scope("prototype")
 public class FileListController {
+
+    private static final Logger log = LoggerFactory.getLogger(FileListController.class);
 
     private static final DateTimeFormatter DATE_PICKER_FORMATTER = DateTimeFormatter
             .ofPattern(AppConstants.DATE_PICKER_FORMAT);
@@ -85,6 +93,20 @@ public class FileListController {
     private int pageSize = AppConstants.DEFAULT_PAGE_SIZE;
     private int currentPageIndex = 0;
     private Runnable onClearFilter;
+
+    // Async file verification with concurrent thread pool
+    private final Map<String, VerificationStatus> fileVerificationCache = new ConcurrentHashMap<>();
+    private final ExecutorService verificationExecutor = Executors.newFixedThreadPool(
+            Math.max(8, Runtime.getRuntime().availableProcessors() * 2),
+            r -> {
+                Thread t = new Thread(r, "FileVerification");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private enum VerificationStatus {
+        CHECKING, EXISTS, MISSING, ERROR
+    }
 
     public FileListController(FileService fileService, UserService userService, Session session,
             FolderManagerService folderManagerService) {
@@ -145,28 +167,59 @@ public class FileListController {
         colDate.setCellValueFactory(c -> new SimpleStringProperty(formatDate(c.getValue().createDate())));
     }
 
-    // Check if file exists and add (MISSING) prefix if not found
+    // Format file name with verification status (non-blocking)
     private String formatFileName(FileView fileView) {
         String fileName = fileView.name();
         String syncedPath = fileView.syncedPath();
 
-        // TODO: this only checks if the file exists in current data dir, need to decide
-        // and implement correct logic to solve missing files case
         if (syncedPath == null || syncedPath.isEmpty()) {
             return "(MISSING) " + fileName;
         }
 
-        PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveSyncedPath(syncedPath);
+        // Check cache first
+        VerificationStatus status = fileVerificationCache.get(syncedPath);
 
-        if (result.isNotFound()) {
-            return "(MISSING) " + fileName;
+        if (status == null) {
+            // Not checked yet - mark as checking and start async verification
+            fileVerificationCache.put(syncedPath, VerificationStatus.CHECKING);
+            startAsyncVerification(syncedPath);
+            return fileName; // Show without prefix while checking
         }
 
-        if (result.isError()) {
-            return "(ERROR) " + fileName;
-        }
+        // Return based on cached status
+        return switch (status) {
+            case CHECKING -> fileName;
+            case MISSING -> "(MISSING) " + fileName;
+            case ERROR -> "(ERROR) " + fileName;
+            case EXISTS -> fileName;
+        };
+    }
 
-        return fileName;
+    // Start async verification for a file path
+    private void startAsyncVerification(String syncedPath) {
+        verificationExecutor.submit(() -> {
+            try {
+                PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveSyncedPath(syncedPath);
+
+                VerificationStatus newStatus;
+                if (result.isNotFound()) {
+                    newStatus = VerificationStatus.MISSING;
+                } else if (result.isError()) {
+                    newStatus = VerificationStatus.ERROR;
+                } else {
+                    newStatus = VerificationStatus.EXISTS;
+                }
+
+                fileVerificationCache.put(syncedPath, newStatus);
+
+                // Update UI on JavaFX thread
+                Platform.runLater(() -> fileTable.refresh());
+            } catch (Exception e) {
+                log.error("File verification failed: {}", syncedPath, e);
+                fileVerificationCache.put(syncedPath, VerificationStatus.ERROR);
+                Platform.runLater(() -> fileTable.refresh());
+            }
+        });
     }
 
     public void filterByDevice(String hardwareId) {
@@ -195,6 +248,9 @@ public class FileListController {
         if (filter == null) {
             filter = new FileFilter();
         }
+
+        // Clear verification cache on refresh
+        fileVerificationCache.clear();
 
         List<FileView> files = fileService.query(filter);
         filteredFiles = new ArrayList<>(files);
@@ -403,5 +459,16 @@ public class FileListController {
 
     public void onFileBackupCompleted() {
         Platform.runLater(() -> refresh(buildFilter()));
+    }
+
+    /**
+     * Cleanup resources when controller is no longer needed.
+     * Shuts down the verification executor to prevent thread leaks.
+     * Called during logout to ensure proper resource cleanup.
+     */
+    public void cleanup() {
+        verificationExecutor.shutdownNow();
+        fileVerificationCache.clear();
+        log.debug("FileListController cleanup: executor shutdown, cache cleared");
     }
 }
