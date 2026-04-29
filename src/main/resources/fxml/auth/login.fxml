@@ -19,7 +19,9 @@
             </VBox.margin>
         </Label>
         <VBox spacing="10">
-            <TextField fx:id="username" promptText="%login.username" styleClass="input"/>
+            <TextField fx:id="username" promptText="%login.username"
+                      styleClass="input"
+                      maxWidth="Infinity"/>
             <StackPane alignment="CENTER_RIGHT">
                 <PasswordField fx:id="password" promptText="%login.password" styleClass="input"/>
                 <TextField fx:id="passwordVisible" promptText="%login.password" styleClass="input" visible="false" managed="false"/>
