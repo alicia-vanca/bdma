@@ -41,12 +41,14 @@ public class DeviceTracker implements Runnable {
     private AtomicReference<ScheduledExecutorService> scheduler = new AtomicReference<>(
             Executors.newScheduledThreadPool(Math.max(8, Runtime.getRuntime().availableProcessors())));
     private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingChecks = new ConcurrentHashMap<>();
-    private static final long STABILITY_DURATION_MS = 3_000;  // device must stay alive continuously for this long
-    private static final long STABILITY_TIMEOUT_MS = 15_000;  // max time allowed for stability check before dropping
-    private static final long GRACE_PERIOD_MS = 8_000;        // buffer before publishing DISCONNECTED
-    private static final long STABILITY_POLL_MS = 500;        // interval between isDeviceAlive() checks
+    private static final long STABILITY_DURATION_MS = 3_000; // device must stay alive continuously for this long
+    private static final long STABILITY_TIMEOUT_MS = 15_000; // max time allowed for stability check before dropping
+    private static final long GRACE_PERIOD_MS = 1_500; // buffer before publishing DISCONNECTED
+    private static final long STABILITY_POLL_MS = 300; // interval between isDeviceAlive() checks
 
-    private enum DeviceState { STABILIZING, CONNECTED, DISCONNECTING }
+    private enum DeviceState {
+        STABILIZING, CONNECTED, DISCONNECTING
+    }
 
     public DeviceTracker(AdbClient adbClient,
             DeviceValidationService deviceValidationService,
@@ -81,7 +83,8 @@ public class DeviceTracker implements Runnable {
         }
     }
 
-    // Stops the current session, cancels all pending stability checks and grace periods.
+    // Stops the current session, cancels all pending stability checks and grace
+    // periods.
     // Clears device state so the next login starts from a clean snapshot.
     public void stopTrackingAndResetState() {
         running = false;
@@ -100,7 +103,8 @@ public class DeviceTracker implements Runnable {
         scheduler.get().shutdownNow();
     }
 
-    // Cancels all pending stability checks and grace period timers, then clears device state.
+    // Cancels all pending stability checks and grace period timers, then clears
+    // device state.
     // Called on session stop or shutdown.
     private void cancelAllStabilityChecks() {
         for (ScheduledFuture<?> future : pendingChecks.values()) {
@@ -120,7 +124,8 @@ public class DeviceTracker implements Runnable {
     private void ensureScheduler() {
         ScheduledExecutorService current = scheduler.get();
         if (current.isShutdown() || current.isTerminated()) {
-            scheduler.compareAndSet(current, Executors.newScheduledThreadPool(Math.max(8, Runtime.getRuntime().availableProcessors())));
+            scheduler.compareAndSet(current,
+                    Executors.newScheduledThreadPool(Math.max(8, Runtime.getRuntime().availableProcessors())));
         }
     }
 
@@ -172,7 +177,6 @@ public class DeviceTracker implements Runnable {
         }
     }
 
-
     // Diffs the live device snapshot against current tracked states.
     // New devices enter STABILIZING, missing CONNECTED devices enter DISCONNECTING
     // (grace period), missing STABILIZING devices are dropped immediately.
@@ -198,6 +202,7 @@ public class DeviceTracker implements Runnable {
             if (!newSet.contains(serial)) {
                 DeviceState state = deviceStates.get(serial);
                 if (state == DeviceState.CONNECTED) {
+                    log.info("[{}] Lost connection to device, entering grace period", serial);
                     deviceStates.put(serial, DeviceState.DISCONNECTING);
                     startGracePeriod(serial);
                 } else if (state == DeviceState.STABILIZING) {
@@ -209,11 +214,12 @@ public class DeviceTracker implements Runnable {
     }
 
     // Polls isDeviceAlive() every STABILITY_POLL_MS.
-    // Device must remain alive continuously for STABILITY_DURATION_MS before being considered stable.
+    // Device must remain alive continuously for STABILITY_DURATION_MS before being
+    // considered stable.
     // Drops device if not stable within STABILITY_TIMEOUT_MS total.
     private void startStabilityCheck(String serial) {
         long startedAt = System.currentTimeMillis();
-        long[] stableSince = {0};
+        long[] stableSince = { 0 };
 
         try {
             ScheduledFuture<?> future = scheduler.get().scheduleWithFixedDelay(() -> {
@@ -285,7 +291,8 @@ public class DeviceTracker implements Runnable {
     }
 
     // Waits GRACE_PERIOD_MS before publishing DISCONNECTED to allow transient.
-    // Disconnects (e.g. USB mode change) to recover without triggering a full reconnect cycle.
+    // Disconnects (e.g. USB mode change) to recover without triggering a full
+    // reconnect cycle.
     private void startGracePeriod(String serial) {
         try {
             ScheduledFuture<?> future = scheduler.get().schedule(() -> {

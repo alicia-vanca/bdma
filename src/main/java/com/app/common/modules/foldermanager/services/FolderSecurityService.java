@@ -6,12 +6,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,15 +13,11 @@ import org.slf4j.LoggerFactory;
 import com.app.common.definitions.AppConstants;
 
 /**
- * Static utility service for locking/unlocking protected bdma folders.
+ * Static utility service for protecting paths inside bdma folders.
  * 
- * Optimized strategy:
- * - Ancestor folders (bdma root to parent): Read-only permission (prevents
- * move/rename/delete)
- * - Target file: Fully locked (deny all access)
- * 
- * This allows fast existence checks without unlocking while maintaining
- * security.
+ * Strategy:
+ * - bdma root folder: deny delete with inheritance ((OI)(CI)(D))
+ * - child folders created by ensureBdmaDir: lock with the same delete-deny rule
  */
 public class FolderSecurityService {
 
@@ -37,11 +27,7 @@ public class FolderSecurityService {
     private static final String CMD_ICACLS = "icacls";
     private static final String PROPERTY_USER_NAME = "user.name";
     private static final String ICACLS_DENY = "/deny";
-    private static final String ICACLS_GRANT = "/grant";
-
-    // Reference counting for each individual path (file/folder)
-    private static final Map<Path, Integer> pathRefCount = new ConcurrentHashMap<>();
-    private static final Map<Path, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
+    private static final String ICACLS_REMOVE_DENY = "/remove:d";
 
     /**
      * Private constructor to prevent instantiation of utility class.
@@ -53,309 +39,107 @@ public class FolderSecurityService {
     // ── Public API ───────────────────────────────────────────────────────────
 
     /**
-     * Check if there are any paths still unlocked (reference count > 0).
+     * Ensure directory path exists inside a protected bdma folder.
      *
-     * @return true if any paths have active unlock references
+     * Steps:
+     * 1) Lock bdma folder with inheritable delete-deny ((OI)(CI)(D))
+     * 2) Walk from bdma folder to target and create missing directories
+     *
+     * @param dirPath absolute path to the directory
+     * @throws IOException if path is not in a protected bdma folder or not a
+     *                     directory path
      */
-    public static boolean hasUnlockedPaths() {
-        return !pathRefCount.isEmpty();
+    public static void ensureBdmaDataDir(String dirPath) throws IOException {
+        ensureBdmaDataDir(dirPath, true);
     }
 
     /**
-     * Get count of paths that are currently unlocked.
+     * Ensure directory path exists inside a bdma folder and apply protection state.
      *
-     * @return number of paths with active unlock references
+     * @param dirPath           absolute path to the directory
+     * @param protectionEnabled true to lock bdma folder, false to unlock it
+     * @throws IOException if path is not in a protected bdma folder or not a
+     *                     directory path
      */
-    public static int getUnlockedPathCount() {
-        return pathRefCount.size();
-    }
-
-    /**
-     * Force lock all paths that are currently unlocked, regardless of reference
-     * count.
-     * Should be called during application shutdown to ensure all paths are secured.
-     * Logs warning for each path that had non-zero reference count.
-     */
-    public static void lockAllOnShutdown() {
-        log.info("Shutdown: Locking all unlocked paths (count={})", pathRefCount.size());
-
-        for (Map.Entry<Path, Integer> entry : pathRefCount.entrySet()) {
-            Path path = entry.getKey();
-            int refCount = entry.getValue();
-
-            if (refCount > 0) {
-                log.warn("Path still unlocked at shutdown (refCount={}): {}", refCount, path);
-            }
-
-            try {
-                forceLockPath(path);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("Failed to lock path during shutdown (interrupted): {}", path, e);
-            } catch (Exception e) {
-                log.error("Failed to lock path during shutdown: {}", path, e);
-            }
-        }
-
-        pathRefCount.clear();
-        log.info("Shutdown: All paths locked");
-    }
-
-    /**
-     * Unlock target file for reading/writing. Only unlocks the target file, not the
-     * entire chain.
-     * Ancestor folders remain read-only.
-     *
-     * @param filePath absolute path to the file to unlock
-     * @throws IOException if path is not in a protected bdma folder or does not
-     *                     exist
-     */
-    public static void unlockTarget(String filePath) throws IOException {
-        Path bdmaFolder = findDeepestBdmaFolder(filePath);
-        if (bdmaFolder == null) {
-            throw new IOException("Path is not in a protected bdma folder: " + filePath);
-        }
-
-        Path target = Path.of(filePath);
-
-        // Only unlock the target file itself
-        if (Files.exists(target)) {
-            unlockSinglePath(target);
-        } else {
-            throw new IOException("Path does not exist: " + filePath);
-        }
-    }
-
-    /**
-     * Lock target file only. Fully locks the target file (deny all access).
-     * Does not lock ancestor folders - they should already be read-only.
-     *
-     * @param filePath absolute path to the file to lock
-     * @throws IOException if path is not in a protected bdma folder or does not
-     *                     exist
-     */
-    public static void lockTarget(String filePath) throws IOException {
-        Path bdmaFolder = findDeepestBdmaFolder(filePath);
-        if (bdmaFolder == null) {
-            throw new IOException("Path is not in a protected bdma folder: " + filePath);
-        }
-
-        Path target = Path.of(filePath);
-
-        if (!Files.exists(target)) {
-            throw new IOException("Path does not exist: " + filePath);
-        }
-
-        // Fully lock the target file only
-        lockSinglePath(target);
-    }
-
-    /**
-     * Ensure directory path is unlocked for writing, create missing folders if
-     * needed.
-     *
-     * @param dirPath absolute path to the directory to unlock
-     * @throws IOException if path is not in a protected bdma folder
-     */
-    public static void ensureUnlockedDir(String dirPath) throws IOException {
+    public static void ensureBdmaDataDir(String dirPath, boolean protectionEnabled) throws IOException {
         Path bdmaFolder = findDeepestBdmaFolder(dirPath);
         if (bdmaFolder == null) {
             throw new IOException("Path is not in a protected bdma folder: " + dirPath);
         }
 
         Path target = Path.of(dirPath);
-        List<Path> pathChain = collectPathChain(target, bdmaFolder);
+        if (Files.exists(target) && !Files.isDirectory(target)) {
+            throw new IOException("Path is not a directory: " + dirPath);
+        }
 
-        // Unlock outside-in (bdmaFolder → target), create missing folders
-        Collections.reverse(pathChain);
-        for (Path path : pathChain) {
-            if (!Files.exists(path)) {
-                Files.createDirectories(path);
+        // Walk from drive root to target, creating each missing directory.
+        Path root = target.getRoot();
+        if (root != null) {
+            Path current = root;
+            for (Path segment : root.relativize(target)) {
+                current = current.resolve(segment);
+                if (!Files.exists(current)) {
+                    Files.createDirectory(current);
+                }
             }
-            unlockSinglePath(path);
-        }
-    }
-
-    /**
-     * Ensure path is locked with optimized strategy. Silently handles non-existent
-     * paths.
-     * Locks ancestor folders with read-only permission and fully locks the target.
-     *
-     * @param filePath absolute path to the file or directory to lock
-     * @throws IOException if locking operations fail
-     */
-    public static void ensureLocked(String filePath) throws IOException {
-        Path bdmaFolder = findDeepestBdmaFolder(filePath);
-        if (bdmaFolder == null || !Files.exists(bdmaFolder)) {
-            return;
         }
 
-        Path target = Path.of(filePath);
-
-        if (!Files.exists(target)) {
-            return;
-        }
-
-        // Lock inside-out (target → bdmaFolder)
-        // Fully lock target
-        if (Files.isDirectory(target)) {
-            lockFolderReadOnly(target);
+        if (protectionEnabled) {
+            lockSinglePath(bdmaFolder);
         } else {
-            lockSinglePath(target);
-        }
-
-        // Lock ancestor folders with read-only
-        List<Path> ancestors = collectPathChain(target.getParent(), bdmaFolder);
-        for (Path ancestor : ancestors) {
-            if (Files.exists(ancestor)) {
-                lockFolderReadOnly(ancestor);
-            }
+            unlockSinglePath(bdmaFolder);
         }
     }
 
     // ── Internal Implementation ──────────────────────────────────────────────
 
-    // ── Helper Methods ───────────────────────────────────────────────────────
-
     /**
-     * Collect all paths from target up to bdmaFolder (inclusive).
-     *
-     * @param target     the starting path
-     * @param bdmaFolder the root bdma folder to stop at
-     * @return list of paths from target to bdmaFolder: [target, parent, ...,
-     *         bdmaFolder]
-     */
-    private static List<Path> collectPathChain(Path target, Path bdmaFolder) {
-        List<Path> paths = new ArrayList<>();
-        Path current = target;
-
-        while (current != null && current.startsWith(bdmaFolder)) {
-            paths.add(current);
-            if (current.equals(bdmaFolder)) {
-                break;
-            }
-            current = current.getParent();
-        }
-
-        return paths; // [target, parent, ..., bdmaFolder]
-    }
-
-    /**
-     * Unlock a single path using reference counting.
-     * First unlock removes deny rules and grants full permissions.
-     *
-     * @param path the path to unlock
-     * @throws IOException if unlock operations fail
-     */
-    private static void unlockSinglePath(Path path) throws IOException {
-        ReentrantLock lock = pathLocks.computeIfAbsent(path, k -> new ReentrantLock());
-        lock.lock();
-        try {
-            int count = pathRefCount.getOrDefault(path, 0);
-            if (count == 0) {
-                // First unlock - remove deny rules and grant full permissions
-                try {
-                    String user = System.getProperty(PROPERTY_USER_NAME);
-                    runCommand(CMD_ATTRIB, "-h", "-s", path.toString());
-                    runCommand(CMD_ICACLS, path.toString(), "/remove:d", user);
-                    runCommand(CMD_ICACLS, path.toString(), ICACLS_GRANT, user + ":(R,W)");
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Unlock interrupted for: " + path, e);
-                }
-            }
-            pathRefCount.put(path, count + 1);
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    /**
-     * Lock a single path using reference counting.
-     * Last lock applies hidden/system attributes and denies all access.
-     * Handles newly created files that were never unlocked.
+     * Lock a single directory path by denying delete with inheritance.
      *
      * @param path the path to lock
      * @throws IOException if lock operations fail
      */
     private static void lockSinglePath(Path path) throws IOException {
-        ReentrantLock lock = pathLocks.computeIfAbsent(path, k -> new ReentrantLock());
-        lock.lock();
         try {
-            int count = pathRefCount.getOrDefault(path, 0);
-            if (count <= 1) {
-                // First lock for new file (count=0) or last lock (count=1)
-                try {
-                    String user = System.getProperty(PROPERTY_USER_NAME);
-                    runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
-                    runCommand(CMD_ICACLS, path.toString(), ICACLS_DENY, user + ":(R,W,D,X)");
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Lock interrupted for: " + path, e);
-                }
-                pathRefCount.remove(path);
-            } else {
-                pathRefCount.put(path, count - 1);
-            }
-        } finally {
-            lock.unlock();
+            String user = buildIcaclsTrustee();
+            runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
+            runCommand(CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_DENY,
+                    user + ":(OI)(CI)(D)");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Lock interrupted for: " + path, e);
         }
     }
 
     /**
-     * Lock folder with read-only permission (prevents write/delete but allows
-     * file.exists() check).
-     * Uses reference counting to avoid redundant operations.
-     *
-     * @param path the folder path to lock as read-only
-     * @throws IOException if lock operations fail
+     * Unlock a single bdma folder path by removing delete deny ACL from the user.
+     * Existing files/subdirectories retain inherited ACL updates from the root.
      */
-    private static void lockFolderReadOnly(Path path) throws IOException {
-        ReentrantLock lock = pathLocks.computeIfAbsent(path, k -> new ReentrantLock());
-        lock.lock();
+    private static void unlockSinglePath(Path path) throws IOException {
         try {
-            int count = pathRefCount.getOrDefault(path, 0);
-            if (count <= 1) {
-                // First lock for new folder (count=0) or last lock (count=1)
-                try {
-                    String user = System.getProperty(PROPERTY_USER_NAME);
-                    runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
-                    runCommand(CMD_ICACLS, path.toString(), ICACLS_DENY, user + ":(D,W,X)");
-                    runCommand(CMD_ICACLS, path.toString(), ICACLS_GRANT, user + ":(R)");
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Lock interrupted for: " + path, e);
-                }
-                pathRefCount.remove(path);
-            } else {
-                pathRefCount.put(path, count - 1);
-            }
-        } finally {
-            lock.unlock();
+            String user = buildIcaclsTrustee();
+            runCommand(CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_REMOVE_DENY,
+                    user);
+            runCommand(CMD_ATTRIB, "-h", "-s", path.toString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Unlock interrupted for: " + path, e);
         }
     }
 
-    /**
-     * Force lock a path without reference counting, used during shutdown.
-     * Applies full lock (deny all access) for files, read-only lock for
-     * directories.
-     *
-     * @param path the path to force lock
-     * @throws IOException          if lock operations fail
-     * @throws InterruptedException if lock is interrupted
-     */
-    private static void forceLockPath(Path path) throws IOException, InterruptedException {
+    private static String buildIcaclsTrustee() {
         String user = System.getProperty(PROPERTY_USER_NAME);
-        runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
+        String domain = System.getenv("USERDOMAIN");
 
-        if (Files.isDirectory(path)) {
-            // Read-only lock for directories
-            runCommand(CMD_ICACLS, path.toString(), ICACLS_DENY, user + ":(D,W,X)");
-            runCommand(CMD_ICACLS, path.toString(), ICACLS_GRANT, user + ":(R)");
-        } else {
-            // Full lock for files
-            runCommand(CMD_ICACLS, path.toString(), ICACLS_DENY, user + ":(R,W,D,X)");
-        }
+        String principal = (domain != null && !domain.isBlank())
+                ? domain + "\\" + user
+                : user;
+
+        return principal;
     }
 
     /**
@@ -416,8 +200,8 @@ public class FolderSecurityService {
                 log.warn("[cmd] Command failed with exit code {}: {} - Output: {}",
                         code, String.join(" ", command), output);
             }
-        } else if (!output.isEmpty()) {
-            log.debug("[cmd] {}", output);
+        } else {
+            log.debug("[cmd] {} => {}", String.join(" ", command), output.isEmpty() ? "(no output)" : output);
         }
 
         return code;

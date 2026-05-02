@@ -7,36 +7,31 @@ import java.security.NoSuchAlgorithmException;
 
 /**
  * Utility for converting logical file paths to obfuscated physical paths.
- * Hashes filenames and appends Windows CLSID to disguise files as system
- * folders.
+ * Hashes filenames using SHA-256 to disguise files inside bdma folders.
  */
 public final class FilePathHasher {
-
-    // Control Panel CLSID - makes files appear as system folders in Explorer
-    private static final String CLSID_SUFFIX = ".{21EC2020-3AEA-1069-A2DD-08002B30309D}";
 
     private FilePathHasher() {
         throw new UnsupportedOperationException("Utility class");
     }
 
     /**
-     * Convert logical filename to physical hashed filename with CLSID suffix.
+     * Convert logical filename to physical hashed filename.
      * Only replaces the filename, preserves the directory path.
-     * 
+     *
      * Example:
-     * Input: "C:\\data_bdma\\users\\john\\documents\\contract.pdf"
-     * Output:
-     * "C:\\data_bdma\\users\\john\\documents\\a3f5e8d9c2b1.{21EC2020-3AEA-1069-A2DD-08002B30309D}"
-     * 
+     * Input:  "C:\\data_bdma\\users\\john\\documents\\contract.pdf"
+     * Output: "C:\\data_bdma\\users\\john\\documents\\a3f5e8d9c2b1..."
+     *
      * @param filePath Full path to the file
-     * @return Physical path with hashed filename and CLSID suffix
+     * @return Physical path with hashed filename
      */
     public static String toPhysicalPath(String filePath) {
         Path path = Path.of(filePath);
         Path parent = path.getParent();
         String filename = path.getFileName().toString();
 
-        String hashedFilename = hashFilename(filename) + CLSID_SUFFIX;
+        String hashedFilename = hashFilename(filename);
 
         if (parent != null) {
             return parent.resolve(hashedFilename).toString();

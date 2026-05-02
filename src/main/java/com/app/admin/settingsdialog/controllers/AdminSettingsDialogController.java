@@ -45,7 +45,6 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
 import lombok.Setter;
 
-@SuppressWarnings("unused")
 @Component
 public class AdminSettingsDialogController {
 

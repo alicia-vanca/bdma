@@ -6,7 +6,7 @@
     <property name="LOG_DIR" value="${APP_DIR}/logs"/>
 
     <property name="LOG_PATTERN"
-        value="%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} device=%appCtx{deviceId} version=%appCtx{version} - %msg%n" />
+        value="%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} device=%appCtx{deviceId} version=%appCtx{version} message:%msg%n%n" />
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/app.log</file>
