@@ -51,9 +51,9 @@ public class RestoreService {
         List<String> restoredRelativeNames = new ArrayList<>();
 
         try {
-            folderManager.withDataAndBackupUnlocked(() -> {
+                folderManager.withDataAndBackupPrepared(() -> {
                 if (!backupDir.exists()) {
-                    throw new IOException("Backup directory not found after unlock: "
+                    throw new IOException("Backup directory not found after preparation: "
                             + backupDir.getAbsolutePath());
                 }
 

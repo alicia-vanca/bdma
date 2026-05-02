@@ -189,7 +189,7 @@ public class DashboardController extends BaseLayoutController {
                 name.setText(newName);
 
                 if (fileListController != null) {
-                    fileListController.onFileSyncCompleted();
+                    fileListController.onFileSyncCompleted(null);
                 }
             }
 
@@ -500,9 +500,9 @@ public class DashboardController extends BaseLayoutController {
         deviceListView.getSelectionModel().clearSelection();
     }
 
-    public void onFileSyncCompleted() {
+    public void onFileSyncCompleted(String syncedPath) {
         if (fileListController != null) {
-            fileListController.onFileSyncCompleted();
+            fileListController.onFileSyncCompleted(syncedPath);
         }
     }
 

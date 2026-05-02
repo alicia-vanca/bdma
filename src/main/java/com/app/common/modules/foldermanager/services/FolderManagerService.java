@@ -10,6 +10,7 @@ import java.util.concurrent.Callable;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
@@ -35,9 +36,12 @@ public class FolderManagerService {
     private final File tempDir;
 
     private final AppConfigService appConfigService;
+    private final boolean storageProtectionEnabled;
 
-    public FolderManagerService(AppConfigService appConfigService) {
+    public FolderManagerService(AppConfigService appConfigService,
+            @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled) {
         this.appConfigService = appConfigService;
+        this.storageProtectionEnabled = storageProtectionEnabled;
         this.tempDir = new File(AppDataPaths.appTmpDir());
     }
 
@@ -64,8 +68,6 @@ public class FolderManagerService {
     }
 
     public void shutdown() {
-        // Lock all unlocked paths with reference counting check
-        FolderSecurityService.lockAllOnShutdown();
         clearTemp();
         log.info("DataFolderManager shut down");
     }
@@ -135,40 +137,18 @@ public class FolderManagerService {
         return new File(currentBackupDir, relativePath).getAbsolutePath();
     }
 
-    // Unlocks a specific directory (ending with a file), runs the action, then
-    // re-locks.
-    public synchronized <T> T withSpecificDirUnlocked(File specificDir, Callable<T> action) throws Exception {
+    // Ensures the target directory exists and is protected, then runs the action.
+    public synchronized <T> T withSpecificDirPrepared(File specificDir, Callable<T> action) throws Exception {
         if (specificDir == null) {
-            throw new IOException("Specific path is null");
+            throw new IOException("Directory path is null");
         }
 
-        String stringDir = specificDir.getAbsolutePath();
-        String parentPath = specificDir.getParent();
+        ensureBdmaDirState(specificDir.getAbsolutePath());
 
-        // Unlock parent directory first
-        if (parentPath != null) {
-            FolderSecurityService.ensureUnlockedDir(parentPath);
-        }
-
-        try {
-            // Check if the path is an existing file and unlock it
-            if (specificDir.exists() && specificDir.isFile()) {
-                try {
-                    FolderSecurityService.unlockTarget(stringDir);
-                } catch (IOException e) {
-                    log.warn("Failed to unlock existing file: {} - {}", stringDir, e.getMessage());
-                }
-            }
-
-            return action.call();
-        } finally {
-            if (parentPath != null) {
-                FolderSecurityService.ensureLocked(parentPath);
-            }
-        }
+        return action.call();
     }
 
-    public synchronized <T> T withDataAndBackupUnlocked(Callable<T> action) throws Exception {
+    public synchronized <T> T withDataAndBackupPrepared(Callable<T> action) throws Exception {
         File currentDataDir = getDataDir();
         if (currentDataDir == null) {
             throw new IOException("Data directory is not configured yet.");
@@ -181,101 +161,36 @@ public class FolderManagerService {
         String dataPath = currentDataDir.getAbsolutePath();
         String backupPath = currentBackupDir.getAbsolutePath();
 
-        FolderSecurityService.ensureUnlockedDir(dataPath);
-        FolderSecurityService.ensureUnlockedDir(backupPath);
-        try {
-            return action.call();
-        } finally {
-            FolderSecurityService.ensureLocked(dataPath);
-            FolderSecurityService.ensureLocked(backupPath);
-        }
+        ensureBdmaDirState(dataPath);
+        ensureBdmaDirState(backupPath);
+        return action.call();
     }
 
     // ── Path Resolution ──────────────────────────────────────────────────────
 
     /**
-     * Find absolute path from non-drive-letter synced path by checking all
-     * available drives.
-     * Handles locked directories by temporarily unlocking them to check existence.
+     * Find absolute path from a non-drive-letter path by checking all available
+     * drives.
      * Returns result that distinguishes between "not found" and other I/O errors.
      */
-    public PathResolutionResult findAbsolutePathFromNonDriveSyncedPath(String nonDriverLetterSyncedPath) {
+    public PathResolutionResult findAbsolutePathFromNonDriveLetterPath(String nonDriveLetterPath) {
         try {
-            Path resolved = resolvePathAcrossDrives(nonDriverLetterSyncedPath, AppConstants.DATA_FOLDER_NAME);
+            Path resolved = resolvePathAcrossDrives(nonDriveLetterPath);
             return PathResolutionResult.found(resolved);
         } catch (FileNotFoundOnAnyDriveException e) {
             return PathResolutionResult.notFound();
         } catch (IOException e) {
-            log.error("Unexpected I/O error resolving path: {}", nonDriverLetterSyncedPath, e);
+            log.error("Unexpected I/O error resolving path: {}", nonDriveLetterPath, e);
             return PathResolutionResult.error(e);
         }
-    }
-
-    /**
-     * Find absolute path from non-drive-letter backed up path by checking all
-     * available drives.
-     * Handles locked directories by temporarily unlocking them to check existence.
-     * Returns result that distinguishes between "not found" and other I/O errors.
-     */
-    public PathResolutionResult findAbsolutePathFromNonDriveBackedUpPath(String nonDriverLetterBackedUpPath) {
-        try {
-            Path resolved = resolvePathAcrossDrives(nonDriverLetterBackedUpPath, AppConstants.BACKUP_FOLDER_NAME);
-            return PathResolutionResult.found(resolved);
-        } catch (FileNotFoundOnAnyDriveException e) {
-            return PathResolutionResult.notFound();
-        } catch (IOException e) {
-            log.error("Unexpected I/O error resolving backup path: {}", nonDriverLetterBackedUpPath, e);
-            return PathResolutionResult.error(e);
-        }
-    }
-
-    // Find the deepest data_bdma folder in a path
-    private Path findDeepestDataFolder(Path path) {
-        Path current = path;
-        while (current != null) {
-            if (current.getFileName() != null &&
-                    current.getFileName().toString().equals(AppConstants.DATA_FOLDER_NAME)) {
-                return current;
-            }
-            current = current.getParent();
-        }
-        return null;
-    }
-
-    // Find the deepest backup_bdma folder in a path
-    private Path findDeepestBackupFolder(Path path) {
-        Path current = path;
-        while (current != null) {
-            if (current.getFileName() != null &&
-                    current.getFileName().toString().equals(AppConstants.BACKUP_FOLDER_NAME)) {
-                return current;
-            }
-            current = current.getParent();
-        }
-        return null;
     }
 
     /**
      * Search across all drives to find a file by non-drive-letter path.
-     * Uses new FolderSecurityService to unlock/check/lock.
      */
-    private Path resolvePathAcrossDrives(String nonDriverLetterPath, String folderName) throws IOException {
+    private Path resolvePathAcrossDrives(String nonDriverLetterPath) throws IOException {
         for (Path root : FileSystems.getDefault().getRootDirectories()) {
             Path candidatePath = root.resolve(nonDriverLetterPath);
-
-            // Find the deepest target folder in the path
-            Path deepestFolder;
-            if (folderName.equals(AppConstants.BACKUP_FOLDER_NAME)) {
-                deepestFolder = findDeepestBackupFolder(candidatePath);
-            } else {
-                deepestFolder = findDeepestDataFolder(candidatePath);
-            }
-
-            if (deepestFolder == null) {
-                continue;
-            }
-
-            // Check if file exists
             try {
                 if (Files.exists(candidatePath)) {
                     return candidatePath;
@@ -297,14 +212,9 @@ public class FolderManagerService {
         File dataDir = new File(configuredPath, AppConstants.DATA_FOLDER_NAME);
 
         try {
-            // Ensure directory exists
-            if (!dataDir.exists()) {
-                dataDir.mkdirs();
-            }
-
-            // Lock it
-            FolderSecurityService.ensureLocked(dataDir.getAbsolutePath());
-            log.info("DataDir initialized and locked: {}", dataDir.getAbsolutePath());
+            ensureBdmaDirState(dataDir.getAbsolutePath());
+            log.info("DataDir initialized: {} (protectionEnabled={})",
+                    dataDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
             log.error("Failed to initialize data directory", e);
         }
@@ -317,14 +227,9 @@ public class FolderManagerService {
         File backupDir = new File(configuredPath, AppConstants.BACKUP_FOLDER_NAME);
 
         try {
-            // Ensure directory exists
-            if (!backupDir.exists()) {
-                backupDir.mkdirs();
-            }
-
-            // Lock it
-            FolderSecurityService.ensureLocked(backupDir.getAbsolutePath());
-            log.info("BackupDir initialized and locked: {}", backupDir.getAbsolutePath());
+            ensureBdmaDirState(backupDir.getAbsolutePath());
+            log.info("BackupDir initialized: {} (protectionEnabled={})",
+                    backupDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
             log.error("Failed to initialize backup directory", e);
         }
@@ -367,7 +272,7 @@ public class FolderManagerService {
         }
     }
 
-    public void backupFromSave(String nonDriverLetterSyncedPath) throws IOException {
+    public String backupFromSave(String nonDriverLetterSyncedPath) throws IOException {
         File currentBackupDir = getBackupDir();
         if (currentBackupDir == null) {
             throw new IOException("Backup directory not configured");
@@ -376,41 +281,32 @@ public class FolderManagerService {
         Path sourcePath;
         try {
             // Find the file across drives
-            sourcePath = resolvePathAcrossDrives(nonDriverLetterSyncedPath, AppConstants.DATA_FOLDER_NAME);
+            sourcePath = resolvePathAcrossDrives(nonDriverLetterSyncedPath);
         } catch (FileNotFoundOnAnyDriveException e) {
             throw new IOException("Source file not found on any drive: " + nonDriverLetterSyncedPath, e);
         }
 
-        // Unlock source for reading
-        FolderSecurityService.unlockTarget(sourcePath.toString());
-        try {
-            String relativeFromData = toRelativeDataPath(sourcePath.toString());
-            Path target = currentBackupDir.toPath().resolve(relativeFromData);
-            Path targetParent = target.getParent();
+        String relativeFromData = toRelativeDataPath(sourcePath.toString());
+        Path target = currentBackupDir.toPath().resolve(relativeFromData);
+        Path targetParent = target.getParent();
 
-            // Unlock parent directory for writing (creates missing folders)
-            if (targetParent != null) {
-                FolderSecurityService.ensureUnlockedDir(targetParent.toString());
-            }
-            try {
-                Files.copy(sourcePath, target, StandardCopyOption.REPLACE_EXISTING);
-                log.info("Backed up to backup dir: {}", relativeFromData);
-
-                // Lock the copied file
-                FolderSecurityService.lockTarget(target.toString());
-            } finally {
-                if (targetParent != null) {
-                    FolderSecurityService.ensureLocked(targetParent.toString());
-                }
-            }
-        } finally {
-            FolderSecurityService.lockTarget(sourcePath.toString());
+        // Ensure parent directory for writing (creates missing folders)
+        if (targetParent != null) {
+            ensureBdmaDirState(targetParent.toString());
         }
+
+        Files.copy(sourcePath, target, StandardCopyOption.REPLACE_EXISTING);
+        log.info("Backed up to backup dir: {}", relativeFromData);
+        return target.toString();
     }
 
     public String stripDriveLetter(String absolutePath) {
         Path path = Path.of(absolutePath);
         Path root = path.getRoot();
         return root != null ? root.relativize(path).toString() : absolutePath;
+    }
+
+    private void ensureBdmaDirState(String dirPath) throws IOException {
+        FolderSecurityService.ensureBdmaDataDir(dirPath, storageProtectionEnabled);
     }
 }

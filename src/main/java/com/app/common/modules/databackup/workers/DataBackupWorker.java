@@ -48,11 +48,7 @@ public class DataBackupWorker implements Runnable {
 
                 if (folderManager.isBackupDirConfigured()) {
 
-                    String relativeName = folderManager.toRelativeDataPath(nonDriveLetterSyncedPath);
-
-                    folderManager.backupFromSave(nonDriveLetterSyncedPath);
-
-                    String absoluteBackupPath = folderManager.getBackupPath(relativeName);
+                    String absoluteBackupPath = folderManager.backupFromSave(nonDriveLetterSyncedPath);
                     String nonDriveLetterBackedUpPath = folderManager.stripDriveLetter(absoluteBackupPath);
 
                     dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);

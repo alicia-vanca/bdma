@@ -403,17 +403,15 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @EventListener
-    @SuppressWarnings("unused")
     public void onFileSyncCompleted(FileSyncCompletedEvent event) {
         if (currentDashboardController != null) {
-            currentDashboardController.onFileSyncCompleted();
+            currentDashboardController.onFileSyncCompleted(event.getSyncedPath());
         }
         refreshStorageStatus();
     }
 
-    @EventListener
-    @SuppressWarnings("unused")
-    public void onFileBackupCompleted(FileBackupCompletedEvent event) {
+    @EventListener(FileBackupCompletedEvent.class)
+    public void onFileBackupCompleted() {
         if (currentDashboardController != null) {
             currentDashboardController.onFileBackupCompleted();
         }

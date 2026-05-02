@@ -253,18 +253,28 @@ public class AdbClient {
         }
     }
 
+    /**
+     * Marker prefix embedded in AppException messages when a pull fails because
+     * the device serial is no longer visible to ADB ("not found" in output).
+     */
+    public static final String ERR_DEVICE_NOT_FOUND = "ADB_DEVICE_NOT_FOUND";
+
     public boolean pullFile(String serial, String remote, String local) {
         String adbPath = getAdbPath();
         if (adbPath == null) {
             return false;
         }
         ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, "pull", remote, local);
-        try {
-            return runWithTimeout(pb, PULL_TIMEOUT, "pull " + remote) == 0;
-        } catch (AppException e) {
-            log.error("pull failed: {}", e.getMessage());
+        RunResult result = runWithTimeout(pb, PULL_TIMEOUT, "pull " + remote + " -> " + local);
+        if (result.exitCode() != 0) {
+            String output = result.output().toLowerCase();
+            if (result.exitCode() == 1 || output.contains("not found")
+                    || output.contains("no devices/emulators found")) {
+                throw new AppException(ERR_DEVICE_NOT_FOUND + ": " + result.output().trim());
+            }
             return false;
         }
+        return true;
     }
 
     public boolean deleteRemoteFile(String serial, String remote) {
@@ -276,7 +286,7 @@ public class AdbClient {
         ProcessBuilder pb = new ProcessBuilder(
                 adbPath, "-s", serial, ADB_SHELL, "rm", "-f", remote);
         try {
-            return runWithTimeout(pb, QUICK_TIMEOUT, "rm " + remote) == 0;
+            return runWithTimeout(pb, QUICK_TIMEOUT, "rm " + remote).exitCode() == 0;
         } catch (AppException e) {
             log.debug("deleteRemoteFile failed: {}", e.getMessage());
             return false;
@@ -355,8 +365,12 @@ public class AdbClient {
 
             String output = outputBuffer.toString(StandardCharsets.UTF_8);
             int exitCode = process.exitValue();
+            String trimmedOutput = output.trim();
             if (exitCode != 0 && log.isDebugEnabled()) {
-                log.debug("ADB command returned non-zero exit code {}: {}", exitCode, String.join(" ", command));
+                log.debug("ADB command returned non-zero exit code {}: {}{}",
+                        exitCode,
+                        String.join(" ", command),
+                        trimmedOutput.isEmpty() ? " (output=(no output))" : ", output=" + trimmedOutput);
             }
             return output;
         } catch (IOException e) {
@@ -367,6 +381,9 @@ public class AdbClient {
         }
     }
 
+    private record RunResult(int exitCode, String output) {
+    }
+
     /**
      * Runs a pre-configured ProcessBuilder with a strict timeout.
      * Drains stdout to prevent buffer-full blocking.
@@ -375,10 +392,10 @@ public class AdbClient {
      * @param pb      ProcessBuilder already configured
      * @param timeout maximum wait duration
      * @param label   short description for logging (e.g. "pull /sdcard/foo.mp4")
-     * @return exit code of the process
+     * @return RunResult with exit code and captured output
      * @throws AppException on timeout or IO error
      */
-    private int runWithTimeout(ProcessBuilder pb, Duration timeout, String label) {
+    private RunResult runWithTimeout(ProcessBuilder pb, Duration timeout, String label) {
         pb.redirectErrorStream(true);
         try {
             Process process = pb.start();
@@ -401,9 +418,21 @@ public class AdbClient {
             }
 
             drainer.join(1000);
-            if (streamError.get() != null) throw streamError.get();
+            if (streamError.get() != null)
+                throw streamError.get();
 
-            return process.exitValue();
+            int exitCode = process.exitValue();
+            String output = sink.toString(StandardCharsets.UTF_8).trim();
+            if (exitCode != 0 && log.isWarnEnabled()) {
+                log.warn("ADB command failed: {} (exitCode={}){}",
+                        label,
+                        exitCode,
+                        output.isEmpty() ? "" : ", output=" + output);
+            } else if (log.isDebugEnabled() && !output.isEmpty()) {
+                log.debug("ADB command output for {}: {}", label, output);
+            }
+
+            return new RunResult(exitCode, output);
 
         } catch (IOException e) {
             throw new AppException("ADB IO error: " + label, e);
@@ -413,30 +442,68 @@ public class AdbClient {
         }
     }
 
+    private boolean isCameraServiceRunning(String serial) {
+        String adbPath = getAdbPath();
+        if (adbPath == null)
+            return false;
+        try {
+            ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
+                    "dumpsys", "activity", "services",
+                    "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
+            RunResult result = runWithTimeout(pb, QUICK_TIMEOUT, "isCameraServiceRunning");
+            return result.output().contains("ServiceRecord");
+        } catch (AppException e) {
+            log.debug("[{}] isCameraServiceRunning check failed: {}", serial, e.getMessage());
+            return false;
+        }
+    }
+
     public boolean stopCameraService(String serial) {
         String adbPath = getAdbPath();
-        if (adbPath == null) return false;
+        if (adbPath == null)
+            return false;
+
+        log.debug("[{}] Sending stop Camera service command", serial);
 
         ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
                 "am", "stopservice",
                 "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
         try {
-            return runWithTimeout(pb, QUICK_TIMEOUT, "stopCameraService") == 0;
+            runWithTimeout(pb, QUICK_TIMEOUT, "stopCameraService");
         } catch (AppException e) {
             log.warn("[{}] stopCameraService failed: {}", serial, e.getMessage());
             return false;
         }
+
+        // Poll until service is confirmed stopped
+        long deadline = System.currentTimeMillis() + QUICK_TIMEOUT.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            if (!isCameraServiceRunning(serial)) {
+                log.debug("[{}] Camera service confirmed stopped", serial);
+                return true;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+
+        log.warn("[{}] Camera service still running after stop timeout", serial);
+        return false;
     }
 
     public boolean startCameraService(String serial) {
         String adbPath = getAdbPath();
-        if (adbPath == null) return false;
+        if (adbPath == null)
+            return false;
 
         ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
                 "am", "startservice",
                 "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
         try {
-            return runWithTimeout(pb, QUICK_TIMEOUT, "startCameraService") == 0;
+            return runWithTimeout(pb, QUICK_TIMEOUT, "startCameraService").exitCode() == 0;
         } catch (AppException e) {
             log.warn("[{}] startCameraService failed: {}", serial, e.getMessage());
             return false;
@@ -445,12 +512,13 @@ public class AdbClient {
 
     public boolean setUsbFunctionsNone(String serial) {
         String adbPath = getAdbPath();
-        if (adbPath == null) return false;
+        if (adbPath == null)
+            return false;
 
         ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
                 "svc", "usb", "setFunctions", "none");
         try {
-            return runWithTimeout(pb, QUICK_TIMEOUT, "setUsbFunctionsNone") == 0;
+            return runWithTimeout(pb, QUICK_TIMEOUT, "setUsbFunctionsNone").exitCode() == 0;
         } catch (AppException e) {
             log.warn("[{}] setUsbFunctionsNone failed: {}", serial, e.getMessage());
             return false;

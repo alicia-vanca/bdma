@@ -3,6 +3,7 @@ package com.app.common.modules.datasync.workers;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,8 +24,8 @@ import com.app.common.events.DeviceEvent;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
+import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
-import com.app.common.modules.foldermanager.services.FolderSecurityService;
 import com.app.common.modules.foldermanager.utils.FilePathHasher;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.services.AdbClient;
@@ -115,6 +116,12 @@ public class DataSyncWorker implements Runnable {
         FAILED
     }
 
+    private static final class PreflightException extends RuntimeException {
+        private PreflightException(String message) {
+            super(message);
+        }
+    }
+
     public DataSyncWorker(DeviceSyncQueue queue,
             DataSyncService dataSyncService,
             FolderManagerService folderManagerService,
@@ -176,6 +183,9 @@ public class DataSyncWorker implements Runnable {
             if (deviceId == null || userId == null)
                 return;
 
+            adbClient.stopCameraService(hardwareId);
+            adbClient.setUsbFunctionsNone(hardwareId);
+
             boolean autoDelete = syncContext.autoDelete();
 
             SyncPreparation preparedSyncFiles = prepareSyncFiles(hardwareId, deviceId, syncContext, autoDelete);
@@ -206,6 +216,10 @@ public class DataSyncWorker implements Runnable {
             long elapsedMs = System.currentTimeMillis() - startedAt;
             log.info("Finished sync for {}: total={}, passed={}, failed={}, elapsedMs={}",
                     hardwareId, counters.total, counters.passed, counters.failed, elapsedMs);
+        } catch (PreflightException e) {
+            log.warn("Aborting sync for {} before file processing: {}", hardwareId, e.getMessage());
+            progressTracker.markSyncing(hardwareId, 1, 0, 1);
+            appNoticeService.showError(e.getMessage());
         } finally {
             disconnectedDevices.remove(hardwareId);
             driveLetterCache.remove(hardwareId);
@@ -220,15 +234,22 @@ public class DataSyncWorker implements Runnable {
         Set<String> syncedPaths = dataSyncService.loadSyncedPaths(deviceId);
         Set<String> relativeSyncedPaths = new java.util.HashSet<>();
         for (String syncedPath : syncedPaths) {
+            PathResolutionResult resolution = folderManagerService
+                    .findAbsolutePathFromNonDriveLetterPath(syncedPath);
+
+            if (!resolution.isFound()) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Synced path missing on disk, will resync: {}", syncedPath);
+                }
+                continue;
+            }
+
             try {
-                relativeSyncedPaths.add(folderManagerService.toRelativeDataPath(syncedPath));
+                relativeSyncedPaths.add(folderManagerService.toRelativeDataPath(resolution.getPath().toString()));
             } catch (IOException e) {
-                log.warn("Failed to normalize synced path: {}", syncedPath);
-                relativeSyncedPaths.add(syncedPath);
+                log.warn("Invalid syncedPath, resync: {}", syncedPath);
             }
         }
-        adbClient.stopCameraService(hardwareId);
-        adbClient.setUsbFunctionsNone(hardwareId);
 
         try {
             Thread.sleep(3_000);
@@ -259,8 +280,7 @@ public class DataSyncWorker implements Runnable {
     private List<String> findFilesFromMassStorage(String hardwareId) {
         String driveLetter = driveLetterMapper.resolve(hardwareId);
         if (driveLetter == null) {
-            log.warn("[{}] SD card not accessible via ADB and no drive letter found", hardwareId);
-            return List.of();
+            throw new PreflightException(I18n.get("device.sync.error.bad_connection"));
         }
         driveLetterCache.put(hardwareId, driveLetter);
         log.info("[{}] MassStorage fallback: using drive {}", hardwareId, driveLetter);
@@ -455,8 +475,8 @@ public class DataSyncWorker implements Runnable {
         for (PendingFile pf : failedList) {
             if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
                 // Device disconnected mid-retry, skip remaining files
-                failedFilesRemaining.add(pf);
                 counters.failed += 1;
+                progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
                 continue;
             }
 
@@ -549,18 +569,8 @@ public class DataSyncWorker implements Runnable {
     }
 
     private void cleanupIncompleteFile(String localPath) {
-        try {
-            File file = new File(localPath);
-            if (file.exists()) {
-                Files.delete(file.toPath());
-                if (log.isDebugEnabled()) {
-                    log.debug("Cleaned up failed file: {}", localPath);
-                }
-            }
-        } catch (IOException e) {
-            if (log.isWarnEnabled()) {
-                log.warn("Failed to delete incomplete file: {} - {}", localPath, e.getMessage());
-            }
+        if (deleteExistingFile(localPath) && log.isDebugEnabled()) {
+            log.debug("Cleaned up failed file: {}", localPath);
         }
     }
 
@@ -595,30 +605,32 @@ public class DataSyncWorker implements Runnable {
     }
 
     // Pull file from device and verify size matches expected
-    private PullResult pullAndVerify(String hardwareId, String remote, String local, long remoteSize) {
+    private PullResult pullAndVerify(String hardwareId, String remotePath, String localPath, long remoteSize) {
         try {
             return folderManagerService
-                    .withSpecificDirUnlocked(new File(local),
-                            () -> pullAndVerifyInternal(hardwareId, remote, local, remoteSize));
+                    .withSpecificDirPrepared(new File(localPath).getParentFile(),
+                            () -> pullAndVerifyInternal(hardwareId, remotePath, localPath, remoteSize));
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
-                log.warn("Exception during pullAndVerify for {} -> {}: {}", name(remote), local, e.getMessage(), e);
+                log.warn("Exception during pullAndVerify for {} -> {}: {}", name(remotePath), localPath, e.getMessage(),
+                        e);
             }
             return PullResult.failure(I18n.get("device.sync.error.exception"));
         }
     }
 
-    private PullResult pullAndVerifyInternal(String hardwareId, String remote, String local, long remoteSize) {
-        File f = new File(local);
+    private PullResult pullAndVerifyInternal(String hardwareId, String remotePath, String localPath, long remoteSize) {
+        File f = new File(localPath);
 
-        if (!deleteExistingFile(f, local)) {
+        if (!deleteExistingFile(localPath)) {
             return PullResult.failure(I18n.get("device.sync.error.permission_denied"));
         }
 
-        PullResult pullResult = pullFile(hardwareId, remote, local);
+        PullResult pullResult = pullFile(hardwareId, remotePath, localPath);
         if (!pullResult.isSuccess()) {
             if (log.isWarnEnabled()) {
-                log.warn("ADB pull failed for: {} -> {} - Reason: {}", name(remote), local, pullResult.failureReason());
+                log.warn("ADB pull failed for: {} -> {} - Reason: {}", name(remotePath), localPath,
+                        pullResult.failureReason());
             }
             return pullResult;
         }
@@ -627,28 +639,19 @@ public class DataSyncWorker implements Runnable {
             if (log.isWarnEnabled()) {
                 File parent = f.getParentFile();
                 log.warn("File not created after successful pull: {} (parent exists: {}, parent writable: {})",
-                        local, parent != null && parent.exists(), parent != null && parent.canWrite());
+                        localPath, parent != null && parent.exists(), parent != null && parent.canWrite());
             }
             return PullResult.failure(I18n.get("device.sync.error.file_not_created"));
         }
 
-        PullResult sizeVerification = verifyFileSize(f, remoteSize, remote);
-        if (sizeVerification.isSuccess()) {
-            try {
-                FolderSecurityService.lockTarget(local);
-            } catch (IOException e) {
-                if (log.isWarnEnabled()) {
-                    log.warn("Failed to lock file after pull: {} - {}", local, e.getMessage());
-                }
-            }
-        }
-        return sizeVerification;
+        return verifyFileSize(f, remoteSize, remotePath);
     }
 
-    private boolean deleteExistingFile(File file, String path) {
-        if (file.exists()) {
+    private boolean deleteExistingFile(String path) {
+        Path filePath = Path.of(path);
+        if (Files.exists(filePath)) {
             try {
-                java.nio.file.Files.delete(file.toPath());
+                Files.delete(filePath);
             } catch (IOException e) {
                 if (log.isWarnEnabled()) {
                     log.warn("Failed to delete existing file before pull: {} - {}", path, e.getMessage());
@@ -685,51 +688,51 @@ public class DataSyncWorker implements Runnable {
     }
 
     // Get remote file size without throwing exceptions, returns 0 on error
-    private long getRemoteSizeQuiet(String hardwareId, String remote) {
-        if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
+    private long getRemoteSizeQuiet(String hardwareId, String remotePath) {
+        if (remotePath.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
             String driveLetter = driveLetterCache.get(hardwareId);
             if (driveLetter == null)
                 return -1;
-            return massStorageFileSource.getFileSize(driveLetter, remote);
+            return massStorageFileSource.getFileSize(driveLetter, remotePath);
         }
         try {
-            return adbClient.getRemoteSize(hardwareId, remote);
+            return adbClient.getRemoteSize(hardwareId, remotePath);
         } catch (Exception e) {
             return 0;
         }
     }
 
-    private PullResult pullFile(String hardwareId, String remote, String local) {
+    private PullResult pullFile(String hardwareId, String remotePath, String localPath) {
         // Fail fast if device disconnected to avoid unnecessary ADB operations
         if (isDeviceDead(hardwareId)) {
             return PullResult.failure(I18n.get("device.sync.error.disconnected"));
         }
 
-        if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
+        if (remotePath.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
             String driveLetter = driveLetterCache.get(hardwareId);
             if (driveLetter == null) {
                 return PullResult.failure(I18n.get("device.sync.error.transfer"));
             }
-            boolean success = massStorageFileSource.copyFile(driveLetter, remote, local);
+            boolean success = massStorageFileSource.copyFile(driveLetter, remotePath, localPath);
             return success ? PullResult.success() : PullResult.failure(I18n.get("device.sync.error.transfer"));
         }
         try {
-            boolean success = adbClient.pullFile(hardwareId, remote, local);
+            boolean success = adbClient.pullFile(hardwareId, remotePath, localPath);
             return success ? PullResult.success() : PullResult.failure(I18n.get("device.sync.error.adb_pull_failed"));
         } catch (Exception e) {
-            if (log.isWarnEnabled()) {
-                log.warn("ADB pull exception for {}: {}", name(remote), e.getMessage(), e);
+            if (e.getMessage() != null && e.getMessage().startsWith(AdbClient.ERR_DEVICE_NOT_FOUND)) {
+                return PullResult.failure(I18n.get("device.sync.error.lost_connection"));
             }
-            return PullResult.failure(I18n.get("adb_pull_failed"));
+            return PullResult.failure(I18n.get("device.sync.error.adb_pull_failed"));
         }
     }
 
-    private void deleteRemoteFile(String hardwareId, String remote) {
-        if (remote.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
-            log.debug("[{}] Skipping delete for mass storage file: {}", hardwareId, remote);
+    private void deleteRemoteFile(String hardwareId, String remotePath) {
+        if (remotePath.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
+            log.debug("[{}] Skipping delete for mass storage file: {}", hardwareId, remotePath);
             return;
         }
-        adbClient.deleteRemoteFile(hardwareId, remote);
+        adbClient.deleteRemoteFile(hardwareId, remotePath);
     }
 
     // Listen for device disconnect events and mark device as disconnected to abort

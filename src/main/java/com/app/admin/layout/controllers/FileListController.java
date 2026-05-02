@@ -199,7 +199,7 @@ public class FileListController {
     private void startAsyncVerification(String syncedPath) {
         verificationExecutor.submit(() -> {
             try {
-                PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveSyncedPath(syncedPath);
+                PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedPath);
 
                 VerificationStatus newStatus;
                 if (result.isNotFound()) {
@@ -450,7 +450,10 @@ public class FileListController {
         typeFilterCombo.getSelectionModel().selectFirst();
     }
 
-    public void onFileSyncCompleted() {
+    public void onFileSyncCompleted(String syncedPath) {
+        if (syncedPath != null && !syncedPath.isEmpty()) {
+            fileVerificationCache.put(syncedPath, VerificationStatus.EXISTS);
+        }
         Platform.runLater(() -> refresh(buildFilter()));
     }
 
