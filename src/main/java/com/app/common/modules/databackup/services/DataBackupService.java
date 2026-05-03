@@ -5,11 +5,14 @@ import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.enums.FolderType;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
+import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.repositories.FileRepository;
 
 @Service
@@ -19,10 +22,14 @@ public class DataBackupService {
 
     private final FileRepository fileRepo;
     private final DataBackupQueue dataBackupQueue;
+    private final ApplicationEventPublisher publisher;
 
-    public DataBackupService(FileRepository fileRepo, DataBackupQueue dataBackupQueue) {
+    public DataBackupService(FileRepository fileRepo,
+            DataBackupQueue dataBackupQueue,
+            ApplicationEventPublisher publisher) {
         this.fileRepo = fileRepo;
         this.dataBackupQueue = dataBackupQueue;
+        this.publisher = publisher;
     }
 
     /**
@@ -59,6 +66,10 @@ public class DataBackupService {
 
     @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.HOURS)
     public void recoverPendingBackups() {
+        // Re-open backup attempts once per recovery window so user can be notified
+        // again if backup storage is still unavailable.
+        publisher.publishEvent(new StorageRestoredEvent(FolderType.BACKUP));
+
         List<String> pending = fileRepo.loadPendingBackup();
 
         if (pending.isEmpty()) {

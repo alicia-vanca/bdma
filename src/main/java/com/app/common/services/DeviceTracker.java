@@ -41,10 +41,10 @@ public class DeviceTracker implements Runnable {
     private AtomicReference<ScheduledExecutorService> scheduler = new AtomicReference<>(
             Executors.newScheduledThreadPool(Math.max(8, Runtime.getRuntime().availableProcessors())));
     private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingChecks = new ConcurrentHashMap<>();
-    private static final long STABILITY_DURATION_MS = 3_000; // device must stay alive continuously for this long
+    private static final long STABILITY_DURATION_MS = 5_000; // device must stay alive continuously for this long
     private static final long STABILITY_TIMEOUT_MS = 15_000; // max time allowed for stability check before dropping
     private static final long GRACE_PERIOD_MS = 1_500; // buffer before publishing DISCONNECTED
-    private static final long STABILITY_POLL_MS = 300; // interval between isDeviceAlive() checks
+    private static final long STABILITY_POLL_MS = 500; // interval between isDeviceAlive() checks
 
     private enum DeviceState {
         STABILIZING, CONNECTED, DISCONNECTING
@@ -56,6 +56,7 @@ public class DeviceTracker implements Runnable {
         this.adbClient = adbClient;
         this.deviceValidationService = deviceValidationService;
         this.eventPublisher = eventPublisher;
+        this.adbClient.setSerialPreflightChecker(this::verifySerialBeforeCommand);
     }
 
     @Override
@@ -115,7 +116,14 @@ public class DeviceTracker implements Runnable {
         for (ScheduledFuture<?> future : gracePeriodTasks.values()) {
             future.cancel(false);
         }
+        for (String serial : gracePeriodTasks.keySet()) {
+            adbClient.onDisconnected(serial);
+        }
         gracePeriodTasks.clear();
+
+        for (String serial : deviceStates.keySet()) {
+            adbClient.onDisconnected(serial);
+        }
 
         deviceStates.clear();
     }
@@ -175,6 +183,34 @@ public class DeviceTracker implements Runnable {
             log.error("Failed to get devices via adb", e);
             return List.of();
         }
+    }
+
+    private boolean verifySerialBeforeCommand(String serial) {
+        if (serial == null || serial.isBlank() || !running) {
+            return true;
+        }
+
+        boolean present;
+        try {
+            present = adbClient.isDeviceAlive(serial);
+        } catch (Exception e) {
+            log.debug("[{}] Manual preflight snapshot failed: {}", serial, e.getMessage());
+            return false;
+        }
+
+        if (present) {
+            if (deviceStates.replace(serial, DeviceState.DISCONNECTING, DeviceState.CONNECTED)) {
+                cancelGracePeriod(serial);
+                log.debug("[{}] Manual preflight confirmed reconnect", serial);
+            }
+            return true;
+        }
+
+        if (deviceStates.replace(serial, DeviceState.CONNECTED, DeviceState.DISCONNECTING)) {
+            log.info("[{}] Manual preflight: missing from adb snapshot, entering grace period", serial);
+            startGracePeriod(serial);
+        }
+        return false;
     }
 
     // Diffs the live device snapshot against current tracked states.
@@ -238,6 +274,8 @@ public class DeviceTracker implements Runnable {
                 boolean alive = adbClient.isDeviceAlive(serial);
                 if (!alive) {
                     stableSince[0] = 0;
+
+                    log.info("[{}] Disconnected, resetting stability timer", serial);
                     return;
                 }
 
@@ -248,7 +286,8 @@ public class DeviceTracker implements Runnable {
                 if (System.currentTimeMillis() - stableSince[0] >= STABILITY_DURATION_MS) {
                     cancelStabilityCheck(serial);
                     if (deviceStates.replace(serial, DeviceState.STABILIZING, DeviceState.CONNECTED)) {
-                        log.info("[{}] Device stable, publishing CONNECTED", serial);
+                        adbClient.onReconnected(serial);
+                        log.info("[{}] Device stable, start validation", serial);
                         DeviceValidationResult result = validateSerialSafely(serial);
                         eventPublisher.publishEvent(
                                 new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
@@ -294,18 +333,23 @@ public class DeviceTracker implements Runnable {
     // Disconnects (e.g. USB mode change) to recover without triggering a full
     // reconnect cycle.
     private void startGracePeriod(String serial) {
+        adbClient.onGraceStarted(serial);
         try {
             ScheduledFuture<?> future = scheduler.get().schedule(() -> {
                 if (deviceStates.remove(serial, DeviceState.DISCONNECTING)) {
                     log.info("[{}] Grace period expired, publishing DISCONNECTED", serial);
+                    adbClient.onDisconnected(serial);
                     eventPublisher.publishEvent(
                             new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, null));
+                } else {
+                    adbClient.onReconnected(serial);
                 }
                 gracePeriodTasks.remove(serial);
             }, GRACE_PERIOD_MS, TimeUnit.MILLISECONDS);
             gracePeriodTasks.put(serial, future);
         } catch (RejectedExecutionException e) {
             deviceStates.remove(serial);
+            adbClient.onDisconnected(serial);
             log.warn("[{}] Unable to schedule grace period: {}", serial, e.getMessage());
         }
     }
@@ -315,5 +359,6 @@ public class DeviceTracker implements Runnable {
         if (future != null) {
             future.cancel(false);
         }
+        adbClient.onReconnected(serial);
     }
 }
