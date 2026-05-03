@@ -104,6 +104,65 @@ public class FolderManagerService {
         return getBackupDir() != null;
     }
 
+    public boolean isDataDirAccessible() {
+        return isDirAccessible(getDataDir());
+    }
+
+    public boolean isBackupDirAccessible() {
+        return isDirAccessible(getBackupDir());
+    }
+
+    public boolean isDataDirAccessible(File dataDirPath) {
+        return isDirAccessible(dataDirPath);
+    }
+
+    public boolean isBackupDirAccessible(File backupDirPath) {
+        return isDirAccessible(backupDirPath);
+    }
+
+    // Generic dir accessibility check used by both configured dirs and
+    // sync-context captured dirs.
+    public boolean isDirAccessible(File dir) {
+        return isDriveAccessible(dir);
+    }
+
+    public boolean isDriveAccessible(File dir) {
+        if (dir == null) {
+            return false;
+        }
+
+        Path root = Path.of(dir.getAbsolutePath()).getRoot();
+        if (root == null) {
+            return false;
+        }
+
+        File rootFile = root.toFile();
+        return rootFile.exists();
+    }
+
+    public boolean hasSufficientSpace(File dir, long requiredBytes) {
+        if (requiredBytes <= 0) {
+            return true;
+        }
+
+        File target = dir;
+        if (target == null) {
+            return false;
+        }
+
+        Path root = Path.of(target.getAbsolutePath()).getRoot();
+        if (root == null) {
+            return false;
+        }
+
+        File rootFile = root.toFile();
+        if (!rootFile.exists()) {
+            return false;
+        }
+
+        return rootFile.getUsableSpace() >= requiredBytes;
+    }
+
     public String toRelativeDataPath(String absolutePath) throws IOException {
 
         Path path = Path.of(absolutePath);
@@ -183,6 +242,11 @@ public class FolderManagerService {
             log.error("Unexpected I/O error resolving path: {}", nonDriveLetterPath, e);
             return PathResolutionResult.error(e);
         }
+    }
+
+    public long resolveExistingFileSize(String nonDriveLetterPath) throws IOException {
+        Path resolved = resolvePathAcrossDrives(nonDriveLetterPath);
+        return Files.size(resolved);
     }
 
     /**

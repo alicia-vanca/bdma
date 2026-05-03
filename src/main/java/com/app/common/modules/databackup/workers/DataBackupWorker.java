@@ -3,11 +3,18 @@ package com.app.common.modules.databackup.workers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import com.app.common.definitions.enums.FolderType;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.databackup.services.DataBackupService;
+import com.app.common.modules.foldermanager.events.StorageIssueReason;
+import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
+import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
+import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
+import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 
 /**
@@ -26,6 +33,7 @@ public class DataBackupWorker implements Runnable {
     private final FolderManagerService folderManager;
     private final DataBackupService dataBackupService;
     private final ApplicationEventPublisher publisher;
+    private volatile boolean backupRecoveryDeferred;
 
     public DataBackupWorker(DataBackupQueue dataBackupQueue,
             FolderManagerService folderManager,
@@ -46,14 +54,42 @@ public class DataBackupWorker implements Runnable {
             try {
                 nonDriveLetterSyncedPath = dataBackupQueue.take();
 
+                if (backupRecoveryDeferred) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Backup is deferred by user choice. Skip current cycle: {}",
+                                nonDriveLetterSyncedPath);
+                    }
+                    continue;
+                }
+
                 if (folderManager.isBackupDirConfigured()) {
+                    if (!folderManager.isBackupDirAccessible()) {
+                        publisher.publishEvent(
+                                new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
+                        log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                        continue;
+                    }
 
-                    String absoluteBackupPath = folderManager.backupFromSave(nonDriveLetterSyncedPath);
-                    String nonDriveLetterBackedUpPath = folderManager.stripDriveLetter(absoluteBackupPath);
+                    try {
+                        long sourceSize = folderManager.resolveExistingFileSize(nonDriveLetterSyncedPath);
+                        if (!folderManager.hasSufficientSpace(folderManager.getBackupDir(), sourceSize)) {
+                            publisher.publishEvent(
+                                    new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.LOW_SPACE,
+                                            sourceSize));
+                            log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                            continue;
+                        }
 
-                    dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);
+                        String absoluteBackupPath = folderManager.backupFromSave(nonDriveLetterSyncedPath);
+                        String nonDriveLetterBackedUpPath = folderManager.stripDriveLetter(absoluteBackupPath);
 
-                    publisher.publishEvent(new FileBackupCompletedEvent(nonDriveLetterSyncedPath));
+                        dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);
+
+                        publisher.publishEvent(new FileBackupCompletedEvent(nonDriveLetterSyncedPath));
+                    } catch (FileNotFoundOnAnyDriveException e) {
+                        log.info("Synced file not found, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                        // skip this file gracefully
+                    }
 
                 } else {
                     log.warn("BackupDir not configured, skipping: {}", nonDriveLetterSyncedPath);
@@ -72,6 +108,23 @@ public class DataBackupWorker implements Runnable {
                     dataBackupQueue.done(nonDriveLetterSyncedPath);
                 }
             }
+        }
+    }
+
+    @EventListener
+    public void onStorageRecoveryDeferred(StorageRecoveryDeferredEvent event) {
+        if (event != null && event.getTarget() == FolderType.BACKUP) {
+            backupRecoveryDeferred = true;
+            if (log.isDebugEnabled()) {
+                log.debug("Backup recovery deferred by user. target={}", event.getTarget());
+            }
+        }
+    }
+
+    @EventListener
+    public void onStorageRestored(StorageRestoredEvent event) {
+        if (event != null && event.getTarget() == FolderType.BACKUP) {
+            backupRecoveryDeferred = false;
         }
     }
 }

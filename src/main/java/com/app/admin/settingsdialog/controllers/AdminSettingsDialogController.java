@@ -26,6 +26,7 @@ import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.NoticeStackRenderer;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
+import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
@@ -361,6 +362,7 @@ public class AdminSettingsDialogController {
         try {
             adminSettingsService.saveFolder(path, type);
             driveResolverService.invalidateCache();
+            eventPublisher.publishEvent(new StorageRestoredEvent(type));
             showNotice(I18n.get("setting.storage.success"), true);
         } catch (Exception e) {
             log.error("Failed to save folder setting for {}", type, e);

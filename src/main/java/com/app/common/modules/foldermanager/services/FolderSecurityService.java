@@ -89,12 +89,17 @@ public class FolderSecurityService {
         } else {
             unlockSinglePath(bdmaFolder);
         }
+        // Unlock any non-bdma parent folders to avoid unintended access issues, but
+        // keep the bdma folder protected
+        if (!target.equals(bdmaFolder)) {
+            unlockSinglePath(target);
+        }
     }
 
     // ── Internal Implementation ──────────────────────────────────────────────
 
     /**
-     * Lock a single directory path by denying delete with inheritance.
+     * Lock a single directory path by denying delete.
      *
      * @param path the path to lock
      * @throws IOException if lock operations fail
@@ -106,7 +111,7 @@ public class FolderSecurityService {
             runCommand(CMD_ICACLS,
                     path.toString(),
                     ICACLS_DENY,
-                    user + ":(OI)(CI)(D)");
+                    user + ":(D)");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Lock interrupted for: " + path, e);

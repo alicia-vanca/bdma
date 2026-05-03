@@ -1,9 +1,7 @@
 package com.app.common.services;
 
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -11,8 +9,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,10 +22,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.app.common.exceptions.AppException;
+import com.app.common.exceptions.DeviceDisconnectedException;
+
 import jakarta.annotation.PreDestroy;
 
 @Service
 public class AdbClient {
+
+    // -------------------------------------------------------------------------
+    // Constants & fields
+    // -------------------------------------------------------------------------
 
     private static final Logger log = LoggerFactory.getLogger(AdbClient.class);
     private static final Duration ADB_TIMEOUT = Duration.ofSeconds(20);
@@ -32,9 +39,33 @@ public class AdbClient {
     private static final Duration FIND_TIMEOUT = Duration.ofSeconds(90);
     private static final Duration QUICK_TIMEOUT = Duration.ofSeconds(10);
     private static final String ADB_SHELL = "shell";
+    public static final String ERR_DEVICE_NOT_FOUND = "ADB_DEVICE_NOT_FOUND";
     private static final Pattern GETPROP_PATTERN = Pattern.compile("^\\[(.+)]\\s*:\\s*\\[(.*)]$");
 
     private final AdbRuntimeService adbRuntimeService;
+    private final Map<String, GraceGate> graceGates = new ConcurrentHashMap<>();
+    private volatile Predicate<String> serialPreflightChecker = serial -> true;
+
+    // -------------------------------------------------------------------------
+    // Inner types
+    // -------------------------------------------------------------------------
+
+    private enum SerialState {
+        CONNECTED,
+        IN_GRACE,
+        DISCONNECTED
+    }
+
+    private static final class GraceGate {
+        private SerialState state = SerialState.CONNECTED;
+    }
+
+    private record RunResult(int exitCode, String output) {
+    }
+
+    // -------------------------------------------------------------------------
+    // Construction & lifecycle
+    // -------------------------------------------------------------------------
 
     public AdbClient(AdbRuntimeService adbRuntimeService) {
         this.adbRuntimeService = adbRuntimeService;
@@ -60,8 +91,161 @@ public class AdbClient {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Grace-gate events (called by DeviceTracker)
+    // -------------------------------------------------------------------------
+
+    public void onGraceStarted(String serial) {
+        if (serial == null || serial.isBlank())
+            return;
+        GraceGate gate = graceGates.computeIfAbsent(serial, key -> new GraceGate());
+        synchronized (gate) {
+            gate.state = SerialState.IN_GRACE;
+            gate.notifyAll();
+        }
+    }
+
+    public void onReconnected(String serial) {
+        if (serial == null || serial.isBlank())
+            return;
+        GraceGate gate = graceGates.computeIfAbsent(serial, key -> new GraceGate());
+        synchronized (gate) {
+            gate.state = SerialState.CONNECTED;
+            gate.notifyAll();
+        }
+    }
+
+    public void onDisconnected(String serial) {
+        if (serial == null || serial.isBlank())
+            return;
+        GraceGate gate = graceGates.computeIfAbsent(serial, key -> new GraceGate());
+        synchronized (gate) {
+            gate.state = SerialState.DISCONNECTED;
+            gate.notifyAll();
+        }
+    }
+
+    public void setSerialPreflightChecker(Predicate<String> serialPreflightChecker) {
+        this.serialPreflightChecker = Objects.requireNonNullElse(serialPreflightChecker, serial -> true);
+    }
+
+    // -------------------------------------------------------------------------
+    // Execution helpers
+    // -------------------------------------------------------------------------
+
+    private boolean waitUntilGraceResolved(String serial) {
+        if (serial == null || serial.isBlank()) {
+            return true;
+        }
+
+        GraceGate gate = graceGates.computeIfAbsent(serial, key -> new GraceGate());
+        synchronized (gate) {
+            if (gate.state == SerialState.CONNECTED) {
+                // Manual check before starting a command. Because tracker event has a delay
+                // after device actually disconnects, this reduces the chance of starting a
+                // command that will fail due to disconnection
+                if (!serialPreflightChecker.test(serial)) {
+                    onGraceStarted(serial);
+                }
+            }
+            while (gate.state == SerialState.IN_GRACE) {
+                try {
+                    gate.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+
+            if (gate.state == SerialState.DISCONNECTED) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Skip adb command because device is disconnected: {}", serial);
+                }
+                return false;
+            }
+            return true;
+        }
+    }
+
+    private String run(String serial, String... args) {
+        return runWithTimeout(serial, null, args).output();
+    }
+
+    private RunResult runWithTimeout(String serial, Duration timeout, String... args) {
+        if (!waitUntilGraceResolved(serial)) {
+            throw new DeviceDisconnectedException("ADB command skipped: disconnected " + serial);
+        }
+
+        return executeAdbCommand(serial, timeout, args);
+    }
+
+    private RunResult executeAdbCommand(String serial, Duration timeout, String... args) {
+        String adbExecutable = adbRuntimeService.resolveAdbExecutable();
+        List<String> command = new ArrayList<>();
+        command.add(adbExecutable);
+        Collections.addAll(command, args);
+
+        if (serial != null && !serial.isBlank()) {
+            command.add(1, "-s");
+            command.add(2, serial);
+        }
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+
+        String label = String.join(" ", args);
+        Duration effectiveTimeout = timeout != null ? timeout : ADB_TIMEOUT;
+
+        try {
+            Process process = pb.start();
+            ByteArrayOutputStream sink = new ByteArrayOutputStream();
+            AtomicReference<IOException> streamError = new AtomicReference<>();
+
+            Thread drainer = Thread.ofPlatform().name("adb-drain-" + label).start(() -> {
+                try {
+                    process.getInputStream().transferTo(sink);
+                } catch (IOException e) {
+                    streamError.set(e);
+                }
+            });
+
+            boolean finished = process.waitFor(effectiveTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                drainer.join(500);
+                throw new AppException("ADB timeout (" + effectiveTimeout.toSeconds() + "s): " + label);
+            }
+
+            drainer.join(1000);
+            if (streamError.get() != null)
+                throw streamError.get();
+
+            int exitCode = process.exitValue();
+            String output = sink.toString(StandardCharsets.UTF_8).trim();
+            if (exitCode != 0 && log.isWarnEnabled()) {
+                log.warn("ADB command failed: {} (exitCode={}){}",
+                        label, exitCode,
+                        output.isEmpty() ? "" : ", output=" + output);
+            } else if (log.isDebugEnabled() && !output.isEmpty()) {
+                // log.debug("ADB command output for {}: {}", label, output);
+            }
+
+            return new RunResult(exitCode, output);
+
+        } catch (IOException e) {
+            throw new AppException("ADB IO error: " + label, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AppException("ADB interrupted: " + label, e);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Public API
+    // -------------------------------------------------------------------------
+
     public List<String> listConnectedSerials() {
-        String output = runAdb("devices");
+        String output = run(null, "devices");
         List<String> serials = new ArrayList<>();
 
         String[] lines = output.split("\\R");
@@ -90,7 +274,7 @@ public class AdbClient {
 
     public Map<String, String> getProps(String serial) {
         try {
-            String output = runAdb("-s", serial, ADB_SHELL, "getprop");
+            String output = run(serial, ADB_SHELL, "getprop");
             Map<String, String> props = new HashMap<>();
 
             String[] lines = output.split("\\R");
@@ -111,7 +295,7 @@ public class AdbClient {
 
     public boolean fileExists(String serial, String path) {
         try {
-            String output = runAdb("-s", serial, ADB_SHELL, "ls", "-1", path);
+            String output = run(serial, ADB_SHELL, "ls", "-1", path);
             String trimmed = output.trim();
             if (trimmed.isBlank()) {
                 return false;
@@ -128,7 +312,7 @@ public class AdbClient {
 
     public String readTextFile(String serial, String path) {
         try {
-            return runAdb("-s", serial, ADB_SHELL, "cat", path);
+            return run(serial, ADB_SHELL, "cat", path);
         } catch (Exception e) {
             log.error("Failed to read remote file {} on {}", path, serial, e);
             return "";
@@ -151,70 +335,42 @@ public class AdbClient {
     }
 
     public List<String> findFiles(String serial, String root, List<String> types) {
-        String adbPath = getAdbPath();
-        if (adbPath == null) {
-            return List.of();
-        }
-
-        List<String> command = new ArrayList<>(List.of(adbPath, "-s", serial, ADB_SHELL, "find"));
+        List<String> files = new ArrayList<>();
         for (String type : types) {
-            command.add(root + "/" + type);
-        }
-        command.addAll(List.of("-type", "f"));
-        List<String> result = new ArrayList<>();
-        try {
-            Process process = new ProcessBuilder(command)
-                    .redirectErrorStream(true)
-                    .start();
-
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
+            String target = root + "/" + type;
+            try {
+                RunResult result = runWithTimeout(serial, FIND_TIMEOUT, ADB_SHELL, "find", target, "-type", "f");
+                String[] lines = result.output().split("\\R");
+                for (String line : lines) {
                     if (!line.isBlank() && !line.startsWith("find:")) {
-                        result.add(line.trim());
+                        files.add(line.trim());
                     }
                 }
+            } catch (DeviceDisconnectedException e) {
+                throw e;
+            } catch (AppException e) {
+                log.warn("find failed for path: {}", target, e);
             }
-
-            boolean finished = process.waitFor(FIND_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("find timed out on {} root={}", serial, root);
-                return List.of();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } catch (IOException e) {
-            log.error("find error: {}", root, e);
         }
-
-        return result;
+        return files;
     }
 
     public String getExternalStorage(String serial) {
-        String adbPath = getAdbPath();
-        if (adbPath == null) {
-            return null;
-        }
-
         try {
-            Process process = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL, "ls /storage")
-                    .redirectErrorStream(true)
-                    .start();
-
-            try {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        if (line.matches("^[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}$")) {
-                            return "/storage/" + line;
-                        }
-                    }
-                }
-            } finally {
-                process.destroyForcibly();
+            RunResult result = runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL, "ls", "/storage");
+            if (result.exitCode() != 0) {
+                return null;
             }
-        } catch (Exception e) {
+
+            String[] lines = result.output().split("\\R");
+            for (String line : lines) {
+                if (line.matches("^[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}$")) {
+                    return "/storage/" + line;
+                }
+            }
+        } catch (DeviceDisconnectedException e) {
+            throw e;
+        } catch (AppException e) {
             log.debug("Failed to resolve external storage for {}", serial, e);
         }
 
@@ -222,50 +378,25 @@ public class AdbClient {
     }
 
     public long getRemoteSize(String serial, String remote) {
-        String adbPath = getAdbPath();
-        if (adbPath == null) {
-            return -1;
-        }
-
         try {
-            Process process = new ProcessBuilder(adbPath, "-s", serial,
-                    ADB_SHELL, "stat -c %s '" + remote + "'")
-                    .redirectErrorStream(true)
-                    .start();
-            String line;
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream()))) {
-                line = reader.readLine();
-            }
-            boolean finished = process.waitFor(QUICK_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("getRemoteSize timed out: {} on {}", remote, serial);
+            RunResult result = runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL, "stat", "-c", "%s", remote);
+            if (result.exitCode() != 0) {
                 return -1;
             }
+
+            String[] lines = result.output().split("\\R");
+            String line = lines.length > 0 ? lines[0].trim() : "";
             return (line != null && line.matches("\\d+")) ? Long.parseLong(line) : -1;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return -1;
-        } catch (Exception e) {
+        } catch (DeviceDisconnectedException e) {
+            throw e;
+        } catch (AppException e) {
             log.debug("getRemoteSize failed {} on {}", remote, serial, e);
             return -1;
         }
     }
 
-    /**
-     * Marker prefix embedded in AppException messages when a pull fails because
-     * the device serial is no longer visible to ADB ("not found" in output).
-     */
-    public static final String ERR_DEVICE_NOT_FOUND = "ADB_DEVICE_NOT_FOUND";
-
     public boolean pullFile(String serial, String remote, String local) {
-        String adbPath = getAdbPath();
-        if (adbPath == null) {
-            return false;
-        }
-        ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, "pull", remote, local);
-        RunResult result = runWithTimeout(pb, PULL_TIMEOUT, "pull " + remote + " -> " + local);
+        RunResult result = runWithTimeout(serial, PULL_TIMEOUT, "pull", remote, local);
         if (result.exitCode() != 0) {
             String output = result.output().toLowerCase();
             if (result.exitCode() == 1 || output.contains("not found")
@@ -278,15 +409,8 @@ public class AdbClient {
     }
 
     public boolean deleteRemoteFile(String serial, String remote) {
-        String adbPath = getAdbPath();
-        if (adbPath == null) {
-            return false;
-        }
-
-        ProcessBuilder pb = new ProcessBuilder(
-                adbPath, "-s", serial, ADB_SHELL, "rm", "-f", remote);
         try {
-            return runWithTimeout(pb, QUICK_TIMEOUT, "rm " + remote).exitCode() == 0;
+            return runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL, "rm", "-f", remote).exitCode() == 0;
         } catch (AppException e) {
             log.debug("deleteRemoteFile failed: {}", e.getMessage());
             return false;
@@ -294,182 +418,29 @@ public class AdbClient {
     }
 
     public boolean isDeviceAlive(String serial) {
-        String adbPath = getAdbPath();
-        if (adbPath == null) {
-            return false;
-        }
-
         try {
-            Process process = new ProcessBuilder(adbPath, "-s", serial, "get-state")
-                    .redirectErrorStream(true)
-                    .start();
-
-            String line;
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream()))) {
-                line = reader.readLine();
-            }
-
-            boolean finished = process.waitFor(QUICK_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                log.warn("isDeviceAlive timed out for {}", serial);
+            RunResult result = executeAdbCommand(serial, QUICK_TIMEOUT, "get-state");
+            if (result.exitCode() != 0) {
                 return false;
             }
 
+            String[] lines = result.output().split("\\R");
+            String line = lines.length > 0 ? lines[0].trim() : "";
             return "device".equals(line);
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        } catch (Exception e) {
+        } catch (AppException e) {
             log.debug("isDeviceAlive failed for {}", serial, e);
             return false;
         }
     }
 
-    private String runAdb(String... args) {
-        String adbExecutable = adbRuntimeService.resolveAdbExecutable();
-
-        List<String> command = new ArrayList<>();
-        command.add(adbExecutable);
-        Collections.addAll(command, args);
-
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.redirectErrorStream(true);
-
-        try {
-            Process process = pb.start();
-            ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
-            AtomicReference<IOException> streamError = new AtomicReference<>();
-
-            Thread outputDrain = Thread.ofPlatform().name("adb-output-drain").start(() -> {
-                try {
-                    process.getInputStream().transferTo(outputBuffer);
-                } catch (IOException e) {
-                    streamError.set(e);
-                }
-            });
-
-            boolean finished = process.waitFor(ADB_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                outputDrain.join(500);
-                throw new AppException("ADB command timed out: " + String.join(" ", command));
-            }
-
-            outputDrain.join(1000);
-            if (streamError.get() != null) {
-                throw streamError.get();
-            }
-
-            String output = outputBuffer.toString(StandardCharsets.UTF_8);
-            int exitCode = process.exitValue();
-            String trimmedOutput = output.trim();
-            if (exitCode != 0 && log.isDebugEnabled()) {
-                log.debug("ADB command returned non-zero exit code {}: {}{}",
-                        exitCode,
-                        String.join(" ", command),
-                        trimmedOutput.isEmpty() ? " (output=(no output))" : ", output=" + trimmedOutput);
-            }
-            return output;
-        } catch (IOException e) {
-            throw new AppException("Failed to run adb command: " + String.join(" ", command), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AppException("Failed to run adb command: " + String.join(" ", command), e);
-        }
-    }
-
-    private record RunResult(int exitCode, String output) {
-    }
-
-    /**
-     * Runs a pre-configured ProcessBuilder with a strict timeout.
-     * Drains stdout to prevent buffer-full blocking.
-     * Always calls destroyForcibly() on exit.
-     *
-     * @param pb      ProcessBuilder already configured
-     * @param timeout maximum wait duration
-     * @param label   short description for logging (e.g. "pull /sdcard/foo.mp4")
-     * @return RunResult with exit code and captured output
-     * @throws AppException on timeout or IO error
-     */
-    private RunResult runWithTimeout(ProcessBuilder pb, Duration timeout, String label) {
-        pb.redirectErrorStream(true);
-        try {
-            Process process = pb.start();
-            ByteArrayOutputStream sink = new ByteArrayOutputStream();
-            AtomicReference<IOException> streamError = new AtomicReference<>();
-
-            Thread drainer = Thread.ofPlatform().name("adb-drain-" + label).start(() -> {
-                try {
-                    process.getInputStream().transferTo(sink);
-                } catch (IOException e) {
-                    streamError.set(e);
-                }
-            });
-
-            boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                drainer.join(500);
-                throw new AppException("ADB timeout (" + timeout.toSeconds() + "s): " + label);
-            }
-
-            drainer.join(1000);
-            if (streamError.get() != null)
-                throw streamError.get();
-
-            int exitCode = process.exitValue();
-            String output = sink.toString(StandardCharsets.UTF_8).trim();
-            if (exitCode != 0 && log.isWarnEnabled()) {
-                log.warn("ADB command failed: {} (exitCode={}){}",
-                        label,
-                        exitCode,
-                        output.isEmpty() ? "" : ", output=" + output);
-            } else if (log.isDebugEnabled() && !output.isEmpty()) {
-                log.debug("ADB command output for {}: {}", label, output);
-            }
-
-            return new RunResult(exitCode, output);
-
-        } catch (IOException e) {
-            throw new AppException("ADB IO error: " + label, e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AppException("ADB interrupted: " + label, e);
-        }
-    }
-
-    private boolean isCameraServiceRunning(String serial) {
-        String adbPath = getAdbPath();
-        if (adbPath == null)
-            return false;
-        try {
-            ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
-                    "dumpsys", "activity", "services",
-                    "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
-            RunResult result = runWithTimeout(pb, QUICK_TIMEOUT, "isCameraServiceRunning");
-            return result.output().contains("ServiceRecord");
-        } catch (AppException e) {
-            log.debug("[{}] isCameraServiceRunning check failed: {}", serial, e.getMessage());
-            return false;
-        }
-    }
-
     public boolean stopCameraService(String serial) {
-        String adbPath = getAdbPath();
-        if (adbPath == null)
-            return false;
-
         log.debug("[{}] Sending stop Camera service command", serial);
 
-        ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
-                "am", "stopservice",
-                "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
         try {
-            runWithTimeout(pb, QUICK_TIMEOUT, "stopCameraService");
+            runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
+                    "am", "stopservice",
+                    "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
         } catch (AppException e) {
             log.warn("[{}] stopCameraService failed: {}", serial, e.getMessage());
             return false;
@@ -495,15 +466,10 @@ public class AdbClient {
     }
 
     public boolean startCameraService(String serial) {
-        String adbPath = getAdbPath();
-        if (adbPath == null)
-            return false;
-
-        ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
-                "am", "startservice",
-                "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
         try {
-            return runWithTimeout(pb, QUICK_TIMEOUT, "startCameraService").exitCode() == 0;
+            return runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
+                    "am", "startservice",
+                    "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService").exitCode() == 0;
         } catch (AppException e) {
             log.warn("[{}] startCameraService failed: {}", serial, e.getMessage());
             return false;
@@ -511,17 +477,25 @@ public class AdbClient {
     }
 
     public boolean setUsbFunctionsNone(String serial) {
-        String adbPath = getAdbPath();
-        if (adbPath == null)
-            return false;
-
-        ProcessBuilder pb = new ProcessBuilder(adbPath, "-s", serial, ADB_SHELL,
-                "svc", "usb", "setFunctions", "none");
         try {
-            return runWithTimeout(pb, QUICK_TIMEOUT, "setUsbFunctionsNone").exitCode() == 0;
+            return runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
+                    "svc", "usb", "setFunctions", "none").exitCode() == 0;
         } catch (AppException e) {
             log.warn("[{}] setUsbFunctionsNone failed: {}", serial, e.getMessage());
             return false;
         }
     }
+
+    private boolean isCameraServiceRunning(String serial) {
+        try {
+            RunResult result = runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
+                    "dumpsys", "activity", "services",
+                    "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
+            return result.output().contains("ServiceRecord");
+        } catch (AppException e) {
+            log.debug("[{}] isCameraServiceRunning check failed: {}", serial, e.getMessage());
+            return false;
+        }
+    }
+
 }
