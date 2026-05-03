@@ -16,8 +16,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javafx.scene.Scene;
+
 public final class AlertHelper {
 
+    private static final Logger log = LoggerFactory.getLogger(AlertHelper.class);
     private static final String LOGO_PATH = "/image/logo.png";
 
     private AlertHelper() {
@@ -84,8 +90,20 @@ public final class AlertHelper {
         alert.getDialogPane().getStyleClass().add("app-alert");
         alert.setGraphic(createLogoGraphic());
         alert.setOnShown(event -> {
-            Stage stage = (Stage) alert.getDialogPane().getScene().getWindow();
-            StageUtil.applyAppIcon(stage);
+            Scene scene = alert.getDialogPane().getScene();
+            if (scene == null || scene.getWindow() == null) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Skip applying app icon: dialog scene/window not available yet");
+                }
+                return;
+            }
+
+            if (scene.getWindow() instanceof Stage stage) {
+                StageUtil.applyAppIcon(stage);
+            } else if (log.isDebugEnabled()) {
+                log.debug("Skip applying app icon: dialog window is not a Stage ({})",
+                        scene.getWindow().getClass().getName());
+            }
         });
     }
 

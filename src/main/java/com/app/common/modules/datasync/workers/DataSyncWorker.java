@@ -18,13 +18,18 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.enums.FolderType;
 import com.app.common.dtos.FileInfo;
 import com.app.common.dtos.SyncContext;
 import com.app.common.events.DeviceEvent;
+import com.app.common.exceptions.DeviceDisconnectedException;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
+import com.app.common.modules.foldermanager.events.StorageIssueReason;
+import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
+import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.foldermanager.utils.FilePathHasher;
 import com.app.common.modules.i18n.I18n;
@@ -55,6 +60,7 @@ public class DataSyncWorker implements Runnable {
     private final Map<String, String> driveLetterCache = new ConcurrentHashMap<>();
     private final Set<String> disconnectedDevices = ConcurrentHashMap.newKeySet();
     private volatile boolean shutdownRequested = false;
+    private volatile boolean saveRecoveryDeferred = false;
 
     // Records and inner classes
     private record SyncFile(String remotePath, String localPath, String relativeLocalPath, FileInfo info) {
@@ -176,6 +182,7 @@ public class DataSyncWorker implements Runnable {
         String hardwareId = entry.hardwareId();
         SyncContext syncContext = entry.context();
         long startedAt = System.currentTimeMillis();
+        saveRecoveryDeferred = false;
 
         try {
             Long deviceId = dataSyncService.validateDevice(hardwareId);
@@ -207,9 +214,10 @@ public class DataSyncWorker implements Runnable {
             progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
 
             List<PendingFile> failedList = new ArrayList<>();
-            processSyncFiles(hardwareId, syncContext, preparedSyncFiles, filesToBeProcessed, failedList, counters);
+            boolean shouldRetryFailures = processSyncFiles(hardwareId, syncContext, preparedSyncFiles,
+                    filesToBeProcessed, failedList, counters);
 
-            if (!failedList.isEmpty()) {
+            if (shouldRetryFailures && !failedList.isEmpty()) {
                 retryFailed(hardwareId, syncContext, preparedSyncFiles, failedList, counters);
             }
 
@@ -270,7 +278,7 @@ public class DataSyncWorker implements Runnable {
         }
 
         LookupCache lookupCache = new LookupCache();
-        SyncFileCollection fileCollection = collectSyncFiles(hardwareId, syncContext, remoteFilePaths,
+        SyncFileCollection fileCollection = collectSyncFiles(syncContext, remoteFilePaths,
                 relativeSyncedPaths,
                 lookupCache, autoDelete);
 
@@ -288,23 +296,108 @@ public class DataSyncWorker implements Runnable {
     }
 
     // Process each file in the sync list
-    private void processSyncFiles(String hardwareId, SyncContext syncContext, SyncPreparation prep,
+    private boolean processSyncFiles(String hardwareId, SyncContext syncContext, SyncPreparation prep,
             List<SyncFile> syncFiles,
             List<PendingFile> failedList, SyncCounters counters) {
 
-        for (SyncFile file : syncFiles) {
+        for (int i = 0; i < syncFiles.size(); i++) {
+            SyncFile file = syncFiles.get(i);
 
             if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
                 if (log.isWarnEnabled()) {
                     log.warn("Logged out or Device disconnected. Break sync file loop");
                 }
-                break;
+                String reason = isDeviceDead(hardwareId)
+                        ? I18n.get("device.sync.error.disconnected")
+                        : I18n.get("device.sync.error.exception");
+                failRemainingWithSingleNotice(hardwareId, syncFiles, i, failedList, counters, reason);
+                return false;
             }
 
             int current = counters.passed + counters.failed + 1;
             if (log.isInfoEnabled()) {
                 log.info("Processing file ({}/{}): {}", current, counters.total, name(file.remotePath()));
             }
+
+            if (handleAlreadySyncedFile(hardwareId, syncContext, prep.syncedPaths(), file)) {
+                counters.passed++;
+                progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+                continue;
+            }
+
+            if (!folderManagerService.isDataDirAccessible(syncContext.saveDir())) {
+                if (log.isWarnEnabled()) {
+                    log.warn("[{}] Save directory became inaccessible during sync: {}",
+                            hardwareId,
+                            syncContext.saveDir() != null ? syncContext.saveDir().getAbsolutePath() : "null");
+                }
+                publisher.publishEvent(
+                        new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE));
+                SyncContext resumedContext = waitForDataDirRecovery(hardwareId, syncContext, syncFiles, i, 0L);
+                if (resumedContext == null) {
+                    String failureReason = I18n.get("device.sync.error.storage_unavailable");
+                    if (log.isWarnEnabled()) {
+                        log.warn("[{}] Data directory recovery aborted while waiting for accessible save dir",
+                                hardwareId);
+                    }
+                    failRemainingWithSingleNotice(hardwareId, syncFiles, i, failedList, counters, failureReason);
+                    return false;
+                }
+                if (log.isInfoEnabled()) {
+                    log.info("[{}] Save directory recovered, resuming sync from index {} using {}",
+                            hardwareId,
+                            i,
+                            resumedContext.saveDir() != null ? resumedContext.saveDir().getAbsolutePath() : "null");
+                }
+                syncContext = resumedContext;
+                i--;
+                continue;
+            }
+
+            // Resolve remote size up front and persist it in FileInfo so we can
+            // reuse the same expected size through pull + verify and retries.
+            SyncFile sizedFile = withResolvedRemoteSize(hardwareId, file, failedList);
+            if (sizedFile == null) {
+                continue;
+            }
+            syncFiles.set(i, sizedFile);
+            file = sizedFile;
+
+            long requiredBytes = file.info().size();
+            if (!prep.syncedPaths().contains(file.relativeLocalPath())
+                    && requiredBytes > 0
+                    && !folderManagerService.hasSufficientSpace(syncContext.saveDir(), requiredBytes)) {
+                if (log.isWarnEnabled()) {
+                    log.warn("[{}] Insufficient space detected for {} (required={} bytes, saveDir={})",
+                            hardwareId,
+                            name(file.remotePath()),
+                            requiredBytes,
+                            syncContext.saveDir() != null ? syncContext.saveDir().getAbsolutePath() : "null");
+                }
+                publisher.publishEvent(
+                        new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.LOW_SPACE, requiredBytes));
+                SyncContext resumedContext = waitForDataDirRecovery(hardwareId, syncContext, syncFiles, i,
+                        requiredBytes);
+                if (resumedContext == null) {
+                    String failureReason = I18n.get("device.sync.error.storage_full");
+                    if (log.isWarnEnabled()) {
+                        log.warn("[{}] Data directory recovery aborted while waiting for enough free space",
+                                hardwareId);
+                    }
+                    failRemainingWithSingleNotice(hardwareId, syncFiles, i, failedList, counters, failureReason);
+                    return false;
+                }
+                if (log.isInfoEnabled()) {
+                    log.info("[{}] Save directory has recovered capacity, resuming sync from index {} using {}",
+                            hardwareId,
+                            i,
+                            resumedContext.saveDir() != null ? resumedContext.saveDir().getAbsolutePath() : "null");
+                }
+                syncContext = resumedContext;
+                i--;
+                continue;
+            }
+
             ProcessResult result = processFile(hardwareId, syncContext, prep, file, failedList, counters);
 
             if (result != ProcessResult.FAILED) {
@@ -316,11 +409,165 @@ public class DataSyncWorker implements Runnable {
             }
         }
 
+        return true;
+    }
+
+    private SyncContext waitForDataDirRecovery(String hardwareId,
+            SyncContext currentContext,
+            List<SyncFile> syncFiles,
+            int fromIndex,
+            long requiredBytes) {
+        int attempts = 0;
+        String lastRejectedPath = null;
+
+        while (!shutdownRequested && !Thread.currentThread().isInterrupted() && !isDeviceDead(hardwareId)) {
+            if (saveRecoveryDeferred) {
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Recovery wait canceled because user selected 'Later'", hardwareId);
+                }
+                return null;
+            }
+
+            attempts++;
+            File latestDataDir = folderManagerService.getDataDir();
+            String rejectionReason = validateRecoveryDataDir(latestDataDir, requiredBytes);
+            if (rejectionReason == null) {
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "[{}] Data directory recovery completed after {} checks. activeSaveDir={} requiredBytes={}",
+                            hardwareId,
+                            attempts,
+                            latestDataDir != null ? latestDataDir.getAbsolutePath() : "null",
+                            requiredBytes);
+                }
+                SyncContext updatedContext = new SyncContext(
+                        currentContext.username(),
+                        currentContext.isAdmin(),
+                        latestDataDir,
+                        currentContext.autoDelete());
+                rebasePendingSyncFiles(syncFiles, fromIndex, latestDataDir);
+                return updatedContext;
+            }
+
+            String candidatePath = latestDataDir != null ? latestDataDir.getAbsolutePath() : "null";
+            boolean pathChanged = !candidatePath.equals(lastRejectedPath);
+            if (pathChanged || attempts % 10 == 0) {
+                if (log.isDebugEnabled()) {
+                    log.debug(
+                            "[{}] Waiting for save directory recovery: attempt={} candidate={} requiredBytes={} reason={}",
+                            hardwareId, attempts, candidatePath, requiredBytes, rejectionReason);
+                }
+                lastRejectedPath = candidatePath;
+            }
+
+            try {
+                Thread.sleep(1_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private String validateRecoveryDataDir(File dataDir, long requiredBytes) {
+        if (dataDir == null) {
+            return "save_dir_not_configured";
+        }
+
+        if (!folderManagerService.isDataDirAccessible(dataDir)) {
+            return "save_dir_drive_unavailable";
+        }
+
+        if (requiredBytes > 0 && !folderManagerService.hasSufficientSpace(dataDir, requiredBytes)) {
+            return "save_dir_insufficient_space";
+        }
+
+        try {
+            folderManagerService.withSpecificDirPrepared(dataDir, () -> Boolean.TRUE);
+        } catch (Exception e) {
+            if (log.isDebugEnabled()) {
+                log.debug("Save directory failed readiness check: {} - {}",
+                        dataDir.getAbsolutePath(),
+                        e.getMessage());
+            }
+            return "save_dir_not_ready";
+        }
+
+        return null;
+    }
+
+    private void rebasePendingSyncFiles(List<SyncFile> syncFiles, int fromIndex, File newSaveDir) {
+        for (int i = fromIndex; i < syncFiles.size(); i++) {
+            SyncFile file = syncFiles.get(i);
+            String rebasedLocalPath = resolveLocalPath(file.info(), file.remotePath(), newSaveDir);
+            if (rebasedLocalPath == null) {
+                continue;
+            }
+
+            String rebasedRelativePath;
+            try {
+                rebasedRelativePath = folderManagerService.toRelativeDataPath(rebasedLocalPath);
+            } catch (IOException e) {
+                rebasedRelativePath = file.relativeLocalPath();
+            }
+
+            syncFiles.set(i,
+                    new SyncFile(file.remotePath(), rebasedLocalPath, rebasedRelativePath, file.info()));
+        }
+    }
+
+    private boolean handleAlreadySyncedFile(String hardwareId,
+            SyncContext syncContext,
+            Set<String> syncedPaths,
+            SyncFile file) {
+        if (!syncedPaths.contains(file.relativeLocalPath())) {
+            return false;
+        }
+
+        if (syncContext.autoDelete()) {
+            deleteRemoteFile(hardwareId, file.remotePath());
+        }
+
+        return true;
+    }
+
+    private void failRemainingFiles(List<SyncFile> syncFiles,
+            int fromIndex,
+            List<PendingFile> failedList,
+            String reason) {
+        for (int i = fromIndex; i < syncFiles.size(); i++) {
+            SyncFile remaining = syncFiles.get(i);
+            failedList.add(new PendingFile(
+                    remaining.remotePath(),
+                    remaining.localPath(),
+                    remaining.relativeLocalPath(),
+                    remaining.info(),
+                    reason));
+        }
+    }
+
+    private void failRemainingWithSingleNotice(String hardwareId,
+            List<SyncFile> syncFiles,
+            int fromIndex,
+            List<PendingFile> failedList,
+            SyncCounters counters,
+            String reason) {
+        int remainingCount = syncFiles.size() - fromIndex;
+        failRemainingFiles(syncFiles, fromIndex, failedList, reason);
+        counters.failed = failedList.size();
+        progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+        appNoticeService.showError(reason);
+
+        if (log.isWarnEnabled()) {
+            log.warn("[{}] Storage recovery aborted. Marked remaining {} files as failed without retry",
+                    hardwareId,
+                    remainingCount);
+        }
     }
 
     // Parse remote file paths into SyncFile objects and categorize by sync status
-    private SyncFileCollection collectSyncFiles(String hardwareId,
-            SyncContext syncContext,
+    private SyncFileCollection collectSyncFiles(SyncContext syncContext,
             List<String> remoteFilePaths,
             Set<String> syncedPaths,
             LookupCache lookupCache,
@@ -342,25 +589,7 @@ public class DataSyncWorker implements Runnable {
             }
         }
 
-        retrieveAndUpdateFileSizes(hardwareId, unsyncedFiles, allSyncFiles, autoDelete);
-        sortSyncFiles(allSyncFiles, unsyncedFiles, autoDelete);
-
         return new SyncFileCollection(allSyncFiles, unsyncedFiles, alreadySyncedCount);
-    }
-
-    // Retrieve remote file sizes and update both unsynced and all files lists
-    private void retrieveAndUpdateFileSizes(String hardwareId, List<SyncFile> unsyncedFiles,
-            List<SyncFile> allSyncFiles, boolean autoDelete) {
-        for (int i = 0; i < unsyncedFiles.size(); i++) {
-            SyncFile file = unsyncedFiles.get(i);
-            long size = getRemoteSizeQuiet(hardwareId, file.remotePath());
-            SyncFile updatedFile = createFileWithSize(file, size);
-            unsyncedFiles.set(i, updatedFile);
-
-            if (autoDelete) {
-                updateFileInList(allSyncFiles, file.remotePath(), updatedFile);
-            }
-        }
     }
 
     // Create a new SyncFile with updated size information
@@ -370,20 +599,20 @@ public class DataSyncWorker implements Runnable {
         return new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), updatedInfo);
     }
 
-    // Update a file in the list by matching remote path
-    private void updateFileInList(List<SyncFile> list, String remotePath, SyncFile updatedFile) {
-        for (int i = 0; i < list.size(); i++) {
-            if (list.get(i).remotePath().equals(remotePath)) {
-                list.set(i, updatedFile);
-                break;
-            }
+    private SyncFile withResolvedRemoteSize(String hardwareId, SyncFile file, List<PendingFile> failedList) {
+        try {
+            long remoteSize = getRemoteSize(hardwareId, file.remotePath());
+            return createFileWithSize(file, remoteSize);
+        } catch (DeviceDisconnectedException e) {
+            disconnectedDevices.add(hardwareId);
+            failedList.add(new PendingFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(),
+                    I18n.get("device.sync.error.disconnected")));
+            return null;
+        } catch (IOException e) {
+            failedList.add(new PendingFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(),
+                    I18n.get("device.sync.error.remote_size_unavailable")));
+            return null;
         }
-    }
-
-    // Sort files by size, choosing the appropriate list based on autoDelete mode
-    private void sortSyncFiles(List<SyncFile> allSyncFiles, List<SyncFile> unsyncedFiles, boolean autoDelete) {
-        List<SyncFile> listToSort = autoDelete ? allSyncFiles : unsyncedFiles;
-        listToSort.sort((a, b) -> Long.compare(a.info().size(), b.info().size()));
     }
 
     // Build SyncFile from remote path, validating user permissions and database
@@ -419,16 +648,9 @@ public class DataSyncWorker implements Runnable {
     private ProcessResult processFile(String hardwareId, SyncContext syncContext, SyncPreparation prep, SyncFile file,
             List<PendingFile> failed, SyncCounters counters) {
 
-        Set<String> syncedPaths = prep.syncedPaths();
         LookupCache lookupCache = prep.lookupCache();
 
-        // If file already synced, handle based on auto-delete setting
-        if (syncedPaths.contains(file.relativeLocalPath())) {
-            if (syncContext.autoDelete()) {
-                deleteRemoteFile(hardwareId, file.remotePath());
-            }
-            return ProcessResult.SUCCESS;
-        }
+        Set<String> syncedPaths = prep.syncedPaths();
 
         Long dId = lookupCache.deviceId(file.info().cameraId());
         Long uId = lookupCache.userId(file.info().username());
@@ -462,22 +684,43 @@ public class DataSyncWorker implements Runnable {
     }
 
     private List<String> findFiles(String hardwareId, String root) {
-        return adbClient.findFiles(hardwareId, root, AppConstants.MEDIA_TYPES);
+        try {
+            return adbClient.findFiles(hardwareId, root, AppConstants.MEDIA_TYPES);
+        } catch (DeviceDisconnectedException e) {
+            disconnectedDevices.add(hardwareId);
+            throw new PreflightException(I18n.get("device.sync.error.disconnected"));
+        }
     }
 
     // Retry failed file transfers up to MAX_RETRY times, updating counters directly
     private void retryFailed(String hardwareId, SyncContext syncContext, SyncPreparation prep,
             List<PendingFile> failedList,
             SyncCounters counters) {
+        // If device disconnected during initial sync, mark all remaining failed with
+        // single notice
+        if (isDeviceDead(hardwareId)) {
+            counters.failed += failedList.size();
+            progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+            appNoticeService.showError(I18n.get("device.sync.error.disconnected"));
+            logAndCleanupFailedFiles(failedList);
+            return;
+        }
+
         List<PendingFile> failedFilesRemaining = new ArrayList<>();
 
         // Retry each file N times before moving to next file
         for (PendingFile pf : failedList) {
             if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
-                // Device disconnected mid-retry, skip remaining files
-                counters.failed += 1;
+                // Device disconnected mid-retry, mark all remaining failed and show single
+                // notice
+                for (int i = failedList.indexOf(pf); i < failedList.size(); i++) {
+                    failedFilesRemaining.add(failedList.get(i));
+                }
+                counters.failed += failedFilesRemaining.size();
                 progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
-                continue;
+                appNoticeService.showError(I18n.get("device.sync.error.disconnected"));
+                logAndCleanupFailedFiles(failedFilesRemaining);
+                return;
             }
 
             boolean success = retryFileWithAttempts(hardwareId, pf, prep, syncContext, counters);
@@ -527,7 +770,19 @@ public class DataSyncWorker implements Runnable {
             return false;
         }
 
-        PullResult result = pullAndVerify(hardwareId, pf.remotePath(), pf.localPath(), pf.info().size());
+        long expectedSize = pf.info().size();
+        if (expectedSize <= 0) {
+            try {
+                expectedSize = getRemoteSize(hardwareId, pf.remotePath());
+            } catch (DeviceDisconnectedException e) {
+                disconnectedDevices.add(hardwareId);
+                return false;
+            } catch (IOException e) {
+                return false;
+            }
+        }
+
+        PullResult result = pullAndVerify(hardwareId, pf.remotePath(), pf.localPath(), expectedSize);
         if (!result.isSuccess()) {
             return false;
         }
@@ -604,12 +859,12 @@ public class DataSyncWorker implements Runnable {
         return parts.length >= 3 ? parts[parts.length - 3] : null;
     }
 
-    // Pull file from device and verify size matches expected
-    private PullResult pullAndVerify(String hardwareId, String remotePath, String localPath, long remoteSize) {
+    // Pull file from device and verify size against the expected remote size.
+    private PullResult pullAndVerify(String hardwareId, String remotePath, String localPath, long expectedSize) {
         try {
             return folderManagerService
                     .withSpecificDirPrepared(new File(localPath).getParentFile(),
-                            () -> pullAndVerifyInternal(hardwareId, remotePath, localPath, remoteSize));
+                            () -> pullAndVerifyInternal(hardwareId, remotePath, localPath, expectedSize));
         } catch (Exception e) {
             if (log.isWarnEnabled()) {
                 log.warn("Exception during pullAndVerify for {} -> {}: {}", name(remotePath), localPath, e.getMessage(),
@@ -619,7 +874,8 @@ public class DataSyncWorker implements Runnable {
         }
     }
 
-    private PullResult pullAndVerifyInternal(String hardwareId, String remotePath, String localPath, long remoteSize) {
+    private PullResult pullAndVerifyInternal(String hardwareId, String remotePath, String localPath,
+            long expectedSize) {
         File f = new File(localPath);
 
         if (!deleteExistingFile(localPath)) {
@@ -644,7 +900,7 @@ public class DataSyncWorker implements Runnable {
             return PullResult.failure(I18n.get("device.sync.error.file_not_created"));
         }
 
-        return verifyFileSize(f, remoteSize, remotePath);
+        return verifyFileSize(f, expectedSize, remotePath);
     }
 
     private boolean deleteExistingFile(String path) {
@@ -665,14 +921,7 @@ public class DataSyncWorker implements Runnable {
     private PullResult verifyFileSize(File file, long expectedSize, String remotePath) {
         long actualSize = file.length();
 
-        if (actualSize == 0) {
-            if (log.isWarnEnabled()) {
-                log.warn("File has zero bytes: {}", name(remotePath));
-            }
-            return PullResult.failure(I18n.get("device.sync.error.zero_bytes"));
-        }
-
-        if (expectedSize >= 0 && actualSize != expectedSize) {
+        if (actualSize != expectedSize) {
             if (log.isWarnEnabled()) {
                 log.warn("File size verification failed: {} (expected: {} bytes, actual: {} bytes)",
                         name(remotePath), expectedSize, actualSize);
@@ -684,21 +933,40 @@ public class DataSyncWorker implements Runnable {
     }
 
     private String getExternalStorage(String hardwareId) {
-        return adbClient.getExternalStorage(hardwareId);
+        try {
+            return adbClient.getExternalStorage(hardwareId);
+        } catch (DeviceDisconnectedException e) {
+            disconnectedDevices.add(hardwareId);
+            throw new PreflightException(I18n.get("device.sync.error.disconnected"));
+        }
     }
 
-    // Get remote file size without throwing exceptions, returns 0 on error
-    private long getRemoteSizeQuiet(String hardwareId, String remotePath) {
+    // Get remote file size strictly.
+    // Throws DeviceDisconnectedException if device disconnected, IOException
+    // otherwise.
+    private long getRemoteSize(String hardwareId, String remotePath) throws IOException, DeviceDisconnectedException {
         if (remotePath.startsWith(MassStorageFileSource.MASS_STORAGE_PREFIX)) {
             String driveLetter = driveLetterCache.get(hardwareId);
-            if (driveLetter == null)
-                return -1;
-            return massStorageFileSource.getFileSize(driveLetter, remotePath);
+            if (driveLetter == null) {
+                throw new IOException("Mass storage drive letter is missing");
+            }
+
+            long size = massStorageFileSource.getFileSize(driveLetter, remotePath);
+            if (size < 0) {
+                throw new IOException("Mass storage size unavailable");
+            }
+            return size;
         }
         try {
-            return adbClient.getRemoteSize(hardwareId, remotePath);
+            long size = adbClient.getRemoteSize(hardwareId, remotePath);
+            if (size < 0) {
+                throw new IOException("ADB returned negative size");
+            }
+            return size;
+        } catch (DeviceDisconnectedException e) {
+            throw e;
         } catch (Exception e) {
-            return 0;
+            throw new IOException("Failed to read remote size", e);
         }
     }
 
@@ -719,9 +987,12 @@ public class DataSyncWorker implements Runnable {
         try {
             boolean success = adbClient.pullFile(hardwareId, remotePath, localPath);
             return success ? PullResult.success() : PullResult.failure(I18n.get("device.sync.error.adb_pull_failed"));
+        } catch (DeviceDisconnectedException e) {
+            disconnectedDevices.add(hardwareId);
+            return PullResult.failure(I18n.get("device.sync.error.disconnected"));
         } catch (Exception e) {
             if (e.getMessage() != null && e.getMessage().startsWith(AdbClient.ERR_DEVICE_NOT_FOUND)) {
-                return PullResult.failure(I18n.get("device.sync.error.lost_connection"));
+                return PullResult.failure(I18n.get("device.sync.error.bad_connection"));
             }
             return PullResult.failure(I18n.get("device.sync.error.adb_pull_failed"));
         }
@@ -743,6 +1014,16 @@ public class DataSyncWorker implements Runnable {
             disconnectedDevices.add(event.hardwareId());
         } else if (event.type() == DeviceEvent.EventType.CONNECTED) {
             disconnectedDevices.remove(event.hardwareId());
+        }
+    }
+
+    @EventListener
+    public void onStorageRecoveryDeferred(StorageRecoveryDeferredEvent event) {
+        if (event != null && event.getTarget() == FolderType.SAVE) {
+            saveRecoveryDeferred = true;
+            if (log.isDebugEnabled()) {
+                log.debug("Storage recovery was deferred by user for target={}", event.getTarget());
+            }
         }
     }
 
