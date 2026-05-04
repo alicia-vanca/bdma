@@ -140,11 +140,9 @@ public class FolderSecurityService {
         String user = System.getProperty(PROPERTY_USER_NAME);
         String domain = System.getenv("USERDOMAIN");
 
-        String principal = (domain != null && !domain.isBlank())
+        return (domain != null && !domain.isBlank())
                 ? domain + "\\" + user
                 : user;
-
-        return principal;
     }
 
     /**
@@ -205,8 +203,9 @@ public class FolderSecurityService {
                 log.warn("[cmd] Command failed with exit code {}: {} - Output: {}",
                         code, String.join(" ", command), output);
             }
-        } else {
-            log.debug("[cmd] {} => {}", String.join(" ", command), output.isEmpty() ? "(no output)" : output);
+        } else if (log.isDebugEnabled()) {
+            // log.debug("[cmd] {} => {}", String.join(" ", command), output.isEmpty() ?
+            // "(no output)" : output);
         }
 
         return code;
