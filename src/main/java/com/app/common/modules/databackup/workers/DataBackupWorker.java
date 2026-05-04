@@ -49,56 +49,18 @@ public class DataBackupWorker implements Runnable {
     public void run() {
         log.info("BackupWorker started");
 
-        while (true) {
+        while (!Thread.currentThread().isInterrupted()) {
             String nonDriveLetterSyncedPath = null;
             try {
                 nonDriveLetterSyncedPath = dataBackupQueue.take();
 
-                if (backupRecoveryDeferred) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Backup is deferred by user choice. Skip current cycle: {}",
-                                nonDriveLetterSyncedPath);
-                    }
-                    continue;
-                }
-
-                if (folderManager.isBackupDirConfigured()) {
-                    if (!folderManager.isBackupDirAccessible()) {
-                        publisher.publishEvent(
-                                new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
-                        log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
-                        continue;
-                    }
-
-                    try {
-                        long sourceSize = folderManager.resolveExistingFileSize(nonDriveLetterSyncedPath);
-                        if (!folderManager.hasSufficientSpace(folderManager.getBackupDir(), sourceSize)) {
-                            publisher.publishEvent(
-                                    new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.LOW_SPACE,
-                                            sourceSize));
-                            log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
-                            continue;
-                        }
-
-                        String absoluteBackupPath = folderManager.backupFromSave(nonDriveLetterSyncedPath);
-                        String nonDriveLetterBackedUpPath = folderManager.stripDriveLetter(absoluteBackupPath);
-
-                        dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);
-
-                        publisher.publishEvent(new FileBackupCompletedEvent(nonDriveLetterSyncedPath));
-                    } catch (FileNotFoundOnAnyDriveException e) {
-                        log.info("Synced file not found, skipping this cycle: {}", nonDriveLetterSyncedPath);
-                        // skip this file gracefully
-                    }
-
-                } else {
-                    log.warn("BackupDir not configured, skipping: {}", nonDriveLetterSyncedPath);
+                if (!shouldSkipDueToDeferred(nonDriveLetterSyncedPath)) {
+                    processBackup(nonDriveLetterSyncedPath);
                 }
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("BackupWorker interrupted");
-                break;
 
             } catch (Exception e) {
                 log.error("Backup failed: {}", nonDriveLetterSyncedPath, e);
@@ -108,6 +70,90 @@ public class DataBackupWorker implements Runnable {
                     dataBackupQueue.done(nonDriveLetterSyncedPath);
                 }
             }
+        }
+    }
+
+    /**
+     * Check if backup should be skipped due to deferred recovery.
+     */
+    private boolean shouldSkipDueToDeferred(String nonDriveLetterSyncedPath) {
+        if (backupRecoveryDeferred) {
+            if (log.isDebugEnabled()) {
+                log.debug("Backup is deferred by user choice. Skip current cycle: {}",
+                        nonDriveLetterSyncedPath);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Process backup for a single file path.
+     */
+    private void processBackup(String nonDriveLetterSyncedPath) {
+        if (!folderManager.isBackupDirConfigured()) {
+            log.warn("BackupDir not configured, skipping: {}", nonDriveLetterSyncedPath);
+            return;
+        }
+
+        if (!checkBackupDirAccessible(nonDriveLetterSyncedPath)) {
+            return;
+        }
+
+        if (!checkSufficientSpace(nonDriveLetterSyncedPath)) {
+            return;
+        }
+
+        performBackup(nonDriveLetterSyncedPath);
+    }
+
+    /**
+     * Verify backup directory is accessible.
+     */
+    private boolean checkBackupDirAccessible(String nonDriveLetterSyncedPath) {
+        if (!folderManager.isBackupDirAccessible()) {
+            publisher.publishEvent(
+                    new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
+            log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Verify sufficient space exists for backup.
+     */
+    private boolean checkSufficientSpace(String nonDriveLetterSyncedPath) {
+        try {
+            long sourceSize = folderManager.resolveExistingFileSize(nonDriveLetterSyncedPath);
+            if (!folderManager.hasSufficientSpace(folderManager.getBackupDir(), sourceSize)) {
+                publisher.publishEvent(
+                        new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize));
+                log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to check space for: {}", nonDriveLetterSyncedPath, e);
+            return false;
+        }
+    }
+
+    /**
+     * Execute the actual backup operation and mark completion.
+     */
+    private void performBackup(String nonDriveLetterSyncedPath) {
+        try {
+            String absoluteBackupPath = folderManager.backupFromSave(nonDriveLetterSyncedPath);
+            String nonDriveLetterBackedUpPath = folderManager.stripDriveLetter(absoluteBackupPath);
+
+            dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);
+
+            publisher.publishEvent(new FileBackupCompletedEvent(nonDriveLetterSyncedPath));
+        } catch (FileNotFoundOnAnyDriveException e) {
+            log.info("Synced file not found, skipping this cycle: {}", nonDriveLetterSyncedPath);
+        } catch (Exception e) {
+            log.error("Backup operation failed for: {}", nonDriveLetterSyncedPath, e);
         }
     }
 
