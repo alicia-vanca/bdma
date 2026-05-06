@@ -12,6 +12,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
@@ -111,6 +112,28 @@ public final class AlertHelper {
         alert.setTitle(title);
         alert.setHeaderText(header);
         alert.setContentText(content);
+        return alert;
+    }
+
+    public static Alert createWithScroll(Alert.AlertType type, String title, String header, String content) {
+        Alert alert = new Alert(type);
+        configure(alert);
+        alert.setTitle(title);
+        alert.setHeaderText(header);
+
+        // Dùng ScrollPane thay vì contentText
+        Label lblContent = new Label(content);
+        lblContent.setWrapText(true);
+        lblContent.setMaxWidth(500);
+
+        ScrollPane scrollPane = new ScrollPane(lblContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(200);
+        scrollPane.setMaxHeight(300);
+        scrollPane.setStyle("-fx-background-color: transparent;");
+
+        alert.getDialogPane().setContent(scrollPane);
+
         return alert;
     }
 

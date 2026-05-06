@@ -35,6 +35,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 @Component
 @Scope("prototype")
@@ -627,16 +628,17 @@ public class FileListController {
 
         for (FileView file : toDownload) {
             try {
-                String fullPath = "C:/" + file.syncedPath().replaceAll("^/+", "");
-                java.io.File source = new java.io.File(fullPath);
+                PathResolutionResult pathResolutionResult = folderManagerService
+                        .findAbsolutePathFromNonDriveLetterPath(file.syncedPath());
 
-                if (!source.exists()) {
+                if (!pathResolutionResult.isFound()) {
                     failed++;
-                    failedFiles.add(file.name() + " (không tìm thấy file)");
+                    failedFiles.add(file.name() + I18n.get("export.file.warning.notfound"));
                     continue;
                 }
 
-                java.io.File dest = new java.io.File(destFolder, file.name());
+                java.io.File source = pathResolutionResult.getPath().toFile();
+                java.io.File dest   = new java.io.File(destFolder, file.name());
                 dest = resolveConflict(dest);
 
                 java.nio.file.Files.copy(
@@ -647,7 +649,7 @@ public class FileListController {
                 success++;
             } catch (IOException ex) {
                 failed++;
-                failedFiles.add(file.name() + " (lỗi: " + ex.getMessage() + ")");
+                failedFiles.add(file.name() + " (" + I18n.get("export.file.warning.error") + ex.getMessage() + ")");
                 log.error("Exception: ", ex);
             }
         }
@@ -683,10 +685,13 @@ public class FileListController {
                     I18n.get("notification.export.status.success").replace("[x]", String.valueOf(success)),
                     downloadDir);
         } else {
-            alert = AlertHelper.create(Alert.AlertType.WARNING, I18n.get("notification.export.failure.title"),
-                    I18n.get("notification.export.status.failure").replace("[x]", String.valueOf(success))
-                            .replace("[y]", String.valueOf(failed)),
-                    I18n.get("notification.export.list.failure").replace("[x]", String.join("\n", failedFiles)));
+            alert = AlertHelper.createWithScroll(Alert.AlertType.WARNING,
+                            I18n.get("notification.export.failure.title"),
+                            I18n.get("notification.export.status.failure")
+                                    .replace("[x]", String.valueOf(success))
+                                    .replace("[y]", String.valueOf(failed)),
+                            I18n.get("notification.export.list.failure")
+                                    .replace("[x]", String.join("\n", failedFiles)));
         }
         alert.showAndWait();
     }
