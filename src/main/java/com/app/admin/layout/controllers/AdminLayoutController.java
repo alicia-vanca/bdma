@@ -2,10 +2,7 @@ package com.app.admin.layout.controllers;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -133,18 +130,18 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     public AdminLayoutController(ViewLoader viewLoader,
-            AppUpdateController appUpdateController,
-            UserSettingService userSettingService,
-            Session session,
-            DeviceValidationService deviceValidationService,
-            AppNoticeService appNoticeService,
-            DeviceSyncQueue deviceSyncQueue,
-            SyncProgressTracker syncProgressTracker,
-            DataSyncRunner syncRunner,
-            FolderManagerService folderManagerService,
-            AppConfigService appConfigService,
-            ApplicationEventPublisher publisher,
-            StorageHealthMonitor storageHealthMonitor) {
+                                 AppUpdateController appUpdateController,
+                                 UserSettingService userSettingService,
+                                 Session session,
+                                 DeviceValidationService deviceValidationService,
+                                 AppNoticeService appNoticeService,
+                                 DeviceSyncQueue deviceSyncQueue,
+                                 SyncProgressTracker syncProgressTracker,
+                                 DataSyncRunner syncRunner,
+                                 FolderManagerService folderManagerService,
+                                 AppConfigService appConfigService,
+                                 ApplicationEventPublisher publisher,
+                                 StorageHealthMonitor storageHealthMonitor) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
@@ -490,17 +487,29 @@ public class AdminLayoutController extends BaseLayoutController {
         Platform.runLater(() -> {
             File dataDir = folderManagerService.getDataDir();
             File backupDir = folderManagerService.getBackupDir();
+            File exportDir = folderManagerService.getExportDir();
 
-            boolean sameParent = isSameParentFolder(dataDir, backupDir);
+            boolean conflict = isSameParentFolder(dataDir, backupDir)
+                    || isSameParentFolder(dataDir, exportDir)
+                    || isSameParentFolder(backupDir, exportDir);
+
+            // Tạo thông báo chi tiết cặp nào bị conflict
+            List<String> conflictPairs = new ArrayList<>();
+            if (isSameParentFolder(dataDir, backupDir))
+                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.save_backup"));
+            if (isSameParentFolder(dataDir, exportDir))
+                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.save_export"));
+            if (isSameParentFolder(backupDir, exportDir))
+                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.backup_export"));
+
+            lblDriveConflictWarning.setText(String.join("\n", conflictPairs));
+            driveConflictRow.setVisible(conflict);
+            driveConflictRow.setManaged(conflict);
 
             int dataState = updateStorageBar("status.dataFolder", pbDataStorage, lblDataStorageTitle,
                     lblDataStoragePercent, lblDataStorageUsage, dataDir);
             int backupState = updateStorageBar("status.backupFolder", pbBackupStorage, lblBackupStorageTitle,
                     lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
-
-            lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
-            driveConflictRow.setVisible(sameParent);
-            driveConflictRow.setManaged(sameParent);
 
             updateStorageWarning(dataState, backupState);
         });
@@ -547,7 +556,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private int updateStorageBar(String labelKey, ProgressBar pb,
-            Label titleLbl, Label percentLbl, Label usageLbl, File folder) {
+                                 Label titleLbl, Label percentLbl, Label usageLbl, File folder) {
         File statsTarget = resolveStorageStatsTarget(folder);
         if (statsTarget == null || !statsTarget.exists()) {
             pb.setProgress(0);

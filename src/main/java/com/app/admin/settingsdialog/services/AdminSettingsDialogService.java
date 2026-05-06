@@ -37,13 +37,21 @@ public class AdminSettingsDialogService {
     // ── Storage ───────────────────────────────────────────────────────────────
 
     public Optional<String> getFolderPath(FolderType type) {
-        String key = type == FolderType.SAVE ? AppConstants.KEY_DATA_DIR : AppConstants.KEY_BACKUP_DIR;
+        String key = switch (type) {
+            case SAVE   -> AppConstants.KEY_DATA_DIR;
+            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
+            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
+        };
         String path = appConfigService.getConfigValue(key);
         return (path != null && !path.isBlank()) ? Optional.of(path) : Optional.empty();
     }
 
     public void saveFolder(String path, FolderType type) {
-        String key = type == FolderType.SAVE ? AppConstants.KEY_DATA_DIR : AppConstants.KEY_BACKUP_DIR;
+        String key = switch (type) {
+            case SAVE   -> AppConstants.KEY_DATA_DIR;
+            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
+            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
+        };
         String normalizedPath = Path.of(path).toAbsolutePath().normalize().toString();
         appConfigService.saveConfigValue(key, normalizedPath);
         folderManagerService.init();
