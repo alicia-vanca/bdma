@@ -3,9 +3,7 @@ package com.app.common.helpers;
 import com.app.MainApp;
 import com.app.common.utils.StageUtil;
 
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.stage.Stage;
@@ -49,6 +47,28 @@ public final class AlertHelper {
         alert.setTitle(title);
         alert.setHeaderText(header);
         alert.setContentText(content);
+        return alert;
+    }
+
+    public static Alert createWithScroll(Alert.AlertType type, String title, String header, String content) {
+        Alert alert = new Alert(type);
+        configure(alert);
+        alert.setTitle(title);
+        alert.setHeaderText(header);
+
+        // Dùng ScrollPane thay vì contentText
+        Label lblContent = new Label(content);
+        lblContent.setWrapText(true);
+        lblContent.setMaxWidth(500);
+
+        ScrollPane scrollPane = new ScrollPane(lblContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(200);
+        scrollPane.setMaxHeight(300);
+        scrollPane.setStyle("-fx-background-color: transparent;");
+
+        alert.getDialogPane().setContent(scrollPane);
+
         return alert;
     }
 
