@@ -316,7 +316,7 @@ public class AdminSettingsDialogController {
     // Show native directory picker and persist immediately after selection.
     private void selectAndPersistFolder(TextField txtField, FolderType type) {
         DirectoryChooser chooser = new DirectoryChooser();
-        chooser.setTitle(I18n.get("setting.storage.chooser.title", type.toString()));
+        chooser.setTitle(I18n.get("setting.storage.chooser.title", type.toLocalizedString()));
         String current = txtField.getText();
         if (current != null && !current.isBlank()) {
             File currentDir = new File(current);

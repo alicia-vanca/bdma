@@ -95,6 +95,7 @@ public class DeviceTracker implements Runnable {
         if (p != null) {
             p.destroyForcibly();
         }
+        log.info("Device tracking stopped and state reset");
     }
 
     // Signals the tracker to stop, destroys the active adb process.

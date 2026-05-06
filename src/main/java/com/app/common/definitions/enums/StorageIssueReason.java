@@ -1,4 +1,4 @@
-package com.app.common.modules.foldermanager.events;
+package com.app.common.definitions.enums;
 
 public enum StorageIssueReason {
     DRIVE_UNAVAILABLE,

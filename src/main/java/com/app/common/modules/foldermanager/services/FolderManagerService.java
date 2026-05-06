@@ -11,11 +11,15 @@ import java.util.concurrent.Callable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
+import com.app.common.definitions.enums.FolderType;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
+import com.app.common.definitions.enums.StorageIssueReason;
+import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.services.AppConfigService;
 
@@ -36,11 +40,14 @@ public class FolderManagerService {
     private final File tempDir;
 
     private final AppConfigService appConfigService;
+    private final ApplicationEventPublisher publisher;
     private final boolean storageProtectionEnabled;
 
     public FolderManagerService(AppConfigService appConfigService,
+            ApplicationEventPublisher publisher,
             @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled) {
         this.appConfigService = appConfigService;
+        this.publisher = publisher;
         this.storageProtectionEnabled = storageProtectionEnabled;
         this.tempDir = new File(AppDataPaths.appTmpDir());
     }
@@ -120,8 +127,11 @@ public class FolderManagerService {
         return isDirAccessible(backupDirPath);
     }
 
-    // Generic dir accessibility check used by both configured dirs and
-    // sync-context captured dirs.
+    /**
+     * Check if directory is accessible by verifying its drive is available.
+     * Use this before attempting any folder operations to prevent
+     * NoSuchFileException.
+     */
     public boolean isDirAccessible(File dir) {
         return isDriveAccessible(dir);
     }
@@ -202,6 +212,11 @@ public class FolderManagerService {
             throw new IOException("Directory path is null");
         }
 
+        // Fail fast if drive is not accessible
+        if (!isDriveAccessible(specificDir)) {
+            throw new IOException("Drive not accessible: " + specificDir.getAbsolutePath());
+        }
+
         ensureBdmaDirState(specificDir.getAbsolutePath());
 
         return action.call();
@@ -215,6 +230,14 @@ public class FolderManagerService {
         File currentBackupDir = getBackupDir();
         if (currentBackupDir == null) {
             throw new IOException("Backup directory is not configured yet.");
+        }
+
+        // Fail fast if drives are not accessible
+        if (!isDriveAccessible(currentDataDir)) {
+            throw new IOException("Data directory drive not accessible: " + currentDataDir.getAbsolutePath());
+        }
+        if (!isDriveAccessible(currentBackupDir)) {
+            throw new IOException("Backup directory drive not accessible: " + currentBackupDir.getAbsolutePath());
         }
 
         String dataPath = currentDataDir.getAbsolutePath();
@@ -275,6 +298,16 @@ public class FolderManagerService {
 
         File dataDir = new File(configuredPath, AppConstants.DATA_FOLDER_NAME);
 
+        // Check drive accessibility before attempting folder operations
+        if (!isDriveAccessible(dataDir)) {
+            log.warn("DataDir drive not accessible during initialization: {}", dataDir.getAbsolutePath());
+            log.debug("FolderManagerService.initDataDir firing StorageUnavailableEvent: target={} reason={}",
+                    FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE);
+            publisher.publishEvent(
+                    new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE));
+            return;
+        }
+
         try {
             ensureBdmaDirState(dataDir.getAbsolutePath());
             log.info("DataDir initialized: {} (protectionEnabled={})",
@@ -289,6 +322,16 @@ public class FolderManagerService {
             return;
 
         File backupDir = new File(configuredPath, AppConstants.BACKUP_FOLDER_NAME);
+
+        // Check drive accessibility before attempting folder operations
+        if (!isDriveAccessible(backupDir)) {
+            log.warn("BackupDir drive not accessible during initialization: {}", backupDir.getAbsolutePath());
+            log.debug("FolderManagerService.initBackupDir firing StorageUnavailableEvent: target={} reason={}",
+                    FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE);
+            publisher.publishEvent(
+                    new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
+            return;
+        }
 
         try {
             ensureBdmaDirState(backupDir.getAbsolutePath());

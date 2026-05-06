@@ -1,6 +1,5 @@
 package com.app.common.modules.datasync;
 
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 import com.app.common.modules.datasync.workers.DataSyncWorker;
@@ -9,25 +8,31 @@ import com.app.common.services.DeviceTracker;
 import jakarta.annotation.PreDestroy;
 
 @Component
-public class DataSyncRunner implements CommandLineRunner {
+public class DataSyncRunner {
 
     private final DataSyncWorker worker;
     private final DeviceTracker tracker;
     private Thread syncThread;
     private Thread trackerThread;
+    private volatile boolean shuttingDown;
 
     public DataSyncRunner(DataSyncWorker worker, DeviceTracker tracker) {
         this.worker = worker;
         this.tracker = tracker;
     }
 
-    @Override
-    public void run(String... args) {
-        // Only start sync worker on app startup; device tracker starts after login
-        startSyncWorker();
-    }
-
     public synchronized void startSyncWorker() {
+        while (shuttingDown) {
+            try {
+                // Wait for shutdown to complete before starting new worker
+                // Incase user clicks logout and login quickly, we don't want to start the
+                // worker until the previous one has fully shut down
+                wait(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
         if (syncThread == null || !syncThread.isAlive()) {
             worker.resetShutdownFlag();
             syncThread = new Thread(worker, "sync-worker");
@@ -46,7 +51,7 @@ public class DataSyncRunner implements CommandLineRunner {
     }
 
     public synchronized void resetForLogout() {
-        tracker.stopTrackingAndResetState();
+        shuttingDown = true;
 
         if (trackerThread != null) {
             trackerThread.interrupt();
@@ -58,7 +63,7 @@ public class DataSyncRunner implements CommandLineRunner {
             worker.requestShutdown();
             Thread shutdownThread = syncThread;
             syncThread = null;
-            
+
             // Clean up in background to avoid blocking logout UI
             new Thread(() -> {
                 try {
@@ -70,6 +75,8 @@ public class DataSyncRunner implements CommandLineRunner {
                 if (shutdownThread.isAlive()) {
                     shutdownThread.interrupt();
                 }
+                tracker.stopTrackingAndResetState();
+                shuttingDown = false;
             }, "sync-shutdown").start();
         }
     }

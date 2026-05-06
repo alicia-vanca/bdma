@@ -41,10 +41,10 @@ public class AdbClient {
     private static final String ADB_SHELL = "shell";
     public static final String ERR_DEVICE_NOT_FOUND = "ADB_DEVICE_NOT_FOUND";
     private static final Pattern GETPROP_PATTERN = Pattern.compile("^\\[(.+)]\\s*:\\s*\\[(.*)]$");
-
+    private static final String CAMERA_SERVICE_COMPONENT = "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService";
     private final AdbRuntimeService adbRuntimeService;
     private final Map<String, GraceGate> graceGates = new ConcurrentHashMap<>();
-    private volatile Predicate<String> serialPreflightChecker = serial -> true;
+    private final AtomicReference<Predicate<String>> serialPreflightChecker = new AtomicReference<>(serial -> true);
 
     // -------------------------------------------------------------------------
     // Inner types
@@ -126,7 +126,7 @@ public class AdbClient {
     }
 
     public void setSerialPreflightChecker(Predicate<String> serialPreflightChecker) {
-        this.serialPreflightChecker = Objects.requireNonNullElse(serialPreflightChecker, serial -> true);
+        this.serialPreflightChecker.set(Objects.requireNonNullElse(serialPreflightChecker, serial -> true));
     }
 
     // -------------------------------------------------------------------------
@@ -140,13 +140,11 @@ public class AdbClient {
 
         GraceGate gate = graceGates.computeIfAbsent(serial, key -> new GraceGate());
         synchronized (gate) {
-            if (gate.state == SerialState.CONNECTED) {
+            if (gate.state == SerialState.CONNECTED && !serialPreflightChecker.get().test(serial)) {
                 // Manual check before starting a command. Because tracker event has a delay
                 // after device actually disconnects, this reduces the chance of starting a
                 // command that will fail due to disconnection
-                if (!serialPreflightChecker.test(serial)) {
-                    onGraceStarted(serial);
-                }
+                onGraceStarted(serial);
             }
             while (gate.state == SerialState.IN_GRACE) {
                 try {
@@ -437,22 +435,25 @@ public class AdbClient {
     public boolean stopCameraService(String serial) {
         log.debug("[{}] Sending stop Camera service command", serial);
 
-        try {
-            runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
-                    "am", "stopservice",
-                    "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
-        } catch (AppException e) {
-            log.warn("[{}] stopCameraService failed: {}", serial, e.getMessage());
-            return false;
-        }
-
         // Poll until service is confirmed stopped
         long deadline = System.currentTimeMillis() + QUICK_TIMEOUT.toMillis();
         while (System.currentTimeMillis() < deadline) {
+            // Check if service is already stopped
             if (!isCameraServiceRunning(serial)) {
                 log.debug("[{}] Camera service confirmed stopped", serial);
                 return true;
             }
+            // Stop request
+            try {
+                runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
+                        "am", "stopservice",
+                        "-n", CAMERA_SERVICE_COMPONENT);
+            } catch (AppException e) {
+                log.warn("[{}] stopCameraService failed: {}", serial, e.getMessage());
+                return false;
+            }
+
+            // Wait a bit before next check
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
@@ -467,9 +468,11 @@ public class AdbClient {
 
     public boolean startCameraService(String serial) {
         try {
-            return runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
+            boolean result = runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
                     "am", "startservice",
-                    "-n", "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService").exitCode() == 0;
+                    "-n", CAMERA_SERVICE_COMPONENT).exitCode() == 0;
+            log.info("[{}] Camera service restored successfully", serial);
+            return result;
         } catch (AppException e) {
             log.warn("[{}] startCameraService failed: {}", serial, e.getMessage());
             return false;
@@ -490,7 +493,7 @@ public class AdbClient {
         try {
             RunResult result = runWithTimeout(serial, QUICK_TIMEOUT, ADB_SHELL,
                     "dumpsys", "activity", "services",
-                    "com.bodycamera.nettysocket/com.recoda.bodycamera.service.CameraService");
+                    CAMERA_SERVICE_COMPONENT);
             return result.output().contains("ServiceRecord");
         } catch (AppException e) {
             log.debug("[{}] isCameraServiceRunning check failed: {}", serial, e.getMessage());

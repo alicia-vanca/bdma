@@ -10,16 +10,18 @@ import com.app.common.definitions.enums.FolderType;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.databackup.services.DataBackupService;
-import com.app.common.modules.foldermanager.events.StorageIssueReason;
+import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.services.SyncProgressTracker;
 
 /**
  * Worker thread responsible for backing up files from dataDir to backupDir.
- * Processes backup queue independently of sync operations.
+ * Waits for sync to complete before processing backup queue.
+ * Pauses if sync becomes active mid-backup (finishes current file first).
  * Flow:
  * BackupQueue.take() → FolderManagerService.backupFromSave() →
  * BackupService.markBackup()
@@ -33,26 +35,38 @@ public class DataBackupWorker implements Runnable {
     private final FolderManagerService folderManager;
     private final DataBackupService dataBackupService;
     private final ApplicationEventPublisher publisher;
+    private final SyncProgressTracker syncProgressTracker;
     private volatile boolean backupRecoveryDeferred;
+    private volatile boolean shutdownRequested;
 
     public DataBackupWorker(DataBackupQueue dataBackupQueue,
             FolderManagerService folderManager,
             DataBackupService dataBackupService,
-            ApplicationEventPublisher publisher) {
+            ApplicationEventPublisher publisher,
+            SyncProgressTracker syncProgressTracker) {
         this.dataBackupQueue = dataBackupQueue;
         this.folderManager = folderManager;
         this.dataBackupService = dataBackupService;
         this.publisher = publisher;
+        this.syncProgressTracker = syncProgressTracker;
     }
 
     @Override
     public void run() {
-        log.info("BackupWorker started");
+        log.info("Backup worker started");
 
-        while (!Thread.currentThread().isInterrupted()) {
+        while (!Thread.currentThread().isInterrupted() && !shutdownRequested) {
             String nonDriveLetterSyncedPath = null;
             try {
                 nonDriveLetterSyncedPath = dataBackupQueue.take();
+
+                if (shutdownRequested) {
+                    log.info("Shutdown requested, stopping backup worker");
+                    break;
+                }
+
+                // Wait until no sync is active before processing backup
+                waitForSyncToComplete();
 
                 if (!shouldSkipDueToDeferred(nonDriveLetterSyncedPath)) {
                     processBackup(nonDriveLetterSyncedPath);
@@ -71,6 +85,8 @@ public class DataBackupWorker implements Runnable {
                 }
             }
         }
+
+        log.info("BackupWorker stopped gracefully");
     }
 
     /**
@@ -112,6 +128,8 @@ public class DataBackupWorker implements Runnable {
      */
     private boolean checkBackupDirAccessible(String nonDriveLetterSyncedPath) {
         if (!folderManager.isBackupDirAccessible()) {
+            log.debug("DataBackupWorker.checkBackupDirAccessible firing StorageUnavailableEvent: target={} reason={}",
+                    FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE);
             publisher.publishEvent(
                     new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
             log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
@@ -127,6 +145,9 @@ public class DataBackupWorker implements Runnable {
         try {
             long sourceSize = folderManager.resolveExistingFileSize(nonDriveLetterSyncedPath);
             if (!folderManager.hasSufficientSpace(folderManager.getBackupDir(), sourceSize)) {
+                log.debug(
+                        "DataBackupWorker.checkSufficientSpace firing StorageUnavailableEvent: target={} reason={} requiredBytes={}",
+                        FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize);
                 publisher.publishEvent(
                         new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize));
                 log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
@@ -172,5 +193,36 @@ public class DataBackupWorker implements Runnable {
         if (event != null && event.getTarget() == FolderType.BACKUP) {
             backupRecoveryDeferred = false;
         }
+    }
+
+    /**
+     * Wait until sync is not active (SYNCING or QUEUED).
+     */
+    private void waitForSyncToComplete() throws InterruptedException {
+        while (isSyncActive()) {
+            log.debug("Sync active, backup paused. Waiting...");
+            Thread.sleep(5000);
+        }
+    }
+
+    /**
+     * Check if any device has active sync.
+     */
+    private boolean isSyncActive() {
+        return syncProgressTracker.isAnySyncActive();
+    }
+
+    /**
+     * Request graceful shutdown. Worker will finish current file then stop.
+     */
+    public void requestShutdown() {
+        shutdownRequested = true;
+    }
+
+    /**
+     * Reset shutdown flag when restarting the worker.
+     */
+    public void resetShutdownFlag() {
+        shutdownRequested = false;
     }
 }

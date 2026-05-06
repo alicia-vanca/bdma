@@ -13,8 +13,7 @@ public enum FolderType {
         };
     }
 
-    @Override
-    public String toString() {
+    public String toLocalizedString() {
         return I18n.get("storage.type." + this.name().toLowerCase());
     }
 }
