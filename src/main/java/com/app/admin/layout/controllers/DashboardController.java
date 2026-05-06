@@ -1,5 +1,12 @@
 package com.app.admin.layout.controllers;
 
+import java.util.Comparator;
+import java.util.Optional;
+import java.util.function.Consumer;
+
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
+
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceSummary;
@@ -12,23 +19,26 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.SyncProgressTracker;
+
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
-import javafx.scene.control.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
-import javafx.scene.layout.*;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.SVGPath;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
-
-import java.util.Comparator;
-import java.util.Optional;
-import java.util.function.Consumer;
 
 @Component
 public class DashboardController extends BaseLayoutController {
@@ -47,15 +57,15 @@ public class DashboardController extends BaseLayoutController {
     private boolean deviceStateInitialized;
     private Consumer<DeviceSummary> onRequestValidate;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
-                    DashboardController::sortName,
-                    String.CASE_INSENSITIVE_ORDER)
+            DashboardController::sortName,
+            String.CASE_INSENSITIVE_ORDER)
             .thenComparing(summary -> summary.getHardwareId() == null ? "" : summary.getHardwareId(),
                     String.CASE_INSENSITIVE_ORDER);
 
     public DashboardController(ViewLoader viewLoader,
-                               ValidatedDeviceRepository validatedDeviceRepository,
-                               SyncProgressTracker syncProgressTracker,
-                               Session session) {
+            ValidatedDeviceRepository validatedDeviceRepository,
+            SyncProgressTracker syncProgressTracker,
+            Session session) {
         super(viewLoader);
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.syncProgressTracker = syncProgressTracker;
@@ -127,9 +137,9 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void setupEditBehavior(DeviceSummary summary,
-                                   Label name,
-                                   TextField nameField,
-                                   SVGPath icon) {
+            Label name,
+            TextField nameField,
+            SVGPath icon) {
 
         icon.setOnMousePressed(Event::consume);
 
@@ -162,8 +172,8 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private Runnable createCommitAction(DeviceSummary summary,
-                                        Label name,
-                                        TextField nameField) {
+            Label name,
+            TextField nameField) {
 
         return () -> {
             String newName = nameField.getText();
@@ -230,7 +240,7 @@ public class DashboardController extends BaseLayoutController {
     // Display sync progress for connected devices: queued, syncing with counts, or
     // idle
     private String resolveConnectedText(SyncProgressTracker.SyncStatus status,
-                                        SyncProgressTracker.SyncProgress progress) {
+            SyncProgressTracker.SyncProgress progress) {
 
         return switch (status) {
             case QUEUED -> I18n.get("dashboard.device.queued");

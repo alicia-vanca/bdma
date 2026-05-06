@@ -17,8 +17,8 @@ import org.springframework.stereotype.Service;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.definitions.enums.FolderType;
-import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.definitions.enums.StorageIssueReason;
+import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.services.AppConfigService;
@@ -35,6 +35,7 @@ import lombok.Getter;
 public class FolderManagerService {
 
     private static final Logger log = LoggerFactory.getLogger(FolderManagerService.class);
+    private static final String DEFAULT_ROOT_FOLDER = "BDMA_User_Data";
 
     @Getter
     private final File tempDir;
@@ -57,20 +58,20 @@ public class FolderManagerService {
     public void init() {
         String dataDirPath = appConfigService.getConfigValue(AppConstants.KEY_DATA_DIR);
         if (dataDirPath == null || dataDirPath.isBlank()) {
-            dataDirPath = Path.of("C:", "BDMA_User_Data", "DataSave").toString();
+            dataDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataSave").toString();
             appConfigService.saveConfigValue(AppConstants.KEY_DATA_DIR, dataDirPath);
             log.info("Initialized default save folder: {}", dataDirPath);
         }
 
         String backupDirPath = appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR);
         if (backupDirPath == null || backupDirPath.isBlank()) {
-            backupDirPath = Path.of("C:", "BDMA_User_Data", "DataBackup").toString();
+            backupDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataBackup").toString();
             appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
             log.info("Initialized default backup folder: {}", backupDirPath);
         }
         String exportDirPath = appConfigService.getConfigValue(AppConstants.KEY_EXPORT_DIR);
         if (exportDirPath == null || exportDirPath.isBlank()) {
-            exportDirPath = Path.of("C:", "BDMA_User_Data", "DataExport").toString();
+            exportDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataExport").toString();
             appConfigService.saveConfigValue(AppConstants.KEY_EXPORT_DIR, exportDirPath);
             log.info("Initialized default export folder: {}", exportDirPath);
         }
@@ -297,19 +298,6 @@ public class FolderManagerService {
         throw new FileNotFoundOnAnyDriveException(nonDriverLetterPath);
     }
 
-    private void initExportDir(String configuredPath) {
-        if (configuredPath == null || configuredPath.isBlank()) return;
-
-        File exportDir = new File(configuredPath, AppConstants.EXPORT_FOLDER_NAME);
-        try {
-            ensureBdmaDirState(exportDir.getAbsolutePath());
-            log.info("ExportDir initialized: {} (protectionEnabled={})",
-                    exportDir.getAbsolutePath(), storageProtectionEnabled);
-        } catch (IOException e) {
-            log.error("Failed to initialize export directory", e);
-        }
-    }
-
     // ── Private ──────────────────────────────────────────────────────────────
 
     private void initDataDir(String configuredPath) {
@@ -359,6 +347,31 @@ public class FolderManagerService {
                     backupDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
             log.error("Failed to initialize backup directory", e);
+        }
+    }
+
+    private void initExportDir(String configuredPath) {
+        if (configuredPath == null || configuredPath.isBlank())
+            return;
+
+        File exportDir = new File(configuredPath, AppConstants.EXPORT_FOLDER_NAME);
+
+        // Check drive accessibility before attempting folder operations
+        if (!isDriveAccessible(exportDir)) {
+            log.warn("ExportDir drive not accessible during initialization: {}", exportDir.getAbsolutePath());
+            log.debug("FolderManagerService.initExportDir firing StorageUnavailableEvent: target={} reason={}",
+                    FolderType.EXPORT, StorageIssueReason.DRIVE_UNAVAILABLE);
+            publisher.publishEvent(
+                    new StorageUnavailableEvent(FolderType.EXPORT, StorageIssueReason.DRIVE_UNAVAILABLE));
+            return;
+        }
+
+        try {
+            ensureBdmaDirState(exportDir.getAbsolutePath());
+            log.info("ExportDir initialized: {} (protectionEnabled={})",
+                    exportDir.getAbsolutePath(), storageProtectionEnabled);
+        } catch (IOException e) {
+            log.error("Failed to initialize export directory", e);
         }
     }
 

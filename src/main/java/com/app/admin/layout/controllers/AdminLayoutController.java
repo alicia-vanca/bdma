@@ -2,6 +2,7 @@ package com.app.admin.layout.controllers;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,8 +73,9 @@ public class AdminLayoutController extends BaseLayoutController {
     private static final int STORAGE_OK = 0;
     private static final int STORAGE_CRITICAL = 1;
     private static final int STORAGE_UNAVAILABLE = 2;
-    private static final String STATUS_DATA_DRIVE = "status.dataDrive";
+    private static final String STATUS_SYNC_DRIVE = "status.syncDrive";
     private static final String STATUS_BACKUP_DRIVE = "status.backupDrive";
+    private static final String STATUS_EXPORT_DRIVE = "status.exportDrive";
     private static final String CSS_STORAGE_WARN = "storage-warn";
     private static final String CSS_STORAGE_CRITICAL = "storage-critical";
 
@@ -506,17 +508,29 @@ public class AdminLayoutController extends BaseLayoutController {
         Platform.runLater(() -> {
             File dataDir = folderManagerService.getDataDir();
             File backupDir = folderManagerService.getBackupDir();
+            File exportDir = folderManagerService.getExportDir();
 
-            boolean sameParent = isSameParentFolder(dataDir, backupDir);
+            boolean conflict = isSameParentFolder(dataDir, backupDir)
+                    || isSameParentFolder(dataDir, exportDir)
+                    || isSameParentFolder(backupDir, exportDir);
 
-            int dataState = updateStorageBar(STATUS_DATA_DRIVE, pbDataStorage, lblDataStorageTitle,
+            // Tạo thông báo chi tiết cặp nào bị conflict
+            List<String> conflictPairs = new ArrayList<>();
+            if (isSameParentFolder(dataDir, backupDir))
+                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.save_backup"));
+            if (isSameParentFolder(dataDir, exportDir))
+                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.save_export"));
+            if (isSameParentFolder(backupDir, exportDir))
+                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.backup_export"));
+
+            lblDriveConflictWarning.setText(String.join("\n", conflictPairs));
+            driveConflictRow.setVisible(conflict);
+            driveConflictRow.setManaged(conflict);
+
+            int dataState = updateStorageBar(STATUS_SYNC_DRIVE, pbDataStorage, lblDataStorageTitle,
                     lblDataStoragePercent, lblDataStorageUsage, dataDir);
             int backupState = updateStorageBar(STATUS_BACKUP_DRIVE, pbBackupStorage, lblBackupStorageTitle,
                     lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
-
-            lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
-            driveConflictRow.setVisible(sameParent);
-            driveConflictRow.setManaged(sameParent);
 
             updateStorageWarning(dataState, backupState);
         });
@@ -547,19 +561,19 @@ public class AdminLayoutController extends BaseLayoutController {
             return "status.storage.both.unavailable";
         }
         if (dataState == STORAGE_UNAVAILABLE) {
-            return "status.storage.data.unavailable";
+            return "status.storage.syncDrive.unavailable";
         }
         if (backupState == STORAGE_UNAVAILABLE) {
-            return "status.storage.backup.unavailable";
+            return "status.storage.backupDrive.unavailable";
         }
 
         if (dataState == STORAGE_CRITICAL && backupState == STORAGE_CRITICAL) {
             return "status.storage.both.critical";
         }
         if (dataState == STORAGE_CRITICAL) {
-            return "status.storage.data.critical";
+            return "status.storage.syncDrive.critical";
         }
-        return "status.storage.backup.critical";
+        return "status.storage.backupDrive.critical";
     }
 
     private int updateStorageBar(String labelKey, ProgressBar pb,
@@ -732,10 +746,12 @@ public class AdminLayoutController extends BaseLayoutController {
             String targetDrive = "";
             if (event.getTarget() == FolderType.SAVE) {
                 syncStorageBlocked = event.getReason();
-                targetDrive = I18n.get(STATUS_DATA_DRIVE);
+                targetDrive = I18n.get(STATUS_SYNC_DRIVE);
             } else if (event.getTarget() == FolderType.BACKUP) {
                 backupStorageBlocked = event.getReason();
                 targetDrive = I18n.get(STATUS_BACKUP_DRIVE);
+            } else if (event.getTarget() == FolderType.EXPORT) {
+                targetDrive = I18n.get(STATUS_EXPORT_DRIVE);
             }
 
             if (!session.isAdmin()) {
@@ -774,15 +790,18 @@ public class AdminLayoutController extends BaseLayoutController {
             } else if (event.getTarget() == FolderType.BACKUP) {
                 backupStorageBlocked = null;
             }
+            // Export folder doesn't block operations
             logDebug("Storage unavailable dialog closed. target={}", event.getTarget());
             refreshStorageStatus();
         }
     }
 
     private Alert createStorageUnavailableAlert(StorageUnavailableEvent event) {
-        String targetDrive = event.getTarget() == FolderType.SAVE
-                ? I18n.get(STATUS_DATA_DRIVE)
-                : I18n.get(STATUS_BACKUP_DRIVE);
+        String targetDrive = switch (event.getTarget()) {
+            case SAVE -> I18n.get(STATUS_SYNC_DRIVE);
+            case BACKUP -> I18n.get(STATUS_BACKUP_DRIVE);
+            case EXPORT -> I18n.get(STATUS_EXPORT_DRIVE);
+        };
         String header = "";
         String content = "";
         if (event.getReason() == StorageIssueReason.LOW_SPACE) {
@@ -875,6 +894,7 @@ public class AdminLayoutController extends BaseLayoutController {
         } else if (event.getTarget() == FolderType.BACKUP) {
             backupStorageBlocked = null;
         }
+        // Export folder recovery doesn't need special handling
     }
 
     private void drainPendingSyncs() {
@@ -900,6 +920,7 @@ public class AdminLayoutController extends BaseLayoutController {
             } else if (event.getTarget() == FolderType.BACKUP) {
                 backupStorageBlocked = null;
             }
+            // Export folder recovery doesn't need special handling
         }
         refreshStorageStatus();
     }
@@ -939,7 +960,11 @@ public class AdminLayoutController extends BaseLayoutController {
             return new FolderSelectionResult(false, rejection);
         }
 
-        String key = target == FolderType.SAVE ? AppConstants.KEY_DATA_DIR : AppConstants.KEY_BACKUP_DIR;
+        String key = switch (target) {
+            case SAVE -> AppConstants.KEY_DATA_DIR;
+            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
+            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
+        };
         appConfigService.saveConfigValue(key, selected.getAbsolutePath());
         folderManagerService.init();
         showNoticeSuccess(I18n.get(I18N_SETTING_STORAGE_SUCCESS));
@@ -964,7 +989,11 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private File readConfiguredRootPath(FolderType target) {
-        String key = target == FolderType.SAVE ? AppConstants.KEY_DATA_DIR : AppConstants.KEY_BACKUP_DIR;
+        String key = switch (target) {
+            case SAVE -> AppConstants.KEY_DATA_DIR;
+            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
+            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
+        };
         String path = appConfigService.getConfigValue(key);
         if (path == null || path.isBlank()) {
             return null;
@@ -973,8 +1002,12 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private String validateSelectedStorageFolder(FolderType target, File selectedRoot, long requiredBytes) {
-        File managedDir = new File(selectedRoot,
-                target == FolderType.SAVE ? AppConstants.DATA_FOLDER_NAME : AppConstants.BACKUP_FOLDER_NAME);
+        String folderName = switch (target) {
+            case SAVE -> AppConstants.DATA_FOLDER_NAME;
+            case BACKUP -> AppConstants.BACKUP_FOLDER_NAME;
+            case EXPORT -> AppConstants.EXPORT_FOLDER_NAME;
+        };
+        File managedDir = new File(selectedRoot, folderName);
 
         if (!folderManagerService.isDirAccessible(managedDir)) {
             return I18n.get(I18N_SETTING_STORAGE_DRIVE_MISSING);

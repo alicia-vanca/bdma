@@ -1,5 +1,17 @@
 package com.app.admin.settingsdialog.controllers;
 
+import java.io.File;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Component;
+
 import com.app.MainApp;
 import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
@@ -21,24 +33,19 @@ import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.services.DriveResolverService;
 import com.app.common.services.UserSettingService;
+
 import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.scene.control.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
 import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.stereotype.Component;
-
-import java.io.File;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
 
 @Component
 public class AdminSettingsDialogController {
@@ -352,7 +359,10 @@ public class AdminSettingsDialogController {
         Path root1 = Path.of(path1).getRoot();
         Path root2 = Path.of(path2).getRoot();
 
-        if (root1 == null || root2 == null) return false;
+            
+            
+        if (root1 == null || root2 == null)
+            return false;
 
         return root1.toString().equalsIgnoreCase(root2.toString());
     }
