@@ -22,8 +22,6 @@ import com.app.common.helpers.CssLoader;
 import com.app.common.helpers.NavigationHelper;
 import com.app.common.helpers.SpringContextHolder;
 import com.app.common.helpers.ViewLoader;
-import com.app.common.modules.databackup.services.DataBackupService;
-import com.app.common.modules.databackup.workers.DataBackupWorker;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.theme.ThemeManager;
@@ -90,14 +88,6 @@ public class MainApp extends Application {
         Thread.setDefaultUncaughtExceptionHandler(handler);
 
         folderManagerService = springContext.getBean(FolderManagerService.class);
-        folderManagerService.init();
-        DataBackupWorker backupWorker = springContext.getBean(DataBackupWorker.class);
-        Thread backupThread = new Thread(backupWorker, "backup-worker");
-        backupThread.setDaemon(true);
-        backupThread.start();
-
-        DataBackupService backupService = springContext.getBean(DataBackupService.class);
-        backupService.init();
     }
 
     @Override

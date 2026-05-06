@@ -1,32 +1,40 @@
 package com.app.common.modules.foldermanager.services;
 
-import java.util.concurrent.TimeUnit;
-
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.enums.FolderType;
-import com.app.common.modules.foldermanager.events.StorageIssueReason;
+import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
+import com.app.common.modules.session.Session;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Component
 public class StorageHealthMonitor {
 
     private final FolderManagerService folderManagerService;
     private final ApplicationEventPublisher publisher;
+    private final Session session;
 
     private volatile boolean dataUnavailablePublished;
     private volatile boolean backupUnavailablePublished;
 
-    public StorageHealthMonitor(FolderManagerService folderManagerService, ApplicationEventPublisher publisher) {
+    public StorageHealthMonitor(FolderManagerService folderManagerService, ApplicationEventPublisher publisher,
+            Session session) {
         this.folderManagerService = folderManagerService;
         this.publisher = publisher;
+        this.session = session;
     }
 
-    @Scheduled(fixedDelay = 30, timeUnit = TimeUnit.SECONDS)
     public void checkStorageHealth() {
+        // Skip health check if user not logged in
+        if (session.getUser() == null) {
+            return;
+        }
+
         boolean dataAccessible = folderManagerService.isDataDirAccessible();
         boolean backupAccessible = folderManagerService.isBackupDirAccessible();
 
@@ -41,23 +49,31 @@ public class StorageHealthMonitor {
     private void publishState(FolderType target, boolean accessible) {
         if (target == FolderType.SAVE) {
             if (!accessible && !dataUnavailablePublished) {
+                log.debug("StorageHealthMonitor firing StorageUnavailableEvent: target={} reason={}",
+                        FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE);
                 publisher.publishEvent(
                         new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE));
                 dataUnavailablePublished = true;
             } else if (accessible && dataUnavailablePublished) {
+                log.debug("StorageHealthMonitor firing StorageRestoredEvent: target={}", FolderType.SAVE);
                 publisher.publishEvent(new StorageRestoredEvent(FolderType.SAVE));
                 dataUnavailablePublished = false;
             }
             return;
         }
 
-        if (!accessible && !backupUnavailablePublished) {
-            publisher
-                    .publishEvent(new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
-            backupUnavailablePublished = true;
-        } else if (accessible && backupUnavailablePublished) {
-            publisher.publishEvent(new StorageRestoredEvent(FolderType.BACKUP));
-            backupUnavailablePublished = false;
+        if (target == FolderType.BACKUP) {
+            if (!accessible && !backupUnavailablePublished) {
+                log.debug("StorageHealthMonitor firing StorageUnavailableEvent: target={} reason={}",
+                        FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE);
+                publisher.publishEvent(
+                        new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
+                backupUnavailablePublished = true;
+            } else if (accessible && backupUnavailablePublished) {
+                log.debug("StorageHealthMonitor firing StorageRestoredEvent: target={}", FolderType.BACKUP);
+                publisher.publishEvent(new StorageRestoredEvent(FolderType.BACKUP));
+                backupUnavailablePublished = false;
+            }
         }
     }
 }

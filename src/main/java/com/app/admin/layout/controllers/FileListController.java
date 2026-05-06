@@ -1,5 +1,23 @@
 package com.app.admin.layout.controllers;
 
+import java.io.IOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
+
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileView;
@@ -11,6 +29,7 @@ import com.app.common.modules.session.Session;
 import com.app.common.services.AppConfigService;
 import com.app.common.services.FileService;
 import com.app.common.services.UserService;
+
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -19,23 +38,18 @@ import javafx.collections.ObservableSet;
 import javafx.collections.SetChangeListener;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
-import javafx.scene.control.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
 import javafx.scene.layout.HBox;
 import javafx.util.StringConverter;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Scope;
-import org.springframework.stereotype.Component;
-
-import java.io.IOException;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
+import lombok.Setter;
 
 @Component
 @Scope("prototype")
@@ -91,8 +105,7 @@ public class FileListController {
     @FXML
     private Label lblSelectedCount;
 
-    private final ObservableSet<FileView> selectedItems =
-            FXCollections.observableSet(new HashSet<>());
+    private final ObservableSet<FileView> selectedItems = FXCollections.observableSet(new HashSet<>());
 
     private final FileService fileService;
     private final UserService userService;
@@ -104,6 +117,7 @@ public class FileListController {
     private List<FileView> filteredFiles = new ArrayList<>();
     private int pageSize = AppConstants.DEFAULT_PAGE_SIZE;
     private int currentPageIndex = 0;
+    @Setter
     private Runnable onClearFilter;
 
     // Async file verification with concurrent thread pool
@@ -120,8 +134,9 @@ public class FileListController {
         CHECKING, EXISTS, MISSING, ERROR
     }
 
-    public FileListController(AppConfigService appConfigService, FileService fileService, UserService userService, Session session,
-                              FolderManagerService folderManagerService) {
+    public FileListController(AppConfigService appConfigService, FileService fileService, UserService userService,
+            Session session,
+            FolderManagerService folderManagerService) {
         this.appConfigService = appConfigService;
         this.fileService = fileService;
         this.userService = userService;
@@ -155,7 +170,7 @@ public class FileListController {
     }
 
     private void setupDatePickers() {
-        StringConverter<LocalDate> converter = new StringConverter<LocalDate>() {
+        StringConverter<LocalDate> converter = new StringConverter<>() {
             @Override
             public String toString(LocalDate date) {
                 return date != null ? date.format(DATE_PICKER_FORMATTER) : "";
@@ -241,10 +256,6 @@ public class FileListController {
     public void filterByDevice(String hardwareId) {
         this.activeHardwareId = hardwareId;
         refresh(buildFilter());
-    }
-
-    public void setOnClearFilter(Runnable callback) {
-        this.onClearFilter = callback;
     }
 
     @FXML
@@ -542,8 +553,7 @@ public class FileListController {
         });
 
         // Cell factory
-        colSelect.setCellValueFactory(data ->
-                new SimpleBooleanProperty(selectedItems.contains(data.getValue())));
+        colSelect.setCellValueFactory(data -> new SimpleBooleanProperty(selectedItems.contains(data.getValue())));
 
         colSelect.setCellFactory(col -> new TableCell<>() {
             private final CheckBox cb = new CheckBox();
@@ -551,8 +561,10 @@ public class FileListController {
             {
                 cb.setOnAction(e -> {
                     FileView item = getTableView().getItems().get(getIndex());
-                    if (cb.isSelected()) selectedItems.add(item);
-                    else selectedItems.remove(item);
+                    if (cb.isSelected())
+                        selectedItems.add(item);
+                    else
+                        selectedItems.remove(item);
                 });
             }
 
@@ -579,15 +591,15 @@ public class FileListController {
             // Cập nhật trạng thái "Select All"
             chkSelectAll.setSelected(
                     !fileTable.getItems().isEmpty() &&
-                            selectedItems.containsAll(fileTable.getItems())
-            );
+                            selectedItems.containsAll(fileTable.getItems()));
         });
     }
 
     @FXML
     private void onDownloadSelected(ActionEvent e) {
         List<FileView> toDownload = new ArrayList<>(selectedItems);
-        if (toDownload.isEmpty()) return;
+        if (toDownload.isEmpty())
+            return;
 
         String downloadDir = appConfigService.getConfigValue(AppConstants.KEY_EXPORT_DIR);
 
@@ -599,7 +611,8 @@ public class FileListController {
             return;
         }
         java.io.File destFolder = new java.io.File(downloadDir);
-        if (!destFolder.exists()) destFolder.mkdirs();
+        if (!destFolder.exists())
+            destFolder.mkdirs();
 
         // Tính tổng dung lượng file được chọn
         long totalSize = toDownload.stream()
@@ -638,14 +651,13 @@ public class FileListController {
                 }
 
                 java.io.File source = pathResolutionResult.getPath().toFile();
-                java.io.File dest   = new java.io.File(destFolder, file.name());
+                java.io.File dest = new java.io.File(destFolder, file.name());
                 dest = resolveConflict(dest);
 
                 java.nio.file.Files.copy(
                         source.toPath(),
                         dest.toPath(),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                );
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 success++;
             } catch (IOException ex) {
                 failed++;
@@ -658,7 +670,8 @@ public class FileListController {
     }
 
     private java.io.File resolveConflict(java.io.File file) {
-        if (!file.exists()) return file;
+        if (!file.exists())
+            return file;
 
         String name = file.getName();
         String baseName = name.contains(".")
@@ -678,7 +691,7 @@ public class FileListController {
     }
 
     private void showDownloadResult(int success, int failed,
-                                    List<String> failedFiles, String downloadDir) {
+            List<String> failedFiles, String downloadDir) {
         Alert alert;
         if (failed == 0) {
             alert = AlertHelper.createInformation(I18n.get("notification.export.success.title"),
@@ -686,12 +699,12 @@ public class FileListController {
                     downloadDir);
         } else {
             alert = AlertHelper.createWithScroll(Alert.AlertType.WARNING,
-                            I18n.get("notification.export.failure.title"),
-                            I18n.get("notification.export.status.failure")
-                                    .replace("[x]", String.valueOf(success))
-                                    .replace("[y]", String.valueOf(failed)),
-                            I18n.get("notification.export.list.failure")
-                                    .replace("[x]", String.join("\n", failedFiles)));
+                    I18n.get("notification.export.failure.title"),
+                    I18n.get("notification.export.status.failure")
+                            .replace("[x]", String.valueOf(success))
+                            .replace("[y]", String.valueOf(failed)),
+                    I18n.get("notification.export.list.failure")
+                            .replace("[x]", String.join("\n", failedFiles)));
         }
         alert.showAndWait();
     }

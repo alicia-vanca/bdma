@@ -2,6 +2,7 @@ package com.app.common.modules.foldermanager.events;
 
 import com.app.common.definitions.enums.FolderType;
 
+import com.app.common.definitions.enums.StorageIssueReason;
 import lombok.Getter;
 
 @Getter

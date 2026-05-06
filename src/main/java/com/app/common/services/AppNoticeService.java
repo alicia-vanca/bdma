@@ -1,9 +1,11 @@
 package com.app.common.services;
 
+import org.springframework.stereotype.Component;
+
 import com.app.common.helpers.NoticeStackRenderer;
+
 import javafx.application.Platform;
 import javafx.scene.layout.VBox;
-import org.springframework.stereotype.Component;
 
 /**
  * Routes feature-level notifications to the active shell notice container.

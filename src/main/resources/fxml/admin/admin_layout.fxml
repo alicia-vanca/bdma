@@ -40,11 +40,25 @@
             </VBox>
         </top>
         <center>
-            <StackPane fx:id="contentArea" styleClass="content-shell"/>
+            <StackPane>
+                <BorderPane>
+                    <center>
+                        <StackPane fx:id="contentArea" styleClass="content-shell" VBox.vgrow="ALWAYS"/>
+                    </center>
+                </BorderPane>
+                <VBox fx:id="noticeContainer"
+                      spacing="7"
+                      alignment="BOTTOM_CENTER"
+                      fillWidth="false"
+                      mouseTransparent="true">
+                    <StackPane.margin>
+                        <Insets right="0" bottom="20" left="0"/>
+                    </StackPane.margin>
+                </VBox>
+            </StackPane>
         </center>
         <bottom>
             <VBox fx:id="statusBar" styleClass="status-bar" spacing="0">
-
                 <!-- Warning strip: shown when storage is critical -->
                 <HBox fx:id="warningStrip"
                       alignment="CENTER_LEFT"
@@ -52,18 +66,20 @@
                       styleClass="status-warning-strip"
                       managed="false"
                       visible="false">
-                    <padding><Insets top="5" right="16" bottom="5" left="16"/></padding>
+                    <padding>
+                        <Insets top="5" right="16" bottom="5" left="16"/>
+                    </padding>
                     <Label text="⚠" styleClass="status-warning-icon"/>
                     <Label fx:id="lblStatusWarning"
                            wrapText="false"
                            styleClass="status-warning-label"
                            HBox.hgrow="ALWAYS"/>
                 </HBox>
-
                 <!-- Storage panels row -->
                 <HBox alignment="CENTER_LEFT" spacing="0" styleClass="status-storage-row">
-                    <padding><Insets top="10" right="20" bottom="10" left="20"/></padding>
-
+                    <padding>
+                        <Insets top="10" right="20" bottom="10" left="20"/>
+                    </padding>
                     <!-- Data storage panel -->
                     <VBox spacing="5" HBox.hgrow="ALWAYS" styleClass="storage-panel">
                         <HBox alignment="CENTER_LEFT">
@@ -77,11 +93,11 @@
                                      maxWidth="1.7976931348623157E308"/>
                         <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
                     </VBox>
-
                     <Separator orientation="VERTICAL" styleClass="storage-separator">
-                        <HBox.margin><Insets left="20" right="20"/></HBox.margin>
+                        <HBox.margin>
+                            <Insets left="20" right="20"/>
+                        </HBox.margin>
                     </Separator>
-
                     <!-- Backup storage panel -->
                     <VBox spacing="5" HBox.hgrow="ALWAYS" styleClass="storage-panel">
                         <HBox alignment="CENTER_LEFT">
@@ -96,25 +112,16 @@
                         <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
                     </VBox>
                 </HBox>
-
                 <!-- Drive conflict warning -->
                 <HBox managed="false" visible="false"
                       fx:id="driveConflictRow">
-                    <padding><Insets top="0" right="20" bottom="6" left="20"/></padding>
+                    <padding>
+                        <Insets top="0" right="20" bottom="6" left="20"/>
+                    </padding>
                     <Label fx:id="lblDriveConflictWarning" wrapText="true"
                            styleClass="settings-warning"/>
                 </HBox>
             </VBox>
         </bottom>
     </BorderPane>
-    <VBox fx:id="noticeContainer"
-          spacing="8"
-          alignment="BOTTOM_CENTER"
-          fillWidth="false"
-          mouseTransparent="true"
-          StackPane.alignment="BOTTOM_CENTER">
-        <StackPane.margin>
-            <Insets top="0" right="0" bottom="100" left="0"/>
-        </StackPane.margin>
-    </VBox>
 </StackPane>

@@ -13,6 +13,7 @@ import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
+import com.app.common.modules.session.Session;
 import com.app.common.repositories.FileRepository;
 
 @Service
@@ -23,30 +24,16 @@ public class DataBackupService {
     private final FileRepository fileRepo;
     private final DataBackupQueue dataBackupQueue;
     private final ApplicationEventPublisher publisher;
+    private final Session session;
 
     public DataBackupService(FileRepository fileRepo,
             DataBackupQueue dataBackupQueue,
-            ApplicationEventPublisher publisher) {
+            ApplicationEventPublisher publisher,
+            Session session) {
         this.fileRepo = fileRepo;
         this.dataBackupQueue = dataBackupQueue;
         this.publisher = publisher;
-    }
-
-    /**
-     * Initializes backup queue on application startup.
-     * Loads files with status = SYNCED and enqueues them for backup.
-     * Handles recovery after unexpected shutdown.
-     */
-    public void init() {
-        List<String> pending = fileRepo.loadPendingBackup();
-
-        if (pending.isEmpty()) {
-            log.info("No pending backup files found.");
-            return;
-        }
-
-        log.info("Found {} file(s) pending backup, enqueuing...", pending.size());
-        pending.forEach(dataBackupQueue::add);
+        this.session = session;
     }
 
     /**
@@ -66,6 +53,11 @@ public class DataBackupService {
 
     @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.HOURS)
     public void recoverPendingBackups() {
+        // Skip recovery if user is not logged in
+        if (session.getUser() == null) {
+            return;
+        }
+
         // Re-open backup attempts once per recovery window so user can be notified
         // again if backup storage is still unavailable.
         publisher.publishEvent(new StorageRestoredEvent(FolderType.BACKUP));

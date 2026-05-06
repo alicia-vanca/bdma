@@ -19,15 +19,16 @@ import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
+import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.dtos.FileInfo;
 import com.app.common.dtos.SyncContext;
 import com.app.common.events.DeviceEvent;
 import com.app.common.exceptions.DeviceDisconnectedException;
+import com.app.common.helpers.AlertHelper;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
-import com.app.common.modules.foldermanager.events.StorageIssueReason;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
@@ -60,6 +61,12 @@ public class DataSyncWorker implements Runnable {
     private static final String ERROR_SIZE_MISMATCH = "device.sync.error.size_mismatch";
     private static final String ERROR_TRANSFER = "device.sync.error.transfer";
     private static final String ERROR_ADB_PULL_FAILED = "device.sync.error.adb_pull_failed";
+
+    private static final String SYNC_SUMMARY_TITLE = "device.sync.summary.title";
+    private static final String SYNC_SUMMARY_HEADER = "device.sync.summary.header";
+    private static final String SYNC_SUMMARY_CONTENT = "device.sync.summary.content";
+    private static final String SYNC_SUMMARY_COLUMN_FILENAME = "device.sync.summary.column.filename";
+    private static final String SYNC_SUMMARY_COLUMN_REASON = "device.sync.summary.column.reason";
 
     private final DeviceSyncQueue queue;
     private final DataSyncService dataSyncService;
@@ -164,6 +171,7 @@ public class DataSyncWorker implements Runnable {
 
     @Override
     public void run() {
+        log.info("Sync worker started");
         while (!shutdownRequested && !Thread.currentThread().isInterrupted()) {
             try {
                 DeviceSyncQueue.Entry entry = queue.take();
@@ -204,6 +212,8 @@ public class DataSyncWorker implements Runnable {
             if (deviceId == null || userId == null)
                 return;
 
+            String deviceName = syncContext.deviceName();
+
             adbClient.stopCameraService(hardwareId);
             adbClient.setUsbFunctionsNone(hardwareId);
 
@@ -235,6 +245,10 @@ public class DataSyncWorker implements Runnable {
             long elapsedMs = System.currentTimeMillis() - startedAt;
             log.info("Finished sync for {}: total={}, passed={}, failed={}, elapsedMs={}",
                     hardwareId, counters.total, counters.passed, counters.failed, elapsedMs);
+
+            if (counters.failed > 0 && !shutdownRequested) {
+                showSyncFailureSummary(deviceName, counters, failedList);
+            }
         } catch (PreflightException e) {
             log.warn("Aborting sync for {} before file processing: {}", hardwareId, e.getMessage());
             progressTracker.markSyncing(hardwareId, 1, 0, 1);
@@ -352,13 +366,24 @@ public class DataSyncWorker implements Runnable {
     private boolean checkCanContinueProcessing(String hardwareId, List<SyncFile> syncFiles, int index,
             List<PendingFile> failedList, SyncCounters counters) {
         if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
-            if (log.isWarnEnabled()) {
-                log.warn("Logged out or Device disconnected. Break sync file loop");
+            String abortReason;
+            String failureReason;
+
+            if (isDeviceDead(hardwareId)) {
+                abortReason = "Device disconnected";
+                failureReason = I18n.get(ERROR_DISCONNECTED);
+            } else if (shutdownRequested) {
+                abortReason = "Shutdown requested (logout)";
+                failureReason = I18n.get(ERROR_EXCEPTION);
+            } else {
+                abortReason = "Thread interrupted";
+                failureReason = I18n.get(ERROR_EXCEPTION);
             }
-            String reason = isDeviceDead(hardwareId)
-                    ? I18n.get(ERROR_DISCONNECTED)
-                    : I18n.get(ERROR_EXCEPTION);
-            failRemainingWithSingleNotice(hardwareId, syncFiles, index, failedList, counters, reason);
+
+            if (log.isWarnEnabled()) {
+                log.warn("[{}] {}. Breaking sync file loop", hardwareId, abortReason);
+            }
+            failRemaining(hardwareId, syncFiles, index, failedList, counters, failureReason);
             return false;
         }
         return true;
@@ -420,8 +445,26 @@ public class DataSyncWorker implements Runnable {
                     hardwareId,
                     syncContext.saveDir() != null ? syncContext.saveDir().getAbsolutePath() : "null");
         }
+        log.debug(
+                "DataSyncWorker.handleDataDirInaccessible firing StorageUnavailableEvent: target={} reason={} device={}",
+                FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE, hardwareId);
         publisher.publishEvent(
                 new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE));
+
+        // Non-admin users cannot change save directory, wait for alert dismissal then
+        // fail
+        if (!syncContext.isAdmin()) {
+            String failureReason = I18n.get(ERROR_STORAGE_UNAVAILABLE);
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "[{}] Non-admin user cannot recover from inaccessible save directory, waiting for alert dismissal",
+                        hardwareId);
+            }
+            waitForStorageAlertDismissal(hardwareId);
+            failRemaining(hardwareId, filesToBeProcessed, index, failedList, counters, failureReason);
+            return FileProcessingResult.abort();
+        }
+
         SyncContext resumedContext = waitForDataDirRecovery(hardwareId, syncContext, filesToBeProcessed, index, 0L);
         if (resumedContext == null) {
             String failureReason = I18n.get(ERROR_STORAGE_UNAVAILABLE);
@@ -429,7 +472,7 @@ public class DataSyncWorker implements Runnable {
                 log.warn("[{}] Data directory recovery aborted while waiting for accessible save dir",
                         hardwareId);
             }
-            failRemainingWithSingleNotice(hardwareId, filesToBeProcessed, index, failedList, counters, failureReason);
+            failRemaining(hardwareId, filesToBeProcessed, index, failedList, counters, failureReason);
             return FileProcessingResult.abort();
         }
         if (log.isInfoEnabled()) {
@@ -454,8 +497,25 @@ public class DataSyncWorker implements Runnable {
                     requiredBytes,
                     syncContext.saveDir() != null ? syncContext.saveDir().getAbsolutePath() : "null");
         }
+        log.debug(
+                "DataSyncWorker.handleInsufficientSpace firing StorageUnavailableEvent: target={} reason={} requiredBytes={} device={}",
+                FolderType.SAVE, StorageIssueReason.LOW_SPACE, requiredBytes, hardwareId);
         publisher.publishEvent(
                 new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.LOW_SPACE, requiredBytes));
+
+        // Non-admin users cannot change save directory, wait for alert dismissal then
+        // fail
+        if (!syncContext.isAdmin()) {
+            String failureReason = I18n.get(ERROR_STORAGE_FULL);
+            if (log.isWarnEnabled()) {
+                log.warn("[{}] Non-admin user cannot recover from insufficient space, waiting for alert dismissal",
+                        hardwareId);
+            }
+            waitForStorageAlertDismissal(hardwareId);
+            failRemaining(hardwareId, filesToBeProcessed, index, failedList, counters, failureReason);
+            return FileProcessingResult.abort();
+        }
+
         SyncContext resumedContext = waitForDataDirRecovery(hardwareId, syncContext, filesToBeProcessed, index,
                 requiredBytes);
         if (resumedContext == null) {
@@ -464,7 +524,7 @@ public class DataSyncWorker implements Runnable {
                 log.warn("[{}] Data directory recovery aborted while waiting for enough free space",
                         hardwareId);
             }
-            failRemainingWithSingleNotice(hardwareId, filesToBeProcessed, index, failedList, counters, failureReason);
+            failRemaining(hardwareId, filesToBeProcessed, index, failedList, counters, failureReason);
             return FileProcessingResult.abort();
         }
         if (log.isInfoEnabled()) {
@@ -516,6 +576,30 @@ public class DataSyncWorker implements Runnable {
 
         public SyncContext updatedContext() {
             return updatedContext;
+        }
+    }
+
+    /**
+     * Wait for non-admin user to dismiss storage unavailable alert.
+     */
+    private void waitForStorageAlertDismissal(String hardwareId) {
+        saveRecoveryDeferred = false;
+        int attempts = 0;
+        while (!saveRecoveryDeferred && !shutdownRequested && !Thread.currentThread().isInterrupted()
+                && !isDeviceDead(hardwareId)) {
+            attempts++;
+            if (attempts % 10 == 0 && log.isDebugEnabled()) {
+                log.debug("[{}] Waiting for storage alert dismissal, attempt={}", hardwareId, attempts);
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] Storage alert wait completed after {} attempts", hardwareId, attempts);
         }
     }
 
@@ -588,7 +672,8 @@ public class DataSyncWorker implements Runnable {
                 currentContext.username(),
                 currentContext.isAdmin(),
                 latestDataDir,
-                currentContext.autoDelete());
+                currentContext.autoDelete(),
+                currentContext.deviceName());
         rebasePendingSyncFiles(syncFiles, fromIndex, latestDataDir);
         return updatedContext;
     }
@@ -701,7 +786,7 @@ public class DataSyncWorker implements Runnable {
         }
     }
 
-    private void failRemainingWithSingleNotice(String hardwareId,
+    private void failRemaining(String hardwareId,
             List<SyncFile> syncFiles,
             int fromIndex,
             List<PendingFile> failedList,
@@ -711,12 +796,67 @@ public class DataSyncWorker implements Runnable {
         failRemainingFiles(syncFiles, fromIndex, failedList, reason);
         counters.failed = failedList.size();
         progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
-        appNoticeService.showError(reason);
 
         if (log.isWarnEnabled()) {
-            log.warn("[{}] Storage recovery aborted. Marked remaining {} files as failed without retry",
+            log.warn("[{}] sync aborted. Marked remaining {} files as failed without retry",
                     hardwareId,
                     remainingCount);
+        }
+    }
+
+    /**
+     * Show detailed sync failure summary with device name, counts, and failed file
+     * table.
+     */
+    private void showSyncFailureSummary(String deviceName, SyncCounters counters,
+            List<PendingFile> failedList) {
+        if (failedList.isEmpty()) {
+            return;
+        }
+
+        // Convert PendingFile list to FailedFileRow for table display
+        List<FailedFileRow> rows = new ArrayList<>();
+        for (PendingFile pf : failedList) {
+            String fileName = name(pf.remotePath());
+            String reason = pf.failureReason() != null ? pf.failureReason() : I18n.get(ERROR_UNKNOWN);
+            rows.add(new FailedFileRow(fileName, reason));
+        }
+
+        // Show detailed failure dialog with scrollable table
+        String header = I18n.get(SYNC_SUMMARY_HEADER, deviceName);
+        String content = I18n.get(SYNC_SUMMARY_CONTENT, deviceName, counters.total, counters.passed, counters.failed);
+        appNoticeService.showError(header + "\n" + content);
+        AlertHelper.DialogText dialogText = new AlertHelper.DialogText(
+                I18n.get(SYNC_SUMMARY_TITLE),
+                header,
+                content);
+        AlertHelper.showAlertWithTable(
+                dialogText,
+                rows,
+                I18n.get(SYNC_SUMMARY_COLUMN_FILENAME),
+                "fileName",
+                I18n.get(SYNC_SUMMARY_COLUMN_REASON),
+                "reason");
+    }
+
+    /**
+     * Row model for failed file table display.
+     */
+    public static class FailedFileRow {
+        private final String fileName;
+        private final String reason;
+
+        public FailedFileRow(String fileName, String reason) {
+            this.fileName = fileName;
+            this.reason = reason;
+        }
+
+        public String getFileName() {
+            return fileName;
+        }
+
+        public String getReason() {
+            return reason;
         }
     }
 
@@ -849,54 +989,91 @@ public class DataSyncWorker implements Runnable {
     private void retryFailed(String hardwareId, SyncContext syncContext, SyncPreparation prep,
             List<PendingFile> failedList,
             SyncCounters counters) {
-        // If device disconnected during initial sync, mark all remaining failed with
-        // single notice
         if (isDeviceDead(hardwareId)) {
-            counters.failed += failedList.size();
-            progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
-            appNoticeService.showError(I18n.get(ERROR_DISCONNECTED));
-            logAndCleanupFailedFiles(failedList);
+            handleDeviceDisconnectedDuringRetry(hardwareId, failedList, counters);
             return;
         }
 
         List<PendingFile> failedFilesRemaining = new ArrayList<>();
 
-        // Retry each file N times before moving to next file
         for (PendingFile pf : failedList) {
-            if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
-                // Device disconnected mid-retry, mark all remaining failed and show single
-                // notice
-                for (int i = failedList.indexOf(pf); i < failedList.size(); i++) {
-                    failedFilesRemaining.add(failedList.get(i));
-                }
-                counters.failed += failedFilesRemaining.size();
-                progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
-                appNoticeService.showError(I18n.get(ERROR_DISCONNECTED));
-                logAndCleanupFailedFiles(failedFilesRemaining);
+            if (shouldAbortRetry(hardwareId)) {
+                handleAbortedRetry(hardwareId, failedList, pf, failedFilesRemaining, counters);
                 return;
             }
 
             boolean success = retryFileWithAttempts(hardwareId, pf, prep, syncContext, counters);
-            if (success) {
-                counters.passed++;
-            } else {
-                failedFilesRemaining.add(pf);
-                counters.failed += 1;
-                showErrorNotification(pf);
-            }
-
-            // Update progress after each file completes (success or exhausted retries)
+            updateCountersAfterRetry(success, pf, failedFilesRemaining, counters);
             progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
         }
 
         logAndCleanupFailedFiles(failedFilesRemaining);
     }
 
+    // Check if retry should be aborted due to shutdown, interruption, or device
+    // disconnect
+    private boolean shouldAbortRetry(String hardwareId) {
+        return shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId);
+    }
+
+    // Handle device disconnection before retry starts
+    private void handleDeviceDisconnectedDuringRetry(String hardwareId, List<PendingFile> failedList,
+            SyncCounters counters) {
+        counters.failed += failedList.size();
+        progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+        appNoticeService.showError(I18n.get(ERROR_DISCONNECTED));
+        logAndCleanupFailedFiles(failedList);
+    }
+
+    // Handle retry abortion mid-process, marking remaining files as failed
+    private void handleAbortedRetry(String hardwareId, List<PendingFile> failedList, PendingFile currentFile,
+            List<PendingFile> failedFilesRemaining, SyncCounters counters) {
+        String abortReason = getAbortReason(hardwareId);
+        if (log.isWarnEnabled()) {
+            log.warn("[{}] {} during retry. Marking remaining files as failed", hardwareId, abortReason);
+        }
+
+        collectRemainingFiles(failedList, currentFile, failedFilesRemaining);
+        counters.failed += failedFilesRemaining.size();
+        progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+        appNoticeService.showError(I18n.get(ERROR_DISCONNECTED));
+        logAndCleanupFailedFiles(failedFilesRemaining);
+    }
+
+    // Determine the reason for aborting retry
+    private String getAbortReason(String hardwareId) {
+        if (isDeviceDead(hardwareId)) {
+            return "Device disconnected";
+        }
+        return shutdownRequested ? "Shutdown requested" : "Thread interrupted";
+    }
+
+    // Collect all remaining files from current position to end of list
+    private void collectRemainingFiles(List<PendingFile> failedList, PendingFile currentFile,
+            List<PendingFile> failedFilesRemaining) {
+        for (int i = failedList.indexOf(currentFile); i < failedList.size(); i++) {
+            failedFilesRemaining.add(failedList.get(i));
+        }
+    }
+
+    // Update counters and tracking after a retry attempt completes
+    private void updateCountersAfterRetry(boolean success, PendingFile pf, List<PendingFile> failedFilesRemaining,
+            SyncCounters counters) {
+        if (success) {
+            counters.passed++;
+        } else {
+            failedFilesRemaining.add(pf);
+            counters.failed++;
+            showErrorNotification(pf);
+        }
+    }
+
     // Attempt to retry a single file up to MAX_RETRY times
     private boolean retryFileWithAttempts(String hardwareId, PendingFile pf, SyncPreparation prep,
             SyncContext syncContext, SyncCounters counters) {
         for (int attempt = 1; attempt <= AppConstants.MAX_RETRY; attempt++) {
-            if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
+            if (shouldAbortRetry(hardwareId)) {
+                logRetryAbortion(hardwareId, pf);
                 return false;
             }
 
@@ -904,12 +1081,25 @@ public class DataSyncWorker implements Runnable {
                 return true;
             }
 
-            if (attempt < AppConstants.MAX_RETRY && log.isInfoEnabled()) {
-                log.info("Retry attempt {}/{} failed for: {}", attempt, AppConstants.MAX_RETRY,
-                        name(pf.remotePath()));
-            }
+            logRetryAttemptFailure(attempt, pf);
         }
         return false;
+    }
+
+    // Log retry abortion with appropriate reason
+    private void logRetryAbortion(String hardwareId, PendingFile pf) {
+        if (log.isDebugEnabled()) {
+            String abortReason = getAbortReason(hardwareId);
+            log.debug("[{}] Aborting retry for {} due to {}", hardwareId, name(pf.remotePath()), abortReason);
+        }
+    }
+
+    // Log individual retry attempt failure
+    private void logRetryAttemptFailure(int attempt, PendingFile pf) {
+        if (attempt < AppConstants.MAX_RETRY && log.isInfoEnabled()) {
+            log.info("Retry attempt {}/{} failed for: {}", attempt, AppConstants.MAX_RETRY,
+                    name(pf.remotePath()));
+        }
     }
 
     // Retry syncing a single failed file, returns true if successful
