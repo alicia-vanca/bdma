@@ -3,9 +3,8 @@ package com.app.common.configs;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.util.StatusPrinter2;
-import org.slf4j.LoggerFactory;
-
 import com.app.common.definitions.AppDataPaths;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.net.URL;

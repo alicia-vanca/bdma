@@ -68,7 +68,14 @@ public class FolderManagerService {
             appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
             log.info("Initialized default backup folder: {}", backupDirPath);
         }
+        String exportDirPath = appConfigService.getConfigValue(AppConstants.KEY_EXPORT_DIR);
+        if (exportDirPath == null || exportDirPath.isBlank()) {
+            exportDirPath = Path.of("C:", "BDMA_User_Data", "DataExport").toString();
+            appConfigService.saveConfigValue(AppConstants.KEY_EXPORT_DIR, exportDirPath);
+            log.info("Initialized default export folder: {}", exportDirPath);
+        }
 
+        initExportDir(exportDirPath);
         initDataDir(dataDirPath);
         initBackupDir(backupDirPath);
         clearTemp();
@@ -290,6 +297,19 @@ public class FolderManagerService {
         throw new FileNotFoundOnAnyDriveException(nonDriverLetterPath);
     }
 
+    private void initExportDir(String configuredPath) {
+        if (configuredPath == null || configuredPath.isBlank()) return;
+
+        File exportDir = new File(configuredPath, AppConstants.EXPORT_FOLDER_NAME);
+        try {
+            ensureBdmaDirState(exportDir.getAbsolutePath());
+            log.info("ExportDir initialized: {} (protectionEnabled={})",
+                    exportDir.getAbsolutePath(), storageProtectionEnabled);
+        } catch (IOException e) {
+            log.error("Failed to initialize export directory", e);
+        }
+    }
+
     // ── Private ──────────────────────────────────────────────────────────────
 
     private void initDataDir(String configuredPath) {
@@ -415,5 +435,21 @@ public class FolderManagerService {
 
     private void ensureBdmaDirState(String dirPath) throws IOException {
         FolderSecurityService.ensureBdmaDataDir(dirPath, storageProtectionEnabled);
+    }
+
+    public File getExportDir() {
+        String exportDirPath = appConfigService.getConfigValue(AppConstants.KEY_EXPORT_DIR);
+        if (exportDirPath == null || exportDirPath.isBlank()) {
+            return null;
+        }
+        return new File(exportDirPath, AppConstants.EXPORT_FOLDER_NAME);
+    }
+
+    public boolean isExportDirConfigured() {
+        return getExportDir() != null;
+    }
+
+    public boolean isExportDirAccessible() {
+        return isDirAccessible(getExportDir());
     }
 }
