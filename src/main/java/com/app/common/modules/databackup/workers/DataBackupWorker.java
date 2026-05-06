@@ -60,13 +60,13 @@ public class DataBackupWorker implements Runnable {
             try {
                 nonDriveLetterSyncedPath = dataBackupQueue.take();
 
-                if (shutdownRequested) {
-                    log.info("Shutdown requested, stopping backup worker");
-                    break;
-                }
-
                 // Wait until no sync is active before processing backup
                 waitForSyncToComplete();
+
+                if (shutdownRequested) {
+                    log.info("BackupWorker stopped gracefully");
+                    break;
+                }
 
                 if (!shouldSkipDueToDeferred(nonDriveLetterSyncedPath)) {
                     processBackup(nonDriveLetterSyncedPath);
@@ -86,7 +86,6 @@ public class DataBackupWorker implements Runnable {
             }
         }
 
-        log.info("BackupWorker stopped gracefully");
     }
 
     /**
@@ -199,7 +198,7 @@ public class DataBackupWorker implements Runnable {
      * Wait until sync is not active (SYNCING or QUEUED).
      */
     private void waitForSyncToComplete() throws InterruptedException {
-        while (isSyncActive()) {
+        while (isSyncActive() && !shutdownRequested) {
             log.debug("Sync active, backup paused. Waiting...");
             Thread.sleep(5000);
         }
@@ -216,6 +215,7 @@ public class DataBackupWorker implements Runnable {
      * Request graceful shutdown. Worker will finish current file then stop.
      */
     public void requestShutdown() {
+        log.info("Shutdown requested, stopping backup worker");
         shutdownRequested = true;
     }
 
