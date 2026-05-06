@@ -56,6 +56,7 @@ public final class AppConstants {
     // ────────────── File Status ──────────────
     public static final String FILE_STATUS_SYNCED = "SYNCED";
     public static final String FILE_STATUS_BACKEDUP = "BACKEDUP";
+    public static final String FILE_STATUS_EXPORT = "EXPORT";
     public static final String FILE_STATUS_FAILED = "FAILED";
 
     // ────────────── Dashboard ──────────────
