@@ -39,6 +39,27 @@
     -fx-background-color: -app-bg;
 }
 
+/* ===== FLOATING NOTICE ===== */
+.label.global-notice {
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-padding: 8 12;
+    -fx-font-weight: 600;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 12, 0.2, 0, 3);
+}
+
+.label.global-notice.message-success {
+    -fx-background-color: rgba(214, 235, 223);
+    -fx-border-color: rgba(139, 210, 171);
+    -fx-text-fill: #19b45a;
+}
+
+.label.global-notice.message-error {
+    -fx-background-color: rgba(238, 219, 218);
+    -fx-border-color: rgba(222, 159, 153);
+    -fx-text-fill: #e74c3c;
+}
+
 /* ===== CARD ===== */
 .card {
     -fx-background-color: -card-bg;
@@ -187,21 +208,21 @@
     -fx-background-color: -card-bg;
 }
 
-.date-picker-popup > * > .spinner > .button {
+.date-picker-popup>*>.spinner>.button {
     -fx-background-color: transparent;
 }
 
-.date-picker-popup > * > .spinner > .button:hover {
+.date-picker-popup>*>.spinner>.button:hover {
     -fx-background-color: -table-hover;
 }
 
-.date-picker-popup > * > .spinner > .button > .left-arrow,
-.date-picker-popup > * > .spinner > .button > .right-arrow {
+.date-picker-popup>*>.spinner>.button>.left-arrow,
+.date-picker-popup>*>.spinner>.button>.right-arrow {
     -fx-background-color: -text-color;
 }
 
-.date-picker-popup > * > .day-name-cell,
-.date-picker-popup > * > .week-number-cell {
+.date-picker-popup>*>.day-name-cell,
+.date-picker-popup>*>.week-number-cell {
     -fx-text-fill: #64748b;
 }
 
@@ -209,21 +230,21 @@
     -fx-text-fill: -text-color;
 }
 
-.date-picker-popup > * > .day-cell {
+.date-picker-popup>*>.day-cell {
     -fx-background-color: -card-bg;
     -fx-text-fill: -text-color;
 }
 
-.date-picker-popup > * > .day-cell:hover {
+.date-picker-popup>*>.day-cell:hover {
     -fx-background-color: -table-hover;
 }
 
-.date-picker-popup > * > .day-cell.today {
+.date-picker-popup>*>.day-cell.today {
     -fx-border-color: -primary;
     -fx-border-width: 1;
 }
 
-.date-picker-popup > * > .day-cell.selected {
+.date-picker-popup>*>.day-cell.selected {
     -fx-background-color: -primary;
     -fx-text-fill: white;
 }

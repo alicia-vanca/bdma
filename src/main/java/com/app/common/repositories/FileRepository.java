@@ -72,11 +72,16 @@ public class FileRepository {
     }
 
     /**
-     * Updates file status and backed_up_path after successful backup.
+     * Updates file status, backed_up_path, and backed_up_at after successful
+     * backup.
      */
     public void updateStatusAndBackupPath(String syncedPath, String backedUpPath, String status) {
         String sql = """
-                    UPDATE files SET status = ?, backed_up_path = ? WHERE synced_path = ?
+                    UPDATE files
+                    SET status = ?,
+                        backed_up_path = ?,
+                        backed_up_at = datetime('now', 'localtime')
+                    WHERE synced_path = ?
                 """;
 
         try {
@@ -87,21 +92,22 @@ public class FileRepository {
     }
 
     /**
-     * Inserts or updates a file record.
-     * - create_date is derived from file name.
-     * - On conflict (device_id, synced_path), updates status, file_size,
-     * create_date, and
-     * type.
+     * Inserts or updates a file record by filename.
+     * On conflict (device_id, name), updates synced_path, status, file_size,
+     * create_date, and type.
+     * This ensures files are updated when synced to a different path.
      */
     public void insert(File file) {
         String sql = """
                     INSERT INTO files (user_id, device_id, create_date, name, synced_path, file_size, type, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(device_id, synced_path) DO UPDATE SET
+                    ON CONFLICT(device_id, name) DO UPDATE SET
+                        synced_path = excluded.synced_path,
                         status      = excluded.status,
                         file_size   = excluded.file_size,
                         create_date = excluded.create_date,
-                        type        = excluded.type
+                        type        = excluded.type,
+                        synced_at   = datetime('now', 'localtime')
                 """;
 
         try {
@@ -124,13 +130,15 @@ public class FileRepository {
      * Inserts a failed file record.
      * - status = FAILED
      * - file_size = -1
-     * - On conflict, only updates status to FAILED.
+     * - On conflict (device_id, name), updates synced_path, status, user_id, and
+     * type.
      */
     public void insertFailed(Long userId, Long deviceId, String syncedPath, FileInfo info) {
         String sql = """
                     INSERT INTO files (user_id, device_id, create_date, name, synced_path, file_size, type, status)
                     VALUES (?, ?, ?, ?, ?, -1, ?, ?)
-                    ON CONFLICT(device_id, synced_path) DO UPDATE SET
+                    ON CONFLICT(device_id, name) DO UPDATE SET
+                        synced_path = excluded.synced_path,
                         status = ?,
                         user_id = excluded.user_id,
                         type = excluded.type

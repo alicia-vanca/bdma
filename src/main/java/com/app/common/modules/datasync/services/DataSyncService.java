@@ -119,7 +119,7 @@ public class DataSyncService {
     public void saveFile(Long userId, Long deviceId, String fileName, String localPath, FileInfo info) {
         fileRepo.insert(
                 new File(null, userId, deviceId, info.createDate(), fileName, localPath, info.size(), info.type(),
-                        AppConstants.FILE_STATUS_SYNCED, null, null));
+                        AppConstants.FILE_STATUS_SYNCED, null, null, null));
         dataBackupService.enqueue(localPath);
     }
 

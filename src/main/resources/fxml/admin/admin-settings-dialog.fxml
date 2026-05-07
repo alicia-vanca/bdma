@@ -75,17 +75,6 @@
                             </HBox>
                             <Label fx:id="lblSaveFolderNote" wrapText="true" styleClass="settings-note"/>
                             <Region prefHeight="8"/>
-                            <Label fx:id="lblSaveFolderExportTitle" styleClass="section-label"/>
-                            <HBox spacing="8" alignment="CENTER_LEFT" styleClass="settings-form-row">
-                                <TextField fx:id="txtExportPath"
-                                           editable="false"
-                                           styleClass="input"
-                                           HBox.hgrow="ALWAYS"/>
-                                <Button fx:id="btnChooseSaveExportFolder"
-                                        onAction="#onSelectSaveExportFolder"
-                                        styleClass="btn-secondary"/>
-                            </HBox>
-                            <Region prefHeight="8"/>
                             <Label fx:id="lblBackupFolderTitle" styleClass="section-label"/>
                             <HBox spacing="8" alignment="CENTER_LEFT" styleClass="settings-form-row">
                                 <TextField fx:id="txtBackupPath"

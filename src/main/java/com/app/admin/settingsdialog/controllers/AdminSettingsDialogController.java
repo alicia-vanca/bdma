@@ -2,7 +2,6 @@ package com.app.admin.settingsdialog.controllers;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -83,13 +82,7 @@ public class AdminSettingsDialogController {
     @FXML
     private Label lblSaveFolderTitle;
     @FXML
-    private Label lblSaveFolderExportTitle;
-    @FXML
     private TextField txtSavePath;
-    @FXML
-    private TextField txtExportPath;
-    @FXML
-    private Button btnChooseSaveExportFolder;
     @FXML
     private Button btnChooseSaveFolder;
     @FXML
@@ -162,14 +155,13 @@ public class AdminSettingsDialogController {
         btnLightTheme.setText("☀ " + I18n.get("settings.theme.light"));
         btnDarkTheme.setText("☾ " + I18n.get("settings.theme.dark"));
 
-        lblSaveFolderTitle.setText(I18n.get("setting.storage.save.title"));
+        lblSaveFolderTitle.setText(I18n.get("setting.storage.sync.title"));
         btnChooseSaveFolder.setText(I18n.get("setting.storage.btn.choose"));
         lblBackupFolderTitle.setText(I18n.get("setting.storage.backup.title"));
         btnChooseBackupFolder.setText(I18n.get("setting.storage.btn.choose"));
-        lblSaveFolderNote.setText(I18n.get("setting.storage.save.note"));
+        lblSaveFolderNote.setText(I18n.get("setting.storage.sync.note"));
 
-        lblSaveFolderExportTitle.setText(I18n.get("setting.storage.export.title"));
-        btnChooseSaveExportFolder.setText(I18n.get("setting.storage.btn.choose"));
+        lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
 
         lblAutoDeleteTitle.setText(I18n.get("setting.databackup.autodelete.title"));
         lblAutoDeleteDescription.setText(I18n.get("setting.databackup.autodelete.desc"));
@@ -209,9 +201,8 @@ public class AdminSettingsDialogController {
     }
 
     private void loadAdminSettings() {
-        adminSettingsService.getFolderPath(FolderType.SAVE).ifPresent(txtSavePath::setText);
+        adminSettingsService.getFolderPath(FolderType.SYNC).ifPresent(txtSavePath::setText);
         adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
-        adminSettingsService.getFolderPath(FolderType.EXPORT).ifPresent(txtExportPath::setText);
         chkAutoDelete.setSelected(adminSettingsService.getAutoDelete());
         chkStartWithWindows.setSelected(adminSettingsService.getStartWithWindows());
         checkAndShowDriveConflict();
@@ -219,12 +210,7 @@ public class AdminSettingsDialogController {
 
     @FXML
     public void onSelectSaveFolder() {
-        selectAndPersistFolder(txtSavePath, FolderType.SAVE);
-    }
-
-    @FXML
-    public void onSelectSaveExportFolder() {
-        selectAndPersistFolder(txtExportPath, FolderType.EXPORT);
+        selectAndPersistFolder(txtSavePath, FolderType.SYNC);
     }
 
     @FXML
@@ -349,22 +335,6 @@ public class AdminSettingsDialogController {
         }
 
         adminLayoutController.refreshStorageStatus();
-
-    }
-
-    private boolean isDriveConflict(String path1, String path2) {
-        if (path1 == null || path1.isBlank() || path2 == null || path2.isBlank())
-            return false;
-
-        Path root1 = Path.of(path1).getRoot();
-        Path root2 = Path.of(path2).getRoot();
-
-            
-            
-        if (root1 == null || root2 == null)
-            return false;
-
-        return root1.toString().equalsIgnoreCase(root2.toString());
     }
 
     private void persistFolder(TextField txtField, FolderType type) {
@@ -394,6 +364,7 @@ public class AdminSettingsDialogController {
         dialog.controller().setOnSuccess(() -> showNotice(I18n.get("user.account.password.updated.success"), true));
         dialog.controller().setOnNoChange(() -> showNotice(I18n.get("user.update.nochange"), true));
         dialog.stage().setResizable(false);
+        dialog.stage().initOwner(panel.getScene().getWindow());
         dialog.stage().showAndWait();
     }
 
@@ -443,26 +414,25 @@ public class AdminSettingsDialogController {
         });
     }
 
+    private boolean isDriveConflict(String pathA, String pathB) {
+        if (pathA == null || pathA.isBlank() || pathB == null || pathB.isBlank())
+            return false;
+
+        Path pathARoot = Path.of(pathA).getRoot();
+        Path pathBRoot = Path.of(pathB).getRoot();
+
+        if (pathARoot == null || pathBRoot == null)
+            return false;
+
+        return pathARoot.toString().equalsIgnoreCase(pathBRoot.toString());
+    }
+
     private void checkAndShowDriveConflict() {
         String savePath = txtSavePath.getText();
         String backupPath = txtBackupPath.getText();
-        String exportPath = txtExportPath.getText();
 
-        boolean saveBackupConflict = isDriveConflict(savePath, backupPath);
-        boolean saveExportConflict = isDriveConflict(savePath, exportPath);
-        boolean backupExportConflict = isDriveConflict(backupPath, exportPath);
+        boolean conflict = isDriveConflict(savePath, backupPath);
 
-        boolean conflict = saveBackupConflict || saveExportConflict || backupExportConflict;
-
-        List<String> conflictMessages = new ArrayList<>();
-        if (saveBackupConflict)
-            conflictMessages.add(I18n.get("setting.storage.warn.same_drive.save_backup"));
-        if (saveExportConflict)
-            conflictMessages.add(I18n.get("setting.storage.warn.same_drive.save_export"));
-        if (backupExportConflict)
-            conflictMessages.add(I18n.get("setting.storage.warn.same_drive.backup_export"));
-
-        lblDriveConflictWarning.setText(String.join("\n", conflictMessages));
         lblDriveConflictWarning.setVisible(conflict);
         lblDriveConflictWarning.setManaged(conflict);
     }

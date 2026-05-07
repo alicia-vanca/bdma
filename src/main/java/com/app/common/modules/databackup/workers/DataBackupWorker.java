@@ -1,5 +1,7 @@
 package com.app.common.modules.databackup.workers;
 
+import java.io.IOException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -7,10 +9,10 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.enums.FolderType;
+import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.databackup.services.DataBackupService;
-import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
@@ -38,6 +40,7 @@ public class DataBackupWorker implements Runnable {
     private final SyncProgressTracker syncProgressTracker;
     private volatile boolean backupRecoveryDeferred;
     private volatile boolean shutdownRequested;
+    private final Object recoveryLock = new Object();
 
     public DataBackupWorker(DataBackupQueue dataBackupQueue,
             FolderManagerService folderManager,
@@ -131,8 +134,11 @@ public class DataBackupWorker implements Runnable {
                     FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE);
             publisher.publishEvent(
                     new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
-            log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
-            return false;
+            waitForBackupDirRecovery();
+            if (backupRecoveryDeferred) {
+                log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                return false;
+            }
         }
         return true;
     }
@@ -149,8 +155,11 @@ public class DataBackupWorker implements Runnable {
                         FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize);
                 publisher.publishEvent(
                         new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize));
-                log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
-                return false;
+                waitForBackupDirRecovery();
+                if (backupRecoveryDeferred) {
+                    log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                    return false;
+                }
             }
             return true;
         } catch (Exception e) {
@@ -172,6 +181,16 @@ public class DataBackupWorker implements Runnable {
             publisher.publishEvent(new FileBackupCompletedEvent(nonDriveLetterSyncedPath));
         } catch (FileNotFoundOnAnyDriveException e) {
             log.info("Synced file not found, skipping this cycle: {}", nonDriveLetterSyncedPath);
+        } catch (IOException e) {
+            // This can occur if backup dir becomes inaccessible mid-backup
+            if (!checkBackupDirAccessible(nonDriveLetterSyncedPath)) {
+                return;
+            }
+            if (!checkSufficientSpace(nonDriveLetterSyncedPath)) {
+                return;
+            }
+
+            log.error("IO exception during backup for: {}", nonDriveLetterSyncedPath, e);
         } catch (Exception e) {
             log.error("Backup operation failed for: {}", nonDriveLetterSyncedPath, e);
         }
@@ -180,7 +199,10 @@ public class DataBackupWorker implements Runnable {
     @EventListener
     public void onStorageRecoveryDeferred(StorageRecoveryDeferredEvent event) {
         if (event != null && event.getTarget() == FolderType.BACKUP) {
-            backupRecoveryDeferred = true;
+            synchronized (recoveryLock) {
+                backupRecoveryDeferred = true;
+                recoveryLock.notifyAll();
+            }
             if (log.isDebugEnabled()) {
                 log.debug("Backup recovery deferred by user. target={}", event.getTarget());
             }
@@ -190,7 +212,42 @@ public class DataBackupWorker implements Runnable {
     @EventListener
     public void onStorageRestored(StorageRestoredEvent event) {
         if (event != null && event.getTarget() == FolderType.BACKUP) {
+            synchronized (recoveryLock) {
+                backupRecoveryDeferred = false;
+                recoveryLock.notifyAll();
+            }
+        }
+    }
+
+    /**
+     * Wait for backup directory to be recovered after becoming inaccessible or
+     * running out of space.
+     * Blocks until StorageRestoredEvent or StorageRecoveryDeferredEvent is fired.
+     */
+    private void waitForBackupDirRecovery() {
+        synchronized (recoveryLock) {
             backupRecoveryDeferred = false;
+
+            while (!backupRecoveryDeferred && !shutdownRequested && !Thread.currentThread().isInterrupted()) {
+                try {
+                    recoveryLock.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+
+                // Event fired, check which one
+                if (!backupRecoveryDeferred) {
+                    if (log.isInfoEnabled()) {
+                        log.info("Backup directory recovered, resuming backup worker");
+                    }
+                    return;
+                }
+            }
+
+            if (backupRecoveryDeferred) {
+                log.info("Backup recovery deferred by user, resuming backup worker in deferred state");
+            }
         }
     }
 

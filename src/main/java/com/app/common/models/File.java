@@ -17,6 +17,7 @@ public class File {
     private long fileSize;
     private String type;
     private String status;
-    private String createdAt;
+    private String syncedAt;
     private String backedUpPath;
+    private String backedUpAt;
 }

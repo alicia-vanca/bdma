@@ -12,7 +12,8 @@ public record FileView(
         String status,
         Long fileSize,
         String type,
-        String createdAt,
+        String syncedAt,
+        String backedUpAt,
         String username,
         String deviceName) {
     public static FileView from(File f, String username, String deviceName) {
@@ -26,7 +27,8 @@ public record FileView(
                 f.getStatus(),
                 f.getFileSize(),
                 f.getType(),
-                f.getCreatedAt(),
+                f.getSyncedAt(),
+                f.getBackedUpAt(),
                 username,
                 deviceName);
     }

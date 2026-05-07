@@ -15,12 +15,6 @@
         <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers" prefWidth="150"/>
         <ComboBox fx:id="typeFilterCombo" prefWidth="130"/>
         <Button text="%common.reset" onAction="#clearFilter" styleClass="btn-secondary"/>
-        <Button fx:id="btnDownload"
-                text="%common.download"
-                onAction="#onDownloadSelected"
-                styleClass="btn-primary"
-                disable="true"/>
-        <Label fx:id="lblSelectedCount" styleClass="selected-count-label"/>
     </HBox>
     <!-- Table -->
     <TableView fx:id="fileTable" VBox.vgrow="ALWAYS" fixedCellSize="40">
@@ -28,7 +22,6 @@
             <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
         </columnResizePolicy>
         <columns>
-            <TableColumn fx:id="colSelect" minWidth="40" maxWidth="40" prefWidth="40" resizable="false"/>
             <TableColumn fx:id="colName" text="%file.name" prefWidth="29"/>
             <TableColumn fx:id="colDevice" text="%file.device" prefWidth="9"/>
             <TableColumn fx:id="colUser"   text="%file.user"   prefWidth="10"/>
@@ -44,7 +37,7 @@
     <!-- Status bar / Pagination -->
     <HBox alignment="CENTER_LEFT" spacing="10">
         <Label text="%common.show"/>
-        <ComboBox fx:id="cbPageSize" prefWidth="55" styleClass="page-size-combo"/>
+        <ComboBox fx:id="cbPageSize" prefWidth="60" styleClass="page-size-combo"/>
         <Label text="%common.per.page"/>
         <Region HBox.hgrow="ALWAYS"/>
         <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage"

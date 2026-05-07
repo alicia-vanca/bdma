@@ -1,10 +1,8 @@
 package com.app.admin.layout.controllers;
 
-import java.io.IOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -21,57 +19,25 @@ import org.springframework.stereotype.Component;
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileView;
-import com.app.common.helpers.AlertHelper;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
-import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
-import com.app.common.services.AppConfigService;
 import com.app.common.services.FileService;
 import com.app.common.services.UserService;
 
 import javafx.application.Platform;
-import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
-import javafx.collections.ObservableSet;
-import javafx.collections.SetChangeListener;
-import javafx.concurrent.Task;
-import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
-import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
-import javafx.scene.Node;
-import javafx.scene.control.*;
-import javafx.scene.layout.HBox;
-import javafx.stage.DirectoryChooser;
-import javafx.stage.Stage;
 import javafx.util.StringConverter;
 import lombok.Setter;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Scope;
-import org.springframework.stereotype.Component;
-
-import java.io.IOException;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
-import javafx.application.Platform;
-import javafx.concurrent.Task;
 
 @Component
 @Scope("prototype")
@@ -83,8 +49,6 @@ public class FileListController {
             .ofPattern(AppConstants.DATE_PICKER_FORMAT);
     private static final DateTimeFormatter DATE_DISPLAY_FORMATTER = DateTimeFormatter
             .ofPattern(AppConstants.DATE_DISPLAY_FORMAT);
-
-    private final AppConfigService appConfigService;
 
     @FXML
     private DatePicker dateFromPicker;
@@ -118,16 +82,12 @@ public class FileListController {
     private Label lblPageInfo;
     @FXML
     private ComboBox<Integer> cbPageSize;
-
-    private CheckBox chkSelectAll;
     @FXML
     private TableColumn<FileView, Boolean> colSelect;
     @FXML
     private Button btnDownload;
     @FXML
     private Label lblSelectedCount;
-
-    private final ObservableSet<FileView> selectedItems = FXCollections.observableSet(new HashSet<>());
 
     private final FileService fileService;
     private final UserService userService;
@@ -156,10 +116,9 @@ public class FileListController {
         CHECKING, EXISTS, MISSING, ERROR
     }
 
-    public FileListController(AppConfigService appConfigService, FileService fileService, UserService userService,
+    public FileListController(FileService fileService, UserService userService,
             Session session,
             FolderManagerService folderManagerService) {
-        this.appConfigService = appConfigService;
         this.fileService = fileService;
         this.userService = userService;
         this.session = session;
@@ -186,9 +145,6 @@ public class FileListController {
 
         initializing = false;
         refresh(buildFilter());
-
-        setupCheckboxColumn();
-        setupSelectionTracking();
     }
 
     private void setupDatePickers() {
@@ -520,282 +476,4 @@ public class FileListController {
         fileVerificationCache.clear();
         log.debug("FileListController cleanup: executor shutdown, cache cleared");
     }
-
-    private void setupCheckboxColumn() {
-        chkSelectAll = new CheckBox();
-
-        HBox header = new HBox(chkSelectAll);
-        header.setAlignment(javafx.geometry.Pos.CENTER);
-        colSelect.setGraphic(header);
-        colSelect.setText(null);
-        colSelect.setMinWidth(40);
-        colSelect.setMaxWidth(40);
-        colSelect.setPrefWidth(40);
-        colSelect.setResizable(false);
-
-        chkSelectAll.setOnAction(e -> {
-            if (chkSelectAll.isIndeterminate()) {
-                // Chọn tất cả các trang
-                selectedItems.addAll(filteredFiles);
-                chkSelectAll.setIndeterminate(false);
-                chkSelectAll.setSelected(true);
-            } else if (chkSelectAll.isSelected()) {
-                selectedItems.addAll(filteredFiles);
-            } else {
-                selectedItems.clear();
-            }
-            fileTable.refresh();
-        });
-
-        selectedItems.addListener((SetChangeListener<FileView>) change -> {
-            int count = selectedItems.size();
-            int total = filteredFiles.size(); // tổng tất cả trang
-            int pageTotal = fileTable.getItems().size(); // chỉ trang hiện tại
-
-            btnDownload.setDisable(count == 0);
-
-            if (count == 0) {
-                lblSelectedCount.setText("");
-                chkSelectAll.setSelected(false);
-                chkSelectAll.setIndeterminate(false);
-            } else if (count == total) {
-                lblSelectedCount.setText(I18n.get("export.file.select.all").replace("[x]", String.valueOf(total)));
-                chkSelectAll.setIndeterminate(false);
-                chkSelectAll.setSelected(true);
-            } else {
-                lblSelectedCount.setText(I18n.get("export.file.select.number").replace("[x]", String.valueOf(count)));
-                boolean anyOnPage = fileTable.getItems().stream().anyMatch(selectedItems::contains);
-                chkSelectAll.setIndeterminate(anyOnPage);
-                chkSelectAll.setSelected(!anyOnPage);
-            }
-        });
-
-        colSelect.setCellValueFactory(data ->
-                new SimpleBooleanProperty(selectedItems.contains(data.getValue())));
-
-        colSelect.setCellFactory(col -> new TableCell<>() {
-            private final CheckBox cb = new CheckBox();
-
-            {
-                cb.setOnAction(e -> {
-                    FileView item = getTableView().getItems().get(getIndex());
-                    if (cb.isSelected()) selectedItems.add(item);
-                    else selectedItems.remove(item);
-                    lastSelectedIndex = getIndex();
-                });
-            }
-
-            @Override
-            protected void updateItem(Boolean value, boolean empty) {
-                super.updateItem(value, empty);
-                if (empty || getIndex() < 0) {
-                    setGraphic(null);
-                    return;
-                }
-                cb.setSelected(selectedItems.contains(getTableView().getItems().get(getIndex())));
-                setGraphic(cb);
-            }
-        });
-
-        // Shift + Ctrl xử lý qua rowFactory
-        fileTable.setRowFactory(tv -> {
-            TableRow<FileView> row = new TableRow<>();
-            row.setOnMouseClicked(e -> {
-                if (row.isEmpty()) return;
-
-                FileView item = row.getItem();
-                int index = row.getIndex();
-
-                if (e.isShiftDown() && lastSelectedIndex >= 0) {
-                    // Shift+click: chọn range
-                    int from = Math.min(lastSelectedIndex, index);
-                    int to   = Math.max(lastSelectedIndex, index);
-                    selectedItems.addAll(fileTable.getItems().subList(from, to + 1));
-                    lastSelectedIndex = index;
-                } else if (e.isControlDown()) {
-                    // Ctrl+click: toggle
-                    if (selectedItems.contains(item)) selectedItems.remove(item);
-                    else selectedItems.add(item);
-                    lastSelectedIndex = index;
-                }
-                // Click thường để checkbox tự xử lý qua cb.setOnAction
-
-                fileTable.refresh();
-            });
-            return row;
-        });
-    }
-
-    // Track index cuối cùng được chọn để hỗ trợ Shift+click
-    private int lastSelectedIndex = -1;
-
-    private void setupSelectionTracking() {
-        selectedItems.addListener((SetChangeListener<FileView>) change -> {
-            int count = selectedItems.size();
-            lblSelectedCount.setText(I18n.get("export.file.select.number")
-                    .replace("[x]", String.valueOf(count)));
-            btnDownload.setDisable(count == 0);
-
-            // Cập nhật trạng thái "Select All"
-            chkSelectAll.setSelected(
-                    !fileTable.getItems().isEmpty() &&
-                            selectedItems.containsAll(fileTable.getItems()));
-        });
-    }
-
-    @FXML
-    private void onDownloadSelected(ActionEvent e) {
-        List<FileView> toDownload = new ArrayList<>(selectedItems);
-        if (toDownload.isEmpty())
-            return;
-
-        DirectoryChooser chooser = new DirectoryChooser();
-        chooser.setTitle(I18n.get("setting.storage.chooser.title"));
-
-        String defaultDir = appConfigService.getConfigValue(AppConstants.KEY_EXPORT_DIR);
-        if (defaultDir != null && !defaultDir.isBlank()) {
-            java.io.File defaultFolder = new java.io.File(defaultDir);
-            if (defaultFolder.exists()) chooser.setInitialDirectory(defaultFolder);
-        }
-
-        Stage stage = (Stage) ((Node) e.getSource()).getScene().getWindow();
-        java.io.File selectedFolder = chooser.showDialog(stage);
-        if (selectedFolder == null) return;
-
-        java.io.File destFolder = selectedFolder;
-        if (!destFolder.exists()) destFolder.mkdirs();
-
-        // Kiểm tra dung lượng
-        long totalSize = toDownload.stream().mapToLong(FileView::fileSize).sum();
-        long freeSpace = destFolder.getFreeSpace();
-        if (totalSize > freeSpace) {
-            Alert alert = new Alert(Alert.AlertType.WARNING);
-            alert.setTitle(I18n.get("export.file.warning.title"));
-            alert.setHeaderText(I18n.get("export.file.warning.header"));
-            alert.setContentText(I18n.get("export.file.warning.content")
-                    .replace("[x]", formatSize(totalSize))
-                    .replace("[y]", formatSize(freeSpace)));
-            alert.showAndWait();
-            return;
-        }
-
-        btnDownload.setDisable(true);
-        String downloadDir = destFolder.getAbsolutePath();
-
-        Task<Void> copyTask = new Task<>() {
-            int success = 0;
-            int failed = 0;
-            final List<String> failedFiles = new ArrayList<>();
-
-            @Override
-            protected Void call() {
-                for (int i = 0; i < toDownload.size(); i++) {
-                    FileView file = toDownload.get(i);
-                    try {
-                        long sourceSize = folderManagerService.resolveExistingFileSize(file.syncedPath());
-
-                        if (!folderManagerService.hasSufficientSpace(destFolder, sourceSize)) {
-                            failed++;
-                            failedFiles.add(file.name() + I18n.get("export.file.warning.title"));
-                            continue;
-                        }
-
-                        PathResolutionResult result = folderManagerService
-                                .findAbsolutePathFromNonDriveLetterPath(file.syncedPath());
-
-                        if (!result.isFound()) {
-                            failed++;
-                            failedFiles.add(file.name() + I18n.get("export.file.warning.notfound"));
-                            continue;
-                        }
-
-                        java.io.File source = result.getPath().toFile();
-                        java.io.File dest   = new java.io.File(destFolder, file.name());
-                        dest = resolveConflict(dest);
-
-                        java.nio.file.Files.copy(
-                                source.toPath(),
-                                dest.toPath(),
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                        );
-                        success++;
-
-                    } catch (FileNotFoundOnAnyDriveException ex) {
-                        failed++;
-                        failedFiles.add(file.name() + I18n.get("export.file.warning.notfound"));
-                        log.info("File not found on any drive: {}", file.syncedPath());
-
-                    } catch (IOException ex) {
-                        failed++;
-                        failedFiles.add(file.name() + " (" + I18n.get("export.file.warning.error") + ex.getMessage() + ")");
-                        log.error("Exception copying file {}: ", file.name(), ex);
-                    }
-
-                    updateProgress(i + 1, toDownload.size());
-                }
-                return null;
-            }
-
-            @Override
-            protected void succeeded() {
-                Platform.runLater(() -> {
-                    btnDownload.setDisable(false);
-                    showDownloadResult(success, failed, failedFiles, downloadDir);
-                });
-            }
-
-            @Override
-            protected void failed() {
-                Platform.runLater(() -> {
-                    btnDownload.setDisable(false);
-                    log.error("Copy task failed: ", getException());
-                });
-            }
-        };
-
-        Thread thread = new Thread(copyTask);
-        thread.setDaemon(true);
-        thread.start();
-    }
-
-    private java.io.File resolveConflict(java.io.File file) {
-        if (!file.exists())
-            return file;
-
-        String name = file.getName();
-        String baseName = name.contains(".")
-                ? name.substring(0, name.lastIndexOf('.'))
-                : name;
-        String ext = name.contains(".")
-                ? name.substring(name.lastIndexOf('.'))
-                : "";
-
-        int count = 1;
-        java.io.File newFile;
-        do {
-            newFile = new java.io.File(file.getParent(), baseName + "(" + count++ + ")" + ext);
-        } while (newFile.exists());
-
-        return newFile;
-    }
-
-    private void showDownloadResult(int success, int failed,
-            List<String> failedFiles, String downloadDir) {
-        Alert alert;
-        if (failed == 0) {
-            alert = AlertHelper.createInformation(I18n.get("notification.export.success.title"),
-                    I18n.get("notification.export.status.success").replace("[x]", String.valueOf(success)),
-                    downloadDir);
-        } else {
-            alert = AlertHelper.createWithScroll(Alert.AlertType.WARNING,
-                    I18n.get("notification.export.failure.title"),
-                    I18n.get("notification.export.status.failure")
-                            .replace("[x]", String.valueOf(success))
-                            .replace("[y]", String.valueOf(failed)),
-                    I18n.get("notification.export.list.failure")
-                            .replace("[x]", String.join("\n", failedFiles)));
-        }
-        alert.showAndWait();
-    }
-
 }
