@@ -30,6 +30,7 @@ import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
+import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
@@ -82,6 +83,7 @@ public class DataSyncWorker implements Runnable {
     private final Set<String> disconnectedDevices = ConcurrentHashMap.newKeySet();
     private volatile boolean shutdownRequested = false;
     private volatile boolean saveRecoveryDeferred = false;
+    private final Object recoveryLock = new Object();
 
     // Records and inner classes
     private record SyncFile(String remotePath, String localPath, String relativeLocalPath, FileInfo info) {
@@ -447,9 +449,9 @@ public class DataSyncWorker implements Runnable {
         }
         log.debug(
                 "DataSyncWorker.handleDataDirInaccessible firing StorageUnavailableEvent: target={} reason={} device={}",
-                FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE, hardwareId);
+                FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE, hardwareId);
         publisher.publishEvent(
-                new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE));
+                new StorageUnavailableEvent(FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE));
 
         // Non-admin users cannot change save directory, wait for alert dismissal then
         // fail
@@ -499,9 +501,9 @@ public class DataSyncWorker implements Runnable {
         }
         log.debug(
                 "DataSyncWorker.handleInsufficientSpace firing StorageUnavailableEvent: target={} reason={} requiredBytes={} device={}",
-                FolderType.SAVE, StorageIssueReason.LOW_SPACE, requiredBytes, hardwareId);
+                FolderType.SYNC, StorageIssueReason.LOW_SPACE, requiredBytes, hardwareId);
         publisher.publishEvent(
-                new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.LOW_SPACE, requiredBytes));
+                new StorageUnavailableEvent(FolderType.SYNC, StorageIssueReason.LOW_SPACE, requiredBytes));
 
         // Non-admin users cannot change save directory, wait for alert dismissal then
         // fail
@@ -581,58 +583,72 @@ public class DataSyncWorker implements Runnable {
 
     /**
      * Wait for non-admin user to dismiss storage unavailable alert.
+     * Blocks until StorageRecoveryDeferredEvent is fired.
      */
     private void waitForStorageAlertDismissal(String hardwareId) {
-        saveRecoveryDeferred = false;
-        int attempts = 0;
-        while (!saveRecoveryDeferred && !shutdownRequested && !Thread.currentThread().isInterrupted()
-                && !isDeviceDead(hardwareId)) {
-            attempts++;
-            if (attempts % 10 == 0 && log.isDebugEnabled()) {
-                log.debug("[{}] Waiting for storage alert dismissal, attempt={}", hardwareId, attempts);
+        synchronized (recoveryLock) {
+            saveRecoveryDeferred = false;
+
+            while (!saveRecoveryDeferred && !shutdownRequested && !Thread.currentThread().isInterrupted()
+                    && !isDeviceDead(hardwareId)) {
+                try {
+                    recoveryLock.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
+
+            if (log.isDebugEnabled()) {
+                log.debug("[{}] Storage alert dismissed", hardwareId);
             }
-        }
-        if (log.isDebugEnabled()) {
-            log.debug("[{}] Storage alert wait completed after {} attempts", hardwareId, attempts);
         }
     }
 
+    @SuppressWarnings("java:S1751")
     private SyncContext waitForDataDirRecovery(String hardwareId,
             SyncContext currentContext,
             List<SyncFile> syncFiles,
             int fromIndex,
             long requiredBytes) {
-        int attempts = 0;
-        String lastRejectedPath = null;
+        synchronized (recoveryLock) {
+            saveRecoveryDeferred = false;
 
-        while (shouldContinueRecoveryWait(hardwareId)) {
-            if (isRecoveryDeferred(hardwareId)) {
-                return null;
+            while (shouldContinueRecoveryWait(hardwareId)) {
+                try {
+                    recoveryLock.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+
+                // Event fired, check which one
+                if (saveRecoveryDeferred) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[{}] Recovery wait canceled because user selected 'Later'", hardwareId);
+                    }
+                    return null;
+                }
+
+                // StorageRestoredEvent fired, storage is valid
+                File latestDataDir = folderManagerService.getDataDir();
+                if (log.isInfoEnabled()) {
+                    log.info(
+                            "[{}] Data directory recovery completed. activeSaveDir={} requiredBytes={}",
+                            hardwareId,
+                            latestDataDir != null ? latestDataDir.getAbsolutePath() : "null",
+                            requiredBytes);
+                }
+                rebasePendingSyncFiles(syncFiles, fromIndex, latestDataDir);
+                return new SyncContext(
+                        currentContext.username(),
+                        currentContext.isAdmin(),
+                        latestDataDir,
+                        currentContext.autoDelete(),
+                        currentContext.deviceName());
             }
-
-            attempts++;
-            File latestDataDir = folderManagerService.getDataDir();
-            String rejectionReason = validateRecoveryDataDir(latestDataDir, requiredBytes);
-
-            if (rejectionReason == null) {
-                return handleSuccessfulRecovery(hardwareId, currentContext, syncFiles, fromIndex, latestDataDir,
-                        requiredBytes, attempts);
-            }
-
-            lastRejectedPath = logRecoveryAttempt(hardwareId, attempts, latestDataDir, requiredBytes, rejectionReason,
-                    lastRejectedPath);
-
-            if (!sleepDuringRecovery()) {
-                return null;
-            }
+            return null;
         }
-        return null;
     }
 
     /**
@@ -640,100 +656,6 @@ public class DataSyncWorker implements Runnable {
      */
     private boolean shouldContinueRecoveryWait(String hardwareId) {
         return !shutdownRequested && !Thread.currentThread().isInterrupted() && !isDeviceDead(hardwareId);
-    }
-
-    /**
-     * Check if user deferred recovery and log if so.
-     */
-    private boolean isRecoveryDeferred(String hardwareId) {
-        if (saveRecoveryDeferred) {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Recovery wait canceled because user selected 'Later'", hardwareId);
-            }
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Handle successful data directory recovery by creating updated context.
-     */
-    private SyncContext handleSuccessfulRecovery(String hardwareId, SyncContext currentContext,
-            List<SyncFile> syncFiles, int fromIndex, File latestDataDir, long requiredBytes, int attempts) {
-        if (log.isInfoEnabled()) {
-            log.info(
-                    "[{}] Data directory recovery completed after {} checks. activeSaveDir={} requiredBytes={}",
-                    hardwareId,
-                    attempts,
-                    latestDataDir != null ? latestDataDir.getAbsolutePath() : "null",
-                    requiredBytes);
-        }
-        SyncContext updatedContext = new SyncContext(
-                currentContext.username(),
-                currentContext.isAdmin(),
-                latestDataDir,
-                currentContext.autoDelete(),
-                currentContext.deviceName());
-        rebasePendingSyncFiles(syncFiles, fromIndex, latestDataDir);
-        return updatedContext;
-    }
-
-    /**
-     * Log recovery attempt if path changed or every 10 attempts.
-     * Returns the current candidate path for tracking.
-     */
-    private String logRecoveryAttempt(String hardwareId, int attempts, File latestDataDir, long requiredBytes,
-            String rejectionReason, String lastRejectedPath) {
-        String candidatePath = latestDataDir != null ? latestDataDir.getAbsolutePath() : "null";
-        boolean pathChanged = !candidatePath.equals(lastRejectedPath);
-
-        if ((pathChanged || attempts % 10 == 0) && log.isDebugEnabled()) {
-            log.debug(
-                    "[{}] Waiting for save directory recovery: attempt={} candidate={} requiredBytes={} reason={}",
-                    hardwareId, attempts, candidatePath, requiredBytes, rejectionReason);
-
-        }
-        return candidatePath;
-    }
-
-    /**
-     * Sleep during recovery wait. Returns false if interrupted.
-     */
-    private boolean sleepDuringRecovery() {
-        try {
-            Thread.sleep(1_000);
-            return true;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
-    }
-
-    private String validateRecoveryDataDir(File dataDir, long requiredBytes) {
-        if (dataDir == null) {
-            return "save_dir_not_configured";
-        }
-
-        if (!folderManagerService.isDataDirAccessible(dataDir)) {
-            return "save_dir_drive_unavailable";
-        }
-
-        if (requiredBytes > 0 && !folderManagerService.hasSufficientSpace(dataDir, requiredBytes)) {
-            return "save_dir_insufficient_space";
-        }
-
-        try {
-            folderManagerService.withSpecificDirPrepared(dataDir, () -> Boolean.TRUE);
-        } catch (Exception e) {
-            if (log.isDebugEnabled()) {
-                log.debug("Save directory failed readiness check: {} - {}",
-                        dataDir.getAbsolutePath(),
-                        e.getMessage());
-            }
-            return "save_dir_not_ready";
-        }
-
-        return null;
     }
 
     private void rebasePendingSyncFiles(List<SyncFile> syncFiles, int fromIndex, File newSaveDir) {
@@ -1361,10 +1283,23 @@ public class DataSyncWorker implements Runnable {
 
     @EventListener
     public void onStorageRecoveryDeferred(StorageRecoveryDeferredEvent event) {
-        if (event != null && event.getTarget() == FolderType.SAVE) {
-            saveRecoveryDeferred = true;
+        if (event != null && event.getTarget() == FolderType.SYNC) {
+            synchronized (recoveryLock) {
+                saveRecoveryDeferred = true;
+                recoveryLock.notifyAll();
+            }
             if (log.isDebugEnabled()) {
                 log.debug("Storage recovery was deferred by user for target={}", event.getTarget());
+            }
+        }
+    }
+
+    @EventListener
+    public void onStorageRestored(StorageRestoredEvent event) {
+        if (event != null && event.getTarget() == FolderType.SYNC) {
+            synchronized (recoveryLock) {
+                saveRecoveryDeferred = false;
+                recoveryLock.notifyAll();
             }
         }
     }

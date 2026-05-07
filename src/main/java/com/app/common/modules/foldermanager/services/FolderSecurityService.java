@@ -164,8 +164,7 @@ public class FolderSecurityService {
         while (current != null) {
             if (current.getFileName() != null) {
                 String name = current.getFileName().toString();
-                if (name.equals(AppConstants.DATA_FOLDER_NAME) || name.equals(AppConstants.BACKUP_FOLDER_NAME)
-                        || name.equals(AppConstants.EXPORT_FOLDER_NAME)) {
+                if (name.equals(AppConstants.SYNC_FOLDER_NAME) || name.equals(AppConstants.BACKUP_FOLDER_NAME)) {
                     return current;
                 }
             }

@@ -2,7 +2,6 @@ package com.app.admin.layout.controllers;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,7 +74,6 @@ public class AdminLayoutController extends BaseLayoutController {
     private static final int STORAGE_UNAVAILABLE = 2;
     private static final String STATUS_SYNC_DRIVE = "status.syncDrive";
     private static final String STATUS_BACKUP_DRIVE = "status.backupDrive";
-    private static final String STATUS_EXPORT_DRIVE = "status.exportDrive";
     private static final String CSS_STORAGE_WARN = "storage-warn";
     private static final String CSS_STORAGE_CRITICAL = "storage-critical";
 
@@ -151,8 +149,10 @@ public class AdminLayoutController extends BaseLayoutController {
     private DashboardController currentDashboardController;
     private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
     private final Map<String, String> pendingStorageSyncs = new HashMap<>();
-    private boolean storageLowSpaceDialogVisible;
-    private boolean storageUnavailableDialogVisible;
+    private boolean syncLowSpaceDialogVisible;
+    private boolean backupLowSpaceDialogVisible;
+    private boolean syncUnavailableDialogVisible;
+    private boolean backupUnavailableDialogVisible;
     private volatile StorageIssueReason syncStorageBlocked;
 
     @SuppressWarnings("unused")
@@ -508,24 +508,12 @@ public class AdminLayoutController extends BaseLayoutController {
         Platform.runLater(() -> {
             File dataDir = folderManagerService.getDataDir();
             File backupDir = folderManagerService.getBackupDir();
-            File exportDir = folderManagerService.getExportDir();
 
-            boolean conflict = isSameParentFolder(dataDir, backupDir)
-                    || isSameParentFolder(dataDir, exportDir)
-                    || isSameParentFolder(backupDir, exportDir);
+            boolean sameParent = isSameParentFolder(dataDir, backupDir);
 
-            // Tạo thông báo chi tiết cặp nào bị conflict
-            List<String> conflictPairs = new ArrayList<>();
-            if (isSameParentFolder(dataDir, backupDir))
-                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.save_backup"));
-            if (isSameParentFolder(dataDir, exportDir))
-                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.save_export"));
-            if (isSameParentFolder(backupDir, exportDir))
-                conflictPairs.add(I18n.get("setting.storage.warn.same_drive.backup_export"));
-
-            lblDriveConflictWarning.setText(String.join("\n", conflictPairs));
-            driveConflictRow.setVisible(conflict);
-            driveConflictRow.setManaged(conflict);
+            lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
+            driveConflictRow.setVisible(sameParent);
+            driveConflictRow.setManaged(sameParent);
 
             int dataState = updateStorageBar(STATUS_SYNC_DRIVE, pbDataStorage, lblDataStorageTitle,
                     lblDataStoragePercent, lblDataStorageUsage, dataDir);
@@ -712,6 +700,97 @@ public class AdminLayoutController extends BaseLayoutController {
         return String.format("%d KB", bytes / 1_024);
     }
 
+    private boolean isDialogStillOpen(StorageUnavailableEvent event) {
+        boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
+        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
+
+        if (isLowSpace) {
+            return isSyncTarget ? backupLowSpaceDialogVisible : syncLowSpaceDialogVisible;
+        } else {
+            return isSyncTarget ? backupUnavailableDialogVisible : syncUnavailableDialogVisible;
+        }
+    }
+
+    private void setDialogVisibleFlag(StorageUnavailableEvent event, boolean visible) {
+        boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
+        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
+
+        if (isLowSpace) {
+            if (isSyncTarget) {
+                syncLowSpaceDialogVisible = visible;
+            } else {
+                backupLowSpaceDialogVisible = visible;
+            }
+        } else {
+            if (isSyncTarget) {
+                syncUnavailableDialogVisible = visible;
+            } else {
+                backupUnavailableDialogVisible = visible;
+            }
+        }
+    }
+
+    private boolean isDialogAlreadyVisible(StorageUnavailableEvent event) {
+        boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
+        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
+
+        if (isLowSpace && isSyncTarget && syncLowSpaceDialogVisible) {
+            logDebug("Sync low-space dialog already visible. Skip duplicate.");
+            return true;
+        }
+        if (isLowSpace && !isSyncTarget && backupLowSpaceDialogVisible) {
+            logDebug("Backup low-space dialog already visible. Skip duplicate.");
+            return true;
+        }
+        if (!isLowSpace && isSyncTarget && syncUnavailableDialogVisible) {
+            logDebug("Sync unavailable dialog already visible. Skip duplicate.");
+            return true;
+        }
+        if (!isLowSpace && !isSyncTarget && backupUnavailableDialogVisible) {
+            logDebug("Backup unavailable dialog already visible. Skip duplicate.");
+            return true;
+        }
+        return false;
+    }
+
+    private boolean shouldQueueDialog(StorageUnavailableEvent event) {
+        boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
+        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
+
+        if (isLowSpace && isSyncTarget && backupLowSpaceDialogVisible) {
+            logDebug("Backup drive low-space dialog is openning. Queueing sync low-space dialog.");
+            return true;
+        }
+        if (isLowSpace && !isSyncTarget && syncLowSpaceDialogVisible) {
+            logDebug("Sync drive low-space dialog is openning. Queueing backup low-space dialog.");
+            return true;
+        }
+        if (!isLowSpace && isSyncTarget && backupUnavailableDialogVisible) {
+            logDebug("Backup drive unavailable dialog is openning. Queueing sync unavailable dialog.");
+            return true;
+        }
+        if (!isLowSpace && !isSyncTarget && syncUnavailableDialogVisible) {
+            logDebug("Sync drive unavailable dialog is openning. Queueing backup unavailable dialog.");
+            return true;
+        }
+        return false;
+    }
+
+    private void queueDialogUntilOtherCloses(StorageUnavailableEvent event) {
+        new Thread(() -> {
+            while (isDialogStillOpen(event)) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    setDialogVisibleFlag(event, false);
+                    return;
+                }
+            }
+            Platform.runLater(() -> showStorageUnavailableDialog(event));
+        }, "storage-dialog-queue").start();
+    }
+
     @EventListener
     public void onStorageUnavailable(StorageUnavailableEvent event) {
         if (event == null) {
@@ -719,23 +798,20 @@ public class AdminLayoutController extends BaseLayoutController {
         }
         logDebug("StorageUnavailableEvent: target: {}, reason: {}", event.getTarget(), event.getReason());
 
-        if (event.getReason() == StorageIssueReason.LOW_SPACE) {
-            if (storageLowSpaceDialogVisible) {
-                logDebug("Storage-low-space dialog already visible. Skip opening duplicate for target={} reason={}",
-                        event.getTarget(), event.getReason());
-                return;
-            }
-            storageLowSpaceDialogVisible = true;
-        } else if (event.getReason() == StorageIssueReason.DRIVE_UNAVAILABLE) {
-            if (storageUnavailableDialogVisible) {
-                logDebug("Storage-unavailable dialog already visible. Skip opening duplicate for target={} reason={}",
-                        event.getTarget(), event.getReason());
-                return;
-            }
-            storageUnavailableDialogVisible = true;
+        if (isDialogAlreadyVisible(event)) {
+            return;
         }
 
-        Platform.runLater(() -> showStorageUnavailableDialog(event));
+        boolean shouldQueue = shouldQueueDialog(event);
+
+        // Mark this dialog as visible before showing or queueing
+        setDialogVisibleFlag(event, true);
+
+        if (shouldQueue) {
+            queueDialogUntilOtherCloses(event);
+        } else {
+            Platform.runLater(() -> showStorageUnavailableDialog(event));
+        }
     }
 
     private void showStorageUnavailableDialog(StorageUnavailableEvent event) {
@@ -744,20 +820,16 @@ public class AdminLayoutController extends BaseLayoutController {
 
         try {
             String targetDrive = "";
-            if (event.getTarget() == FolderType.SAVE) {
+            if (event.getTarget() == FolderType.SYNC) {
                 syncStorageBlocked = event.getReason();
                 targetDrive = I18n.get(STATUS_SYNC_DRIVE);
             } else if (event.getTarget() == FolderType.BACKUP) {
                 backupStorageBlocked = event.getReason();
                 targetDrive = I18n.get(STATUS_BACKUP_DRIVE);
-            } else if (event.getTarget() == FolderType.EXPORT) {
-                targetDrive = I18n.get(STATUS_EXPORT_DRIVE);
             }
 
             if (!session.isAdmin()) {
                 // Non-admin users see alert and flag is reset after acknowledgment
-                logDebug("Opening storage-unavailable dialog: target={} reason={} requiredBytes={}",
-                        event.getTarget(), event.getReason(), event.getRequiredBytes());
                 String header = "";
                 String message = "";
                 if (event.getReason() == StorageIssueReason.LOW_SPACE) {
@@ -767,12 +839,10 @@ public class AdminLayoutController extends BaseLayoutController {
                     header = I18n.get(I18N_STORAGE_DRIVE_MISSING_TITLE, targetDrive);
                     message = I18n.get(I18N_STORAGE_DRIVE_MISSING_USER_MESSAGE, targetDrive);
                 }
-                storageUnavailableDialogVisible = true;
-                AlertHelper.showInformation(
-                        header,
-                        null,
-                        message,
-                        () -> publisher.publishEvent(new StorageRecoveryDeferredEvent(event.getTarget())));
+
+                Alert alert = AlertHelper.createInformation(header, null, message);
+                alert.showAndWait();
+                publisher.publishEvent(new StorageRecoveryDeferredEvent(event.getTarget()));
             } else {
 
                 Alert alert = createStorageUnavailableAlert(event);
@@ -780,17 +850,12 @@ public class AdminLayoutController extends BaseLayoutController {
                 handleStorageDialogLoop(event, alert);
             }
         } finally {
-            if (event.getReason() == StorageIssueReason.LOW_SPACE) {
-                storageLowSpaceDialogVisible = false;
-            } else if (event.getReason() == StorageIssueReason.DRIVE_UNAVAILABLE) {
-                storageUnavailableDialogVisible = false;
-            }
-            if (event.getTarget() == FolderType.SAVE) {
+            setDialogVisibleFlag(event, false);
+            if (event.getTarget() == FolderType.SYNC) {
                 syncStorageBlocked = null;
             } else if (event.getTarget() == FolderType.BACKUP) {
                 backupStorageBlocked = null;
             }
-            // Export folder doesn't block operations
             logDebug("Storage unavailable dialog closed. target={}", event.getTarget());
             refreshStorageStatus();
         }
@@ -798,9 +863,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
     private Alert createStorageUnavailableAlert(StorageUnavailableEvent event) {
         String targetDrive = switch (event.getTarget()) {
-            case SAVE -> I18n.get(STATUS_SYNC_DRIVE);
+            case SYNC -> I18n.get(STATUS_SYNC_DRIVE);
             case BACKUP -> I18n.get(STATUS_BACKUP_DRIVE);
-            case EXPORT -> I18n.get(STATUS_EXPORT_DRIVE);
         };
         String header = "";
         String content = "";
@@ -888,13 +952,12 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private void handleSuccessfulFolderSave(StorageUnavailableEvent event) {
-        if (event.getTarget() == FolderType.SAVE) {
+        if (event.getTarget() == FolderType.SYNC) {
             syncStorageBlocked = null;
             drainPendingSyncs();
         } else if (event.getTarget() == FolderType.BACKUP) {
             backupStorageBlocked = null;
         }
-        // Export folder recovery doesn't need special handling
     }
 
     private void drainPendingSyncs() {
@@ -909,7 +972,7 @@ public class AdminLayoutController extends BaseLayoutController {
     @EventListener
     public void onStorageRestored(StorageRestoredEvent event) {
         if (event != null) {
-            if (event.getTarget() == FolderType.SAVE) {
+            if (event.getTarget() == FolderType.SYNC) {
                 syncStorageBlocked = null;
                 if (!pendingStorageSyncs.isEmpty()) {
                     // Continue pending devices
@@ -920,7 +983,6 @@ public class AdminLayoutController extends BaseLayoutController {
             } else if (event.getTarget() == FolderType.BACKUP) {
                 backupStorageBlocked = null;
             }
-            // Export folder recovery doesn't need special handling
         }
         refreshStorageStatus();
     }
@@ -960,12 +1022,7 @@ public class AdminLayoutController extends BaseLayoutController {
             return new FolderSelectionResult(false, rejection);
         }
 
-        String key = switch (target) {
-            case SAVE -> AppConstants.KEY_DATA_DIR;
-            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
-            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
-        };
-        appConfigService.saveConfigValue(key, selected.getAbsolutePath());
+        appConfigService.saveConfigValue(target, selected.getAbsolutePath());
         folderManagerService.init();
         showNoticeSuccess(I18n.get(I18N_SETTING_STORAGE_SUCCESS));
         storageHealthMonitor.checkNow();
@@ -989,12 +1046,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private File readConfiguredRootPath(FolderType target) {
-        String key = switch (target) {
-            case SAVE -> AppConstants.KEY_DATA_DIR;
-            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
-            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
-        };
-        String path = appConfigService.getConfigValue(key);
+        String path = appConfigService.getConfigValue(target);
         if (path == null || path.isBlank()) {
             return null;
         }
@@ -1002,11 +1054,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private String validateSelectedStorageFolder(FolderType target, File selectedRoot, long requiredBytes) {
-        String folderName = switch (target) {
-            case SAVE -> AppConstants.DATA_FOLDER_NAME;
-            case BACKUP -> AppConstants.BACKUP_FOLDER_NAME;
-            case EXPORT -> AppConstants.EXPORT_FOLDER_NAME;
-        };
+        String folderName = target.getPhysicalFolderName();
         File managedDir = new File(selectedRoot, folderName);
 
         if (!folderManagerService.isDirAccessible(managedDir)) {

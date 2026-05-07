@@ -31,7 +31,7 @@ public class AppUpdateService {
 
     private static final Logger log = LoggerFactory.getLogger(AppUpdateService.class);
 
-    private static final String GITHUB_API = AppConstants.GITHUB_API;
+    private static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
     private static final String KEY_LAST_CHECK_DATE = AppConstants.KEY_LAST_CHECK_DATE;
     private static final String KEY_SKIPPED_VERSION = AppConstants.KEY_SKIPPED_VERSION;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern(AppConstants.DATE_FORMAT);

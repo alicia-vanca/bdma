@@ -69,14 +69,7 @@ public class FolderManagerService {
             appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
             log.info("Initialized default backup folder: {}", backupDirPath);
         }
-        String exportDirPath = appConfigService.getConfigValue(AppConstants.KEY_EXPORT_DIR);
-        if (exportDirPath == null || exportDirPath.isBlank()) {
-            exportDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataExport").toString();
-            appConfigService.saveConfigValue(AppConstants.KEY_EXPORT_DIR, exportDirPath);
-            log.info("Initialized default export folder: {}", exportDirPath);
-        }
 
-        initExportDir(exportDirPath);
         initDataDir(dataDirPath);
         initBackupDir(backupDirPath);
         clearTemp();
@@ -95,7 +88,7 @@ public class FolderManagerService {
         if (dataDirPath == null || dataDirPath.isBlank()) {
             return null;
         }
-        return new File(dataDirPath, AppConstants.DATA_FOLDER_NAME);
+        return new File(dataDirPath, AppConstants.SYNC_FOLDER_NAME);
     }
 
     // Fetch latest backupDir from database instead of using cached value
@@ -191,7 +184,7 @@ public class FolderManagerService {
         Path current = path;
         while (current != null) {
             if (current.getFileName() != null &&
-                    current.getFileName().toString().equals(AppConstants.DATA_FOLDER_NAME)) {
+                    current.getFileName().toString().equals(AppConstants.SYNC_FOLDER_NAME)) {
                 deepestDataFolder = current;
                 break;
             }
@@ -199,7 +192,7 @@ public class FolderManagerService {
         }
 
         if (deepestDataFolder == null) {
-            throw new IOException("Path does not contain " + AppConstants.DATA_FOLDER_NAME + ": " + absolutePath);
+            throw new IOException("Path does not contain " + AppConstants.SYNC_FOLDER_NAME + ": " + absolutePath);
         }
 
         // Get relative path from the deepest data_bdma folder
@@ -304,15 +297,15 @@ public class FolderManagerService {
         if (configuredPath == null || configuredPath.isBlank())
             return;
 
-        File dataDir = new File(configuredPath, AppConstants.DATA_FOLDER_NAME);
+        File dataDir = new File(configuredPath, AppConstants.SYNC_FOLDER_NAME);
 
         // Check drive accessibility before attempting folder operations
         if (!isDriveAccessible(dataDir)) {
             log.warn("DataDir drive not accessible during initialization: {}", dataDir.getAbsolutePath());
             log.debug("FolderManagerService.initDataDir firing StorageUnavailableEvent: target={} reason={}",
-                    FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE);
+                    FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE);
             publisher.publishEvent(
-                    new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE));
+                    new StorageUnavailableEvent(FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE));
             return;
         }
 
@@ -347,31 +340,6 @@ public class FolderManagerService {
                     backupDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
             log.error("Failed to initialize backup directory", e);
-        }
-    }
-
-    private void initExportDir(String configuredPath) {
-        if (configuredPath == null || configuredPath.isBlank())
-            return;
-
-        File exportDir = new File(configuredPath, AppConstants.EXPORT_FOLDER_NAME);
-
-        // Check drive accessibility before attempting folder operations
-        if (!isDriveAccessible(exportDir)) {
-            log.warn("ExportDir drive not accessible during initialization: {}", exportDir.getAbsolutePath());
-            log.debug("FolderManagerService.initExportDir firing StorageUnavailableEvent: target={} reason={}",
-                    FolderType.EXPORT, StorageIssueReason.DRIVE_UNAVAILABLE);
-            publisher.publishEvent(
-                    new StorageUnavailableEvent(FolderType.EXPORT, StorageIssueReason.DRIVE_UNAVAILABLE));
-            return;
-        }
-
-        try {
-            ensureBdmaDirState(exportDir.getAbsolutePath());
-            log.info("ExportDir initialized: {} (protectionEnabled={})",
-                    exportDir.getAbsolutePath(), storageProtectionEnabled);
-        } catch (IOException e) {
-            log.error("Failed to initialize export directory", e);
         }
     }
 
@@ -415,16 +383,16 @@ public class FolderManagerService {
     public String backupFromSave(String nonDriverLetterSyncedPath) throws IOException {
         File currentBackupDir = getBackupDir();
         if (currentBackupDir == null) {
-            throw new IOException("Backup directory not configured");
+            init(); // Attempt to initialize backup dir if not configured
+            currentBackupDir = getBackupDir();
+            if (currentBackupDir == null) {
+                throw new IOException("Backup directory not configured");
+            }
         }
 
         Path sourcePath;
-        try {
-            // Find the file across drives
-            sourcePath = resolvePathAcrossDrives(nonDriverLetterSyncedPath);
-        } catch (FileNotFoundOnAnyDriveException e) {
-            throw new IOException("Source file not found on any drive: " + nonDriverLetterSyncedPath, e);
-        }
+        // Find the file across drives
+        sourcePath = resolvePathAcrossDrives(nonDriverLetterSyncedPath);
 
         String relativeFromData = toRelativeDataPath(sourcePath.toString());
         Path target = currentBackupDir.toPath().resolve(relativeFromData);
@@ -448,21 +416,5 @@ public class FolderManagerService {
 
     private void ensureBdmaDirState(String dirPath) throws IOException {
         FolderSecurityService.ensureBdmaDataDir(dirPath, storageProtectionEnabled);
-    }
-
-    public File getExportDir() {
-        String exportDirPath = appConfigService.getConfigValue(AppConstants.KEY_EXPORT_DIR);
-        if (exportDirPath == null || exportDirPath.isBlank()) {
-            return null;
-        }
-        return new File(exportDirPath, AppConstants.EXPORT_FOLDER_NAME);
-    }
-
-    public boolean isExportDirConfigured() {
-        return getExportDir() != null;
-    }
-
-    public boolean isExportDirAccessible() {
-        return isDirAccessible(getExportDir());
     }
 }

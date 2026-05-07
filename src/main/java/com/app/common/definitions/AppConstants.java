@@ -29,12 +29,10 @@ public final class AppConstants {
     public static final String LANG_VI = "vi";
 
     // ────────────── App configs ──────────────
-    public static final String DATA_FOLDER_NAME = "data_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
+    public static final String SYNC_FOLDER_NAME = "sync_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
     public static final String BACKUP_FOLDER_NAME = "backup_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
     public static final String KEY_DATA_DIR = "dataSync.dataDir";
     public static final String KEY_BACKUP_DIR = "dataBackup.backupDir";
-    public static final String KEY_EXPORT_DIR = "dataSync.exportDir";
-    public static final String EXPORT_FOLDER_NAME = "export_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
     public static final String KEY_IS_AUTO_DELETE_AFTER_SYNC = "dataSync.isAutoDeleteAfterSync";
     public static final String KEY_IS_START_WITH_WINDOWS = "appConfig.isStartWithWindows";
     public static final String KEY_LANGUAGE = "appConfig.language";
@@ -56,7 +54,6 @@ public final class AppConstants {
     // ────────────── File Status ──────────────
     public static final String FILE_STATUS_SYNCED = "SYNCED";
     public static final String FILE_STATUS_BACKEDUP = "BACKEDUP";
-    public static final String FILE_STATUS_EXPORT = "EXPORT";
     public static final String FILE_STATUS_FAILED = "FAILED";
 
     // ────────────── Dashboard ──────────────

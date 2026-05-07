@@ -38,7 +38,7 @@ public class StorageHealthMonitor {
         boolean dataAccessible = folderManagerService.isDataDirAccessible();
         boolean backupAccessible = folderManagerService.isBackupDirAccessible();
 
-        publishState(FolderType.SAVE, dataAccessible);
+        publishState(FolderType.SYNC, dataAccessible);
         publishState(FolderType.BACKUP, backupAccessible);
     }
 
@@ -47,16 +47,16 @@ public class StorageHealthMonitor {
     }
 
     private void publishState(FolderType target, boolean accessible) {
-        if (target == FolderType.SAVE) {
+        if (target == FolderType.SYNC) {
             if (!accessible && !dataUnavailablePublished) {
                 log.debug("StorageHealthMonitor firing StorageUnavailableEvent: target={} reason={}",
-                        FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE);
+                        FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE);
                 publisher.publishEvent(
-                        new StorageUnavailableEvent(FolderType.SAVE, StorageIssueReason.DRIVE_UNAVAILABLE));
+                        new StorageUnavailableEvent(FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE));
                 dataUnavailablePublished = true;
             } else if (accessible && dataUnavailablePublished) {
-                log.debug("StorageHealthMonitor firing StorageRestoredEvent: target={}", FolderType.SAVE);
-                publisher.publishEvent(new StorageRestoredEvent(FolderType.SAVE));
+                log.debug("StorageHealthMonitor firing StorageRestoredEvent: target={}", FolderType.SYNC);
+                publisher.publishEvent(new StorageRestoredEvent(FolderType.SYNC));
                 dataUnavailablePublished = false;
             }
             return;

@@ -37,7 +37,7 @@
         </TableView>
         <HBox alignment="CENTER_LEFT" spacing="10">
             <Label text="%common.show"/>
-            <ComboBox fx:id="cbPageSize" prefWidth="55" styleClass="page-size-combo"/>
+            <ComboBox fx:id="cbPageSize" prefWidth="60" styleClass="page-size-combo"/>
             <Label text="%common.per.page"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage"

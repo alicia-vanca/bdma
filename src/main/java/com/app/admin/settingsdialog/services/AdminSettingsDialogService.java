@@ -37,28 +37,18 @@ public class AdminSettingsDialogService {
     // ── Storage ───────────────────────────────────────────────────────────────
 
     public Optional<String> getFolderPath(FolderType type) {
-        String key = switch (type) {
-            case SAVE   -> AppConstants.KEY_DATA_DIR;
-            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
-            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
-        };
-        String path = appConfigService.getConfigValue(key);
+        String path = appConfigService.getConfigValue(type);
         return (path != null && !path.isBlank()) ? Optional.of(path) : Optional.empty();
     }
 
     public void saveFolder(String path, FolderType type) {
-        String key = switch (type) {
-            case SAVE   -> AppConstants.KEY_DATA_DIR;
-            case BACKUP -> AppConstants.KEY_BACKUP_DIR;
-            case EXPORT -> AppConstants.KEY_EXPORT_DIR;
-        };
         String normalizedPath = Path.of(path).toAbsolutePath().normalize().toString();
-        appConfigService.saveConfigValue(key, normalizedPath);
+        appConfigService.saveConfigValue(type, normalizedPath);
         folderManagerService.init();
         log.info("Saved folder [{}]: {}", type.name(), normalizedPath);
     }
 
-    // ── Data backup ───────────────────────────────────────────────────────────
+    // ── Data sync ───────────────────────────────────────────────────────────
 
     public boolean getAutoDelete() {
         return Boolean.parseBoolean(appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC));
