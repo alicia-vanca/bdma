@@ -94,7 +94,7 @@ public class DeviceValidationService {
         }
 
         ModelWhitelist whitelist = matchedWhitelist.get();
-        Optional<ValidatedDevice> existingDevice = validatedDeviceRepository.findByHardwareId(hardwareId);
+        Optional<ValidatedDevice> existingDevice = validatedDeviceRepository.findByCameraId(cameraId);
 
         // Get device name from database if device already saved, otherwise use
         // cameraId
@@ -174,6 +174,22 @@ public class DeviceValidationService {
                 .trim()
                 .replace("\"", "")
                 .replace("'", "");
+    }
+
+    public Long resolveDeviceId(String cameraId) {
+        ValidatedDevice validatedDevice = validatedDeviceRepository.findByCameraId(cameraId).orElse(null);
+        if (validatedDevice != null) {
+            return validatedDevice.getId();
+        }
+        return createDefaultDevice(cameraId);
+    }
+
+    private Long createDefaultDevice(String cameraId) {
+        ValidatedDevice validatedDevice = new ValidatedDevice();
+        validatedDevice.setDeviceName(cameraId);
+        validatedDevice.setCameraId(cameraId);
+        log.info("Auto-created sync device '{}'", cameraId);
+        return validatedDeviceRepository.insert(validatedDevice);
     }
 
 }

@@ -82,19 +82,13 @@ public class FileListController {
     private Label lblPageInfo;
     @FXML
     private ComboBox<Integer> cbPageSize;
-    @FXML
-    private TableColumn<FileView, Boolean> colSelect;
-    @FXML
-    private Button btnDownload;
-    @FXML
-    private Label lblSelectedCount;
 
     private final FileService fileService;
     private final UserService userService;
     private final Session session;
     private final FolderManagerService folderManagerService;
 
-    private String activeHardwareId;
+    private String activeCameraId;
     private boolean initializing = true;
     private List<FileView> filteredFiles = new ArrayList<>();
     private int pageSize = AppConstants.DEFAULT_PAGE_SIZE;
@@ -191,7 +185,7 @@ public class FileListController {
         if (status == null) {
             // Not checked yet - mark as checking and start async verification
             fileVerificationCache.put(syncedPath, VerificationStatus.CHECKING);
-            startAsyncVerification(syncedPath);
+            startAsyncVerification(syncedPath, fileView.fileSize());
             return fileName; // Show without prefix while checking
         }
 
@@ -205,10 +199,10 @@ public class FileListController {
     }
 
     // Start async verification for a file path
-    private void startAsyncVerification(String syncedPath) {
+    private void startAsyncVerification(String syncedPath, long expectedSize) {
         verificationExecutor.submit(() -> {
             try {
-                PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedPath);
+                PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedPath, expectedSize);
 
                 VerificationStatus newStatus;
                 if (result.isNotFound()) {
@@ -231,8 +225,8 @@ public class FileListController {
         });
     }
 
-    public void filterByDevice(String hardwareId) {
-        this.activeHardwareId = hardwareId;
+    public void filterByDevice(String cameraId) {
+        this.activeCameraId = cameraId;
         refresh(buildFilter());
     }
 
@@ -242,7 +236,7 @@ public class FileListController {
         dateToPicker.setValue(null);
         userFilterCombo.getSelectionModel().selectFirst();
         typeFilterCombo.getSelectionModel().selectFirst();
-        activeHardwareId = null;
+        activeCameraId = null;
         if (onClearFilter != null) {
             onClearFilter.run();
         }
@@ -320,7 +314,7 @@ public class FileListController {
     private FileFilter buildFilter() {
         FileFilter filter = new FileFilter();
 
-        filter.setHardwareId(activeHardwareId);
+        filter.setCameraId(activeCameraId);
         filter.setDateFrom(dateFromPicker.getValue());
         filter.setDateTo(dateToPicker.getValue());
 

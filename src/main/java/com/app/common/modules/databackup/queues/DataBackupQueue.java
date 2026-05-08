@@ -16,6 +16,10 @@ public class DataBackupQueue {
     private final LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>();
     private final Set<String> inQueue = ConcurrentHashMap.newKeySet();
 
+    public boolean isActive() {
+        return !inQueue.isEmpty();
+    }
+
     /**
      * Adds a file to the queue.
      * Skips if the file is already enqueued.

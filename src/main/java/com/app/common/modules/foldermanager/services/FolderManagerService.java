@@ -256,16 +256,14 @@ public class FolderManagerService {
      * drives.
      * Returns result that distinguishes between "not found" and other I/O errors.
      */
-    public PathResolutionResult findAbsolutePathFromNonDriveLetterPath(String nonDriveLetterPath) {
-        try {
-            Path resolved = resolvePathAcrossDrives(nonDriveLetterPath);
-            return PathResolutionResult.found(resolved);
-        } catch (FileNotFoundOnAnyDriveException e) {
-            return PathResolutionResult.notFound();
-        } catch (IOException e) {
-            log.error("Unexpected I/O error resolving path: {}", nonDriveLetterPath, e);
-            return PathResolutionResult.error(e);
+    public PathResolutionResult findAbsolutePathFromNonDriveLetterPath(String path, long expectedSize) {
+        for (File root : File.listRoots()) {
+            File candidate = new File(root, path);
+            if (candidate.exists() && candidate.length() == expectedSize) {
+                return PathResolutionResult.found(candidate.toPath());
+            }
         }
+        return PathResolutionResult.notFound();
     }
 
     public long resolveExistingFileSize(String nonDriveLetterPath) throws IOException {
@@ -402,16 +400,9 @@ public class FolderManagerService {
         if (targetParent != null) {
             ensureBdmaDirState(targetParent.toString());
         }
-
         Files.copy(sourcePath, target, StandardCopyOption.REPLACE_EXISTING);
         log.info("Backed up to backup dir: {}", relativeFromData);
         return target.toString();
-    }
-
-    public String stripDriveLetter(String absolutePath) {
-        Path path = Path.of(absolutePath);
-        Path root = path.getRoot();
-        return root != null ? root.relativize(path).toString() : absolutePath;
     }
 
     private void ensureBdmaDirState(String dirPath) throws IOException {

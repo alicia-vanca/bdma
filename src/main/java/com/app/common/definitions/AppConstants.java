@@ -80,4 +80,7 @@ public final class AppConstants {
     public static final int BATCH_SIZE = 50;
     public static final String SYNC_FILENAME = "loggly-sync.json";
     public static final String FILES = "files";
+
+    // ────────────── Default password ──────────────
+    public static final String DEFAULT_SYNC_USER_HASH = "$2a$10$xm8T0M6tezbn5RyrBL8FuOfmHtahqAtmUN.2XVRfllJ17211QBvgu";
 }

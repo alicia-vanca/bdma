@@ -1,9 +1,11 @@
 package com.app.admin.layout.controllers;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
-
+import java.util.stream.Collectors;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -182,7 +184,7 @@ public class DashboardController extends BaseLayoutController {
                 summary.setDeviceName(newName);
 
                 validatedDeviceRepository
-                        .findByHardwareId(summary.getHardwareId())
+                        .findByCameraId(summary.getCameraId())
                         .map(ValidatedDevice::getId)
                         .ifPresent(id -> validatedDeviceRepository.updateDeviceName(id, newName));
 
@@ -279,7 +281,7 @@ public class DashboardController extends BaseLayoutController {
         cell.setOnMouseClicked(event -> {
             if (event.getButton() != MouseButton.PRIMARY)
                 return;
-            fileListController.filterByDevice(summary.getHardwareId());
+            fileListController.filterByDevice(summary.getCameraId());
 
             if (event.getClickCount() == 2 && summary.isUnvalidated() && onRequestValidate != null) {
                 onRequestValidate.accept(summary);
@@ -340,10 +342,45 @@ public class DashboardController extends BaseLayoutController {
             if (event.type() == DeviceEvent.EventType.CONNECTED) {
                 handleConnected(event);
             } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
-                handleDisconnected(event.hardwareId());
+                handleDisconnectedEvent(event);
+            } else if (event.type() == DeviceEvent.EventType.UNVALIDATED) {
+                handleUnvalidated(event);
             }
             deviceListView.refresh();
         });
+    }
+
+    // Handle device disconnection events with proper logic for both validated and unvalidated devices
+    private void handleDisconnectedEvent(DeviceEvent event) {
+        String cameraId = null;
+        
+        // Try to get cameraId from validation result first
+        if (event.validationResult() != null) {
+            cameraId = event.validationResult().getCameraId();
+        } else {
+            // For devices without validation result, find by hardwareId
+            cameraId = findCameraIdByHardwareId(event.hardwareId());
+        }
+        
+        if (cameraId != null) {
+            handleDisconnected(cameraId);
+        }
+    }
+
+    // Handle unvalidated device: add as transient device to the list
+    private void handleUnvalidated(DeviceEvent event) {
+        DeviceValidationResult result = event.validationResult();
+        if (result == null) {
+            return;
+        }
+        
+        // Check if device already exists in the list to avoid duplicates
+        Optional<DeviceSummary> existing = findByCameraId(result.getCameraId());
+        if (existing.isPresent()) {
+            return;
+        }
+        
+        addTransientDevice(result);
     }
 
     // Handle device connection: update saved device status or add as unvalidated
@@ -363,7 +400,7 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void updateSavedDeviceAsConnected(DeviceValidationResult result) {
-        Optional<DeviceSummary> existing = findByHardwareId(result.getHardwareId());
+        Optional<DeviceSummary> existing = findByCameraId(result.getCameraId());
         if (existing.isEmpty()) {
             refresh();
             return;
@@ -380,6 +417,7 @@ public class DashboardController extends BaseLayoutController {
         deviceItems.add(new DeviceSummary(
                 result.getHardwareId(),
                 result.getCameraId(),
+                result.getCameraId(),
                 DeviceSummary.Status.UNVALIDATED,
                 SyncProgressTracker.SyncProgress.idle(),
                 result));
@@ -388,8 +426,8 @@ public class DashboardController extends BaseLayoutController {
 
     // Handle device disconnection: remove unvalidated devices or mark saved devices
     // as offline
-    private void handleDisconnected(String hardwareId) {
-        Optional<DeviceSummary> existing = findByHardwareId(hardwareId);
+    private void handleDisconnected(String cameraId) {
+        Optional<DeviceSummary> existing = findByCameraId(cameraId);
         if (existing.isEmpty()) {
             return;
         }
@@ -407,10 +445,18 @@ public class DashboardController extends BaseLayoutController {
         deviceListView.refresh();
     }
 
-    private Optional<DeviceSummary> findByHardwareId(String hardwareId) {
+    private Optional<DeviceSummary> findByCameraId(String cameraId) {
+        return deviceItems.stream()
+                .filter(summary -> cameraId != null && cameraId.equals(summary.getCameraId()))
+                .findFirst();
+    }
+
+    private String findCameraIdByHardwareId(String hardwareId) {
         return deviceItems.stream()
                 .filter(summary -> hardwareId != null && hardwareId.equals(summary.getHardwareId()))
-                .findFirst();
+                .map(DeviceSummary::getCameraId)
+                .findFirst()
+                .orElse(null);
     }
 
     private SyncProgressTracker.SyncProgress resolveSyncProgress(DeviceSummary summary) {
@@ -447,7 +493,7 @@ public class DashboardController extends BaseLayoutController {
             return;
         }
 
-        findByHardwareId(result.getHardwareId())
+        findByCameraId(result.getCameraId())
                 .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
                 .ifPresent(summary -> {
                     summary.setDeviceName(savedDeviceName);
@@ -478,6 +524,7 @@ public class DashboardController extends BaseLayoutController {
         DeviceSummary summary = new DeviceSummary(
                 device.getHardwareId(),
                 device.getDeviceName(),
+                device.getCameraId(),
                 DeviceSummary.Status.OFFLINE,
                 SyncProgressTracker.SyncProgress.idle(),
                 null);
@@ -510,5 +557,27 @@ public class DashboardController extends BaseLayoutController {
         if (fileListController != null) {
             fileListController.onFileBackupCompleted();
         }
+        refresh();
+    }
+
+    public void mergeSavedDevices() {
+        List<ValidatedDevice> dbDevices = validatedDeviceRepository.findAll();
+
+        Set<String> dbCameraIds = dbDevices.stream()
+                .map(ValidatedDevice::getCameraId)
+                .collect(Collectors.toSet());
+        for (ValidatedDevice device : dbDevices) {
+            boolean alreadyInList = deviceItems.stream()
+                    .anyMatch(s -> device.getCameraId().equals(s.getCameraId()));
+            if (!alreadyInList) {
+                deviceItems.add(toSavedSummary(device));
+            }
+        }
+
+        deviceItems.removeIf(summary ->
+                summary.getStatus() == DeviceSummary.Status.OFFLINE
+                        && !dbCameraIds.contains(summary.getCameraId()));
+
+        sortDeviceItems();
     }
 }

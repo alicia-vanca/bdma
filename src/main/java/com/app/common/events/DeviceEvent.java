@@ -14,6 +14,7 @@ public record DeviceEvent(
 
     public enum EventType {
         CONNECTED,
-        DISCONNECTED
+        DISCONNECTED,
+        UNVALIDATED
     }
 }

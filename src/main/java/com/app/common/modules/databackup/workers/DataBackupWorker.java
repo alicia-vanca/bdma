@@ -2,6 +2,7 @@ package com.app.common.modules.databackup.workers;
 
 import java.io.IOException;
 
+import com.app.common.utils.FileUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -174,7 +175,7 @@ public class DataBackupWorker implements Runnable {
     private void performBackup(String nonDriveLetterSyncedPath) {
         try {
             String absoluteBackupPath = folderManager.backupFromSave(nonDriveLetterSyncedPath);
-            String nonDriveLetterBackedUpPath = folderManager.stripDriveLetter(absoluteBackupPath);
+            String nonDriveLetterBackedUpPath = FileUtil.stripDriveLetter(absoluteBackupPath);
 
             dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);
 

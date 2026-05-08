@@ -24,14 +24,14 @@ public class AdminSettingsDialogService {
 
     private final AppConfigService appConfigService;
     private final FolderManagerService folderManagerService;
-    private final RestoreService restoreService;
+    private final BackupSyncService backupSyncService;
 
     public AdminSettingsDialogService(AppConfigService appConfigService,
             FolderManagerService folderManagerService,
-            RestoreService restoreService) {
+            BackupSyncService backupSyncService) {
         this.appConfigService = appConfigService;
         this.folderManagerService = folderManagerService;
-        this.restoreService = restoreService;
+        this.backupSyncService = backupSyncService;
     }
 
     // ── Storage ───────────────────────────────────────────────────────────────
@@ -167,7 +167,11 @@ public class AdminSettingsDialogService {
         return System.getProperty("user.dir") + "\\bdma.exe";
     }
 
-    public RestoreService.RestoreResult restoreFromBackup() {
-        return restoreService.restoreAll();
+    public BackupSyncService.BackupSyncResult restore() {
+        return backupSyncService.restore();
+    }
+
+    public BackupSyncService.BackupSyncResult rebuild() {
+        return backupSyncService.rebuild();
     }
 }

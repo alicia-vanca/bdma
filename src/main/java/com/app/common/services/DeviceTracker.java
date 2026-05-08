@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -32,6 +33,7 @@ public class DeviceTracker implements Runnable {
     private final ApplicationEventPublisher eventPublisher;
     private final ConcurrentHashMap<String, DeviceState> deviceStates = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ScheduledFuture<?>> gracePeriodTasks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, DeviceValidationResult> unvalidatedResults = new ConcurrentHashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private volatile boolean running;
 
@@ -47,7 +49,7 @@ public class DeviceTracker implements Runnable {
     private static final long STABILITY_POLL_MS = 500; // interval between isDeviceAlive() checks
 
     private enum DeviceState {
-        STABILIZING, CONNECTED, DISCONNECTING
+        STABILIZING, CONNECTED, DISCONNECTING, UNVALIDATED
     }
 
     public DeviceTracker(AdbClient adbClient,
@@ -122,11 +124,14 @@ public class DeviceTracker implements Runnable {
         }
         gracePeriodTasks.clear();
 
-        for (String serial : deviceStates.keySet()) {
-            adbClient.onDisconnected(serial);
+        for (Map.Entry<String, DeviceState> entry : deviceStates.entrySet()) {
+            if (entry.getValue() != DeviceState.STABILIZING) {
+                adbClient.onDisconnected(entry.getKey());
+            }
         }
 
         deviceStates.clear();
+        unvalidatedResults.clear();
     }
 
     // Recreates the scheduler if it was shut down (e.g. after logout/login cycle).
@@ -245,6 +250,10 @@ public class DeviceTracker implements Runnable {
                 } else if (state == DeviceState.STABILIZING) {
                     deviceStates.remove(serial);
                     cancelStabilityCheck(serial);
+                } else if (state == DeviceState.UNVALIDATED) {
+                    deviceStates.remove(serial);
+                    cancelStabilityCheck(serial);
+                    eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, unvalidatedResults.remove(serial)));
                 }
             }
         }
@@ -259,48 +268,61 @@ public class DeviceTracker implements Runnable {
         long[] stableSince = { 0 };
 
         try {
-            ScheduledFuture<?> future = scheduler.get().scheduleWithFixedDelay(() -> {
-                if (!running) {
-                    cancelStabilityCheck(serial);
-                    return;
-                }
-
-                if (System.currentTimeMillis() - startedAt > STABILITY_TIMEOUT_MS) {
-                    log.warn("[{}] Stability check timed out, dropping device", serial);
-                    deviceStates.remove(serial);
-                    cancelStabilityCheck(serial);
-                    return;
-                }
-
-                boolean alive = adbClient.isDeviceAlive(serial);
-                if (!alive) {
-                    stableSince[0] = 0;
-
-                    log.info("[{}] Disconnected, resetting stability timer", serial);
-                    return;
-                }
-
-                if (stableSince[0] == 0) {
-                    stableSince[0] = System.currentTimeMillis();
-                }
-
-                if (System.currentTimeMillis() - stableSince[0] >= STABILITY_DURATION_MS) {
-                    cancelStabilityCheck(serial);
-                    if (deviceStates.replace(serial, DeviceState.STABILIZING, DeviceState.CONNECTED)) {
-                        adbClient.onReconnected(serial);
-                        log.info("[{}] Device stable, start validation", serial);
-                        DeviceValidationResult result = validateSerialSafely(serial);
-                        eventPublisher.publishEvent(
-                                new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
-                    }
-                }
-
-            }, STABILITY_POLL_MS, STABILITY_POLL_MS, TimeUnit.MILLISECONDS);
+            ScheduledFuture<?> future = scheduler.get().scheduleWithFixedDelay(
+                    () -> runStabilityPoll(serial, startedAt, stableSince),
+                    STABILITY_POLL_MS, STABILITY_POLL_MS, TimeUnit.MILLISECONDS);
 
             pendingChecks.put(serial, future);
         } catch (RejectedExecutionException e) {
             deviceStates.remove(serial);
             log.warn("[{}] Unable to schedule stability check: {}", serial, e.getMessage());
+        }
+    }
+
+    private void runStabilityPoll(String serial, long startedAt, long[] stableSince) {
+        if (!running) {
+            cancelStabilityCheck(serial);
+            return;
+        }
+
+        if (System.currentTimeMillis() - startedAt > STABILITY_TIMEOUT_MS) {
+            log.warn("[{}] Stability check timed out, dropping device", serial);
+            deviceStates.remove(serial);
+            cancelStabilityCheck(serial);
+            return;
+        }
+
+        if (!adbClient.isDeviceAlive(serial)) {
+            stableSince[0] = 0;
+            log.info("[{}] Disconnected, resetting stability timer", serial);
+            return;
+        }
+
+        if (stableSince[0] == 0) {
+            stableSince[0] = System.currentTimeMillis();
+        }
+
+        if (System.currentTimeMillis() - stableSince[0] >= STABILITY_DURATION_MS) {
+            onDeviceStable(serial);
+        }
+    }
+
+    private void onDeviceStable(String serial) {
+        cancelStabilityCheck(serial);
+        if (!deviceStates.replace(serial, DeviceState.STABILIZING, DeviceState.CONNECTED)) {
+            return;
+        }
+
+        adbClient.onReconnected(serial);
+        log.info("[{}] Device stable, start validation", serial);
+        DeviceValidationResult result = validateSerialSafely(serial);
+
+        if (result.isValid()) {
+            eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
+        } else {
+            deviceStates.put(serial, DeviceState.UNVALIDATED);
+            unvalidatedResults.put(serial, result);
+            eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.UNVALIDATED, result));
         }
     }
 

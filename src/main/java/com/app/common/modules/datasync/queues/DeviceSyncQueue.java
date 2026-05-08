@@ -33,6 +33,10 @@ public class DeviceSyncQueue {
 
     private final SyncProgressTracker progressTracker;
 
+    public boolean isActive() {
+        return current != null || !queue.isEmpty();
+    }
+
     // Returns false if input is invalid or the device is already syncing/queued,
     // avoiding duplicate entries.
     public boolean add(String hardwareId, SyncContext context) {

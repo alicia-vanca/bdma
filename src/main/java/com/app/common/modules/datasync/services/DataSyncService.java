@@ -1,8 +1,9 @@
 package com.app.common.modules.datasync.services;
 
-import java.util.Set;
+import java.util.List;
 import java.util.function.Consumer;
 
+import com.app.common.models.FileRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -10,7 +11,6 @@ import org.springframework.stereotype.Service;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.Role;
 import com.app.common.dtos.FileInfo;
-import com.app.common.models.File;
 import com.app.common.models.User;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.databackup.services.DataBackupService;
@@ -21,10 +21,11 @@ import com.app.common.repositories.UserRepository;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.AppNoticeService;
 
+import static com.app.common.definitions.AppConstants.DEFAULT_SYNC_USER_HASH;
+
 @Service
 public class DataSyncService {
     private static final Logger log = LoggerFactory.getLogger(DataSyncService.class);
-    private static final String DEFAULT_SYNC_USER_HASH = "$2a$10$xm8T0M6tezbn5RyrBL8FuOfmHtahqAtmUN.2XVRfllJ17211QBvgu";
 
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final FileRepository fileRepo;
@@ -56,7 +57,8 @@ public class DataSyncService {
     }
 
     public Long resolveDeviceId(String cameraId) {
-        return validatedDeviceRepository.findDeviceIdByCameraId(cameraId).orElse(null);
+        ValidatedDevice validatedDevice = validatedDeviceRepository.findByCameraId(cameraId).orElse(null);
+        return validatedDevice != null ? validatedDevice.getId() : null;
     }
 
     public Long resolveUserId(String username) {
@@ -108,8 +110,8 @@ public class DataSyncService {
      * Loads paths of files already synced or backed up for a device.
      * Used for in-memory deduplication.
      */
-    public Set<String> loadSyncedPaths(Long deviceId) {
-        return fileRepo.loadSyncedPaths(deviceId);
+    public List<FileRecord> loadSyncedFiles(Long deviceId) {
+        return fileRepo.loadSyncedFiles(deviceId);
     }
 
     /**
@@ -118,15 +120,8 @@ public class DataSyncService {
      */
     public void saveFile(Long userId, Long deviceId, String fileName, String localPath, FileInfo info) {
         fileRepo.insert(
-                new File(null, userId, deviceId, info.createDate(), fileName, localPath, info.size(), info.type(),
+                new FileRecord(null, userId, deviceId, info.createDate(), fileName, localPath, info.size(), info.type(),
                         AppConstants.FILE_STATUS_SYNCED, null, null, null));
         dataBackupService.enqueue(localPath);
-    }
-
-    /**
-     * Saves a file that failed after retries (status = FAILED).
-     */
-    public void saveFailed(Long userId, Long deviceId, String path, FileInfo info) {
-        fileRepo.insertFailed(userId, deviceId, path, info);
     }
 }

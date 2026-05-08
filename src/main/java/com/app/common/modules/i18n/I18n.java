@@ -71,7 +71,12 @@ public class I18n {
     }
 
     public static String get(String key) {
-        return bundle.getString(key);
+        try {
+            return bundle.getString(key);
+        } catch (Exception e) {
+            log.warn("Missing i18n key: {}", key);
+            return key;
+        }
     }
 
     public static String get(String key, Object... args) {

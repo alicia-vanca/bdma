@@ -1,4 +1,0 @@
-CREATE TABLE IF NOT EXISTS recent_usernames (
-    username TEXT PRIMARY KEY,
-    last_login_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
