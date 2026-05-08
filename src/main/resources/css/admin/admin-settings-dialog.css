@@ -78,3 +78,11 @@
 .settings-warning {
     -fx-font-size: 14px;
 }
+
+.settings-note.status-success {
+    -fx-text-fill: #2ecc71;
+}
+
+.settings-note.status-error {
+    -fx-text-fill: #e74c3c;
+}

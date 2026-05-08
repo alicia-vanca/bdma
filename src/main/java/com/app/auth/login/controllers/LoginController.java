@@ -236,7 +236,7 @@ public class LoginController {
 
         switch (response.result()) {
             case SUCCESS:
-                recentUsernameRepository.upsert(usernameText);
+                recentUsernameRepository.upsert(usernameText.trim());
                 User user = response.user();
                 log.info("User '{}' logged in successfully", usernameText);
 

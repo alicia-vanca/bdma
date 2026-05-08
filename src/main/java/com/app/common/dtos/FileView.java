@@ -1,6 +1,6 @@
 package com.app.common.dtos;
 
-import com.app.common.models.File;
+import com.app.common.models.FileRecord;
 
 public record FileView(
         Long fileId,
@@ -16,7 +16,7 @@ public record FileView(
         String backedUpAt,
         String username,
         String deviceName) {
-    public static FileView from(File f, String username, String deviceName) {
+    public static FileView from(FileRecord f, String username, String deviceName) {
         return new FileView(
                 f.getId(),
                 f.getUserId(),

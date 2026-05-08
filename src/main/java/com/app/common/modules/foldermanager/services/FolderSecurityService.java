@@ -14,7 +14,6 @@ import com.app.common.definitions.AppConstants;
 
 /**
  * Static utility service for protecting paths inside bdma folders.
- * 
  * Strategy:
  * - bdma root folder: deny delete with inheritance ((OI)(CI)(D))
  * - child folders created by ensureBdmaDir: lock with the same delete-deny rule
@@ -40,7 +39,6 @@ public class FolderSecurityService {
 
     /**
      * Ensure directory path exists inside a protected bdma folder.
-     *
      * Steps:
      * 1) Lock bdma folder with inheritable delete-deny ((OI)(CI)(D))
      * 2) Walk from bdma folder to target and create missing directories
@@ -171,6 +169,26 @@ public class FolderSecurityService {
             current = current.getParent();
         }
         return null;
+    }
+
+    public static void removeDenyAcl(Path path) throws IOException {
+        try {
+            String user = buildIcaclsTrustee();
+            runCommand(CMD_ICACLS, path.toString(), ICACLS_REMOVE_DENY, user);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("removeDenyAcl interrupted for: " + path, e);
+        }
+    }
+
+    public static void applyDenyAcl(Path path) throws IOException {
+        try {
+            String user = buildIcaclsTrustee();
+            runCommand(CMD_ICACLS, path.toString(), ICACLS_DENY, user + ":(D)");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("applyDenyAcl interrupted for: " + path, e);
+        }
     }
 
     /**

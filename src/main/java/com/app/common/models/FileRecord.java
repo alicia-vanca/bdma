@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class File {
+public class FileRecord {
     private Long id;
     private Long userId;
     private Long deviceId;

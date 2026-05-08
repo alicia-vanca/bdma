@@ -86,9 +86,33 @@
                                         styleClass="btn-secondary"/>
                             </HBox>
                             <Label fx:id="lblDriveConflictWarning" wrapText="true" styleClass="settings-warning" managed="false" visible="false"/>
-                            <Button fx:id="btnRestore"
-                                    onAction="#onRestore"
-                                    styleClass="btn-secondary"/>
+                        </VBox>
+                        <Separator/>
+                        <VBox spacing="8" styleClass="settings-card">
+                            <HBox spacing="8" alignment="CENTER_LEFT">
+                                <Button fx:id="btnRestore"
+                                        onAction="#onRestore"
+                                        styleClass="btn-secondary"
+                                        HBox.hgrow="ALWAYS"/>
+
+                                <Button fx:id="btnRebuild"
+                                        onAction="#onRebuild"
+                                        styleClass="btn-secondary"
+                                        HBox.hgrow="ALWAYS"/>
+                            </HBox>
+                            <HBox fx:id="storageActionBox"
+                                  spacing="8"
+                                  alignment="CENTER_LEFT"
+                                  managed="false"
+                                  visible="false">
+                                <Label fx:id="lblStorageProgress"
+                                       wrapText="true"
+                                       styleClass="settings-note"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Button fx:id="btnRetryFailedRestore"
+                                        onAction="#onRetryFailedRestore"
+                                        styleClass="btn-secondary"/>
+                            </HBox>
                         </VBox>
                         <Separator/>
                         <VBox spacing="8" styleClass="settings-card">

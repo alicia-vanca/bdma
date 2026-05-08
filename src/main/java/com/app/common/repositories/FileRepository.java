@@ -3,19 +3,16 @@ package com.app.common.repositories;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
+import com.app.common.models.FileRecord;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
-import com.app.common.dtos.FileInfo;
 import com.app.common.dtos.FileView;
 import com.app.common.exceptions.RepositoryException;
-import com.app.common.models.File;
 
 @Repository
 public class FileRepository {
@@ -31,16 +28,12 @@ public class FileRepository {
      * Used for in-memory deduplication to avoid re-syncing existing files.
      * Files with status FAILED are excluded.
      */
-    public Set<String> loadSyncedPaths(Long deviceId) {
-        String sql = """
-                    SELECT synced_path FROM files
-                    WHERE device_id = ? AND status IN (?, ?)
-                """;
-
-        return new HashSet<>(
-                jdbcTemplate.queryForList(sql, String.class, deviceId,
-                        AppConstants.FILE_STATUS_SYNCED,
-                        AppConstants.FILE_STATUS_BACKEDUP));
+    public List<FileRecord> loadSyncedFiles(Long deviceId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM files WHERE device_id = ?",
+                this::fileRowMapper,
+                deviceId
+        );
     }
 
     /**
@@ -54,21 +47,6 @@ public class FileRepository {
                 """;
 
         return jdbcTemplate.queryForList(sql, String.class, AppConstants.FILE_STATUS_SYNCED);
-    }
-
-    /**
-     * Updates file status by synced_path.
-     */
-    public void updateStatusBySyncedPath(String syncedPath, String status) {
-        String sql = """
-                    UPDATE files SET status = ? WHERE synced_path = ?
-                """;
-
-        try {
-            jdbcTemplate.update(sql, status, syncedPath);
-        } catch (Exception e) {
-            throw new RepositoryException("updateStatusBySyncedPath failed: " + syncedPath, e);
-        }
     }
 
     /**
@@ -93,15 +71,17 @@ public class FileRepository {
 
     /**
      * Inserts or updates a file record by filename.
-     * On conflict (device_id, name), updates synced_path, status, file_size,
+     * On conflict (name), updates synced_path, status, file_size,
      * create_date, and type.
      * This ensures files are updated when synced to a different path.
      */
-    public void insert(File file) {
+    public void insert(FileRecord fileRecord) {
         String sql = """
                     INSERT INTO files (user_id, device_id, create_date, name, synced_path, file_size, type, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(device_id, name) DO UPDATE SET
+                    ON CONFLICT(name) DO UPDATE SET
+                        user_id     = excluded.user_id,
+                        device_id   = excluded.device_id,
                         synced_path = excluded.synced_path,
                         status      = excluded.status,
                         file_size   = excluded.file_size,
@@ -113,54 +93,17 @@ public class FileRepository {
         try {
             jdbcTemplate.update(
                     sql,
-                    file.getUserId(),
-                    file.getDeviceId(),
-                    file.getCreateDate(),
-                    file.getName(),
-                    file.getSyncedPath(),
-                    file.getFileSize(),
-                    file.getType(),
-                    file.getStatus());
+                    fileRecord.getUserId(),
+                    fileRecord.getDeviceId(),
+                    fileRecord.getCreateDate(),
+                    fileRecord.getName(),
+                    fileRecord.getSyncedPath(),
+                    fileRecord.getFileSize(),
+                    fileRecord.getType(),
+                    fileRecord.getStatus());
         } catch (Exception e) {
-            throw new RepositoryException("insert failed: " + file.getSyncedPath(), e);
+            throw new RepositoryException("insert failed: " + fileRecord.getSyncedPath(), e);
         }
-    }
-
-    /**
-     * Inserts a failed file record.
-     * - status = FAILED
-     * - file_size = -1
-     * - On conflict (device_id, name), updates synced_path, status, user_id, and
-     * type.
-     */
-    public void insertFailed(Long userId, Long deviceId, String syncedPath, FileInfo info) {
-        String sql = """
-                    INSERT INTO files (user_id, device_id, create_date, name, synced_path, file_size, type, status)
-                    VALUES (?, ?, ?, ?, ?, -1, ?, ?)
-                    ON CONFLICT(device_id, name) DO UPDATE SET
-                        synced_path = excluded.synced_path,
-                        status = ?,
-                        user_id = excluded.user_id,
-                        type = excluded.type
-                """;
-
-        try {
-            jdbcTemplate.update(sql,
-                    userId,
-                    deviceId,
-                    info.createDate(),
-                    name(syncedPath),
-                    syncedPath,
-                    info.type(),
-                    AppConstants.FILE_STATUS_FAILED,
-                    AppConstants.FILE_STATUS_FAILED);
-        } catch (Exception e) {
-            throw new RepositoryException("insertFailed: " + syncedPath, e);
-        }
-    }
-
-    private String name(String path) {
-        return path.substring(path.lastIndexOf("\\") + 1);
     }
 
     /**
@@ -190,9 +133,9 @@ public class FileRepository {
         List<Object> params = new ArrayList<>();
 
         // device
-        if (filter.getHardwareId() != null) {
-            sql.append(" AND vd.hardware_id = ?");
-            params.add(filter.getHardwareId());
+        if (filter.getCameraId() != null) {
+            sql.append(" AND vd.camera_id = ?");
+            params.add(filter.getCameraId());
         }
 
         // user
@@ -227,7 +170,7 @@ public class FileRepository {
     // ── Mapping ──────────────────────────────────────────────────────────────
 
     private FileView mapRow(ResultSet rs, int rowNum) throws SQLException {
-        File f = new File();
+        FileRecord f = new FileRecord();
         f.setId(rs.getLong("file_id"));
         f.setDeviceId(rs.getLong("device_id"));
         f.setUserId(rs.getLong("user_id"));
@@ -245,23 +188,55 @@ public class FileRepository {
     }
 
     /**
-     * Batch updates synced_path, backed_up_path, and status for multiple files.
-     * Each batch argument array contains: [syncedPath, backedUpPath, status,
-     * fileName]
+     * Upserts a single file into database.
+     * Used during restore/rebuild to update paths and status.
      */
-    public void batchUpdatePaths(List<Object[]> batchArgs) {
+    public void upsert(FileRecord fileRecord) {
         String sql = """
-                UPDATE files
-                SET synced_path    = ?,
-                    backed_up_path = ?,
-                    status         = ?
-                WHERE name = ?
-                """;
+            INSERT INTO files (
+                user_id, device_id, create_date, name,
+                synced_path, backed_up_path, file_size, type, status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                user_id        = excluded.user_id,
+                device_id      = excluded.device_id,
+                synced_path    = excluded.synced_path,
+                backed_up_path = excluded.backed_up_path,
+                file_size      = excluded.file_size,
+                type           = excluded.type,
+                status         = excluded.status,
+                create_date    = excluded.create_date
+            """;
 
         try {
-            jdbcTemplate.batchUpdate(sql, new ArrayList<>(batchArgs));
+            jdbcTemplate.update(sql,
+                    fileRecord.getUserId(),
+                    fileRecord.getDeviceId(),
+                    fileRecord.getCreateDate(),
+                    fileRecord.getName(),
+                    fileRecord.getSyncedPath(),
+                    fileRecord.getBackedUpPath(),
+                    fileRecord.getFileSize(),
+                    fileRecord.getType(),
+                    fileRecord.getStatus());
         } catch (Exception e) {
-            throw new RepositoryException("batchUpdatePaths failed", e);
+            throw new RepositoryException("upsert failed: " + fileRecord.getName(), e);
         }
+    }
+
+    private FileRecord fileRowMapper(ResultSet rs, int rowNum) throws SQLException {
+        FileRecord f = new FileRecord();
+        f.setId(rs.getLong("file_id"));
+        f.setUserId(rs.getLong("user_id"));
+        f.setDeviceId(rs.getLong("device_id"));
+        f.setCreateDate(rs.getString("create_date"));
+        f.setName(rs.getString("name"));
+        f.setSyncedPath(rs.getString("synced_path"));
+        f.setFileSize(rs.getLong("file_size"));
+        f.setType(rs.getString("type"));
+        f.setStatus(rs.getString("status"));
+        f.setBackedUpPath(rs.getString("backed_up_path"));
+        return f;
     }
 }

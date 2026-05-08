@@ -17,6 +17,7 @@ public class DeviceSummary {
 
     private String hardwareId;
     private String deviceName;
+    private String cameraId;
     private Status status;
     private SyncProgressTracker.SyncProgress syncProgress;
     private DeviceValidationResult validationResult;

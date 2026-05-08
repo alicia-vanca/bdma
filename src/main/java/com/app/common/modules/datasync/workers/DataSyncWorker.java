@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.app.common.models.FileRecord;
+import com.app.common.utils.FileUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -266,23 +268,23 @@ public class DataSyncWorker implements Runnable {
     // Discover and prepare files for sync from device
     private SyncPreparation prepareSyncFiles(String hardwareId, Long deviceId, SyncContext syncContext,
             boolean autoDelete) {
-        Set<String> syncedPaths = dataSyncService.loadSyncedPaths(deviceId);
+        List<FileRecord> syncedFiles = dataSyncService.loadSyncedFiles(deviceId);
         Set<String> relativeSyncedPaths = new java.util.HashSet<>();
-        for (String syncedPath : syncedPaths) {
-            PathResolutionResult resolution = folderManagerService
-                    .findAbsolutePathFromNonDriveLetterPath(syncedPath);
+        for (FileRecord syncedFile : syncedFiles) {
+            PathResolutionResult resolution = syncContext.strictDataDir()
+                    ? resolveFromDataDirOnly(syncedFile.getSyncedPath(), syncedFile.getFileSize(), syncContext.saveDir())
+                    : folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedFile.getSyncedPath(), syncedFile.getFileSize());
 
             if (!resolution.isFound()) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Synced path missing on disk, will resync: {}", syncedPath);
-                }
                 continue;
             }
 
             try {
-                relativeSyncedPaths.add(folderManagerService.toRelativeDataPath(resolution.getPath().toString()));
+                relativeSyncedPaths.add(
+                        folderManagerService.toRelativeDataPath(resolution.getPath().toString())
+                );
             } catch (IOException e) {
-                log.warn("Invalid syncedPath, resync: {}", syncedPath);
+                log.warn("Invalid syncedPath, resync: {}", syncedFile.getSyncedPath());
             }
         }
 
@@ -313,6 +315,18 @@ public class DataSyncWorker implements Runnable {
                 : fileCollection.unsyncedFiles();
 
         return new SyncPreparation(fileCollection, relativeSyncedPaths, lookupCache, filesToBeProcessed);
+    }
+
+    private PathResolutionResult resolveFromDataDirOnly(String path, long size, File saveDir) {
+        Path saveDirRoot = saveDir.toPath().getRoot();
+        if (saveDirRoot == null) {
+            return PathResolutionResult.notFound();
+        }
+        File candidate = new File(saveDirRoot.toString(), path);
+        if (candidate.exists() && candidate.length() == size) {
+            return PathResolutionResult.found(candidate.toPath());
+        }
+        return PathResolutionResult.notFound();
     }
 
     private List<String> findFilesFromMassStorage(String hardwareId) {
@@ -645,7 +659,8 @@ public class DataSyncWorker implements Runnable {
                         currentContext.isAdmin(),
                         latestDataDir,
                         currentContext.autoDelete(),
-                        currentContext.deviceName());
+                        currentContext.deviceName(),
+                        false);
             }
             return null;
         }
@@ -879,7 +894,7 @@ public class DataSyncWorker implements Runnable {
 
         PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size());
         if (result.isSuccess()) {
-            String nonDriverLetterSyncedPath = folderManagerService.stripDriveLetter(file.localPath());
+            String nonDriverLetterSyncedPath = FileUtil.stripDriveLetter(file.localPath());
             dataSyncService.saveFile(uId, dId, name(file.remotePath()), nonDriverLetterSyncedPath, file.info());
             syncedPaths.add(file.relativeLocalPath());
             logSyncedFile(file.localPath(), counters.passed + 1, counters.total);
@@ -1052,7 +1067,7 @@ public class DataSyncWorker implements Runnable {
             return false;
         }
 
-        String nonDriverLetterSyncedPath = folderManagerService.stripDriveLetter(pf.localPath());
+        String nonDriverLetterSyncedPath = FileUtil.stripDriveLetter(pf.localPath());
         dataSyncService.saveFile(uId, dId, name(pf.remotePath()), nonDriverLetterSyncedPath, pf.info());
         prep.syncedPaths().add(pf.relativeLocalPath());
         logSyncedFile(pf.localPath(), counters.passed + 1, counters.total);

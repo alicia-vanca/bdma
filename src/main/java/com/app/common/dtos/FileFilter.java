@@ -8,7 +8,7 @@ import java.time.LocalDate;
 @Getter
 @Setter
 public class FileFilter {
-    private String hardwareId;
+    private String cameraId;
     private Long userId;
     private LocalDate dateFrom;
     private LocalDate dateTo;
