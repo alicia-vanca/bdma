@@ -34,10 +34,14 @@ public class DialogHelper {
     private static final List<Object> openDialogControllers = new CopyOnWriteArrayList<>();
 
     public static Stage createDialogStage(String fxml, String title) {
-        return createDialog(fxml, title).stage();
+        return createDialog(fxml, title, Modality.WINDOW_MODAL).stage();
     }
 
     public static <T> Dialog<T> createDialog(String fxml, String title) {
+        return createDialog(fxml, title, Modality.WINDOW_MODAL);
+    }
+
+    public static <T> Dialog<T> createDialog(String fxml, String title, Modality modality) {
         ViewLoader loader = SpringContextHolder.getBean(ViewLoader.class);
         ViewLoader.LoadResult<T> loadedView = loader.loadViewOrThrow(fxml);
 
@@ -51,7 +55,7 @@ public class DialogHelper {
         stage.setTitle(title);
         stage.setScene(scene);
         stage.initOwner(MainApp.getPrimaryStage());
-        stage.initModality(Modality.WINDOW_MODAL);
+        stage.initModality(modality);
         stage.setOnShowing(e -> ThemeManager.apply(scene));
 
         // Register this dialog's scene and controller for theme updates

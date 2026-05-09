@@ -163,6 +163,9 @@ public class DataBackupWorker implements Runnable {
                 }
             }
             return true;
+        } catch (FileNotFoundOnAnyDriveException e) {
+            log.info("Synced file not found during space check, skipping: {}", nonDriveLetterSyncedPath);
+            return false;
         } catch (Exception e) {
             log.error("Failed to check space for: {}", nonDriveLetterSyncedPath, e);
             return false;

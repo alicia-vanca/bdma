@@ -100,4 +100,12 @@ public class DeviceSyncQueue {
         current = null;
         log.info("Device sync queue cleared");
     }
+
+    // Check if device is currently in sync queue or actively syncing
+    public boolean isInQueue(String hardwareId) {
+        if (hardwareId == null || hardwareId.isBlank()) {
+            return false;
+        }
+        return hardwareId.equals(current) || inQueue.contains(hardwareId);
+    }
 }
