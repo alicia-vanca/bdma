@@ -97,7 +97,7 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private HBox buildRow(DeviceSummary summary) {
-        Circle dot = new Circle(5);
+        Circle dot = new Circle(8);
 
         Label name = new Label(summary.getDeviceName());
         name.getStyleClass().add("device-cell-name");
@@ -116,7 +116,9 @@ public class DashboardController extends BaseLayoutController {
 
         StackPane nameBox = new StackPane(name, nameField);
         nameBox.setAlignment(Pos.CENTER_LEFT);
+        nameBox.setMaxWidth(110);
         VBox text = new VBox(2, nameBox, sub);
+        HBox.setHgrow(text, Priority.NEVER);
 
         return buildLayout(dot, text, icon, isAdmin);
     }
@@ -125,6 +127,8 @@ public class DashboardController extends BaseLayoutController {
         TextField tf = new TextField(text);
         tf.setVisible(false);
         tf.setManaged(false);
+        tf.setMaxWidth(110);
+        tf.setPrefWidth(110);
         return tf;
     }
 
@@ -208,14 +212,17 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private HBox buildLayout(Circle dot, VBox text, SVGPath icon, boolean isAdmin) {
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        HBox row = isAdmin
-                ? new HBox(8, dot, text, spacer, icon)
-                : new HBox(8, dot, text);
-
+        HBox row;
+        if (isAdmin) {
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            HBox.setHgrow(text, Priority.NEVER);
+            row = new HBox(8, dot, text, spacer, icon);
+        } else {
+            row = new HBox(8, dot, text);
+        }
         row.setAlignment(Pos.CENTER_LEFT);
+        row.setMaxWidth(Double.MAX_VALUE);
         return row;
     }
 

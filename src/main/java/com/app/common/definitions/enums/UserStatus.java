@@ -19,4 +19,11 @@ public enum UserStatus {
     public String getLocalizedName() {
         return I18n.get(messageKey);
     }
+
+    public static UserStatus fromLocalizedName(String name) {
+        for (UserStatus s : values()) {
+            if (s.getLocalizedName().equals(name)) return s;
+        }
+        return null;
+    }
 }

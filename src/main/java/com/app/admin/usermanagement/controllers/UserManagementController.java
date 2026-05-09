@@ -96,8 +96,8 @@ public class UserManagementController {
     // on each FXMLLoader cycle, so we keep the user's last inputs in plain fields
     // and restore them in initialize() instead of always defaulting to empty/all.
     private String savedSearchText = "";
-    private String savedRoleFilter = null; // null = use locale-default "All"
-    private String savedStatusFilter = null; // null = use locale-default "All"
+    private Role savedRoleFilter = null; // null = use locale-default "All"
+    private UserStatus savedStatusFilter = null; // null = use locale-default "All"
 
     public UserManagementController(UserService userService,
             ViewLoader viewLoader,
@@ -141,8 +141,8 @@ public class UserManagementController {
                 Role.USER.getLocalizedName());
         // Restore previous role selection if the user had a non-default filter active,
         // translating the "All" sentinel to the current locale's string.
-        String roleToRestore = (savedRoleFilter == null) ? I18n.get(AppConstants.FILTER_ALL_ROLES) : savedRoleFilter;
-
+        String roleToRestore = (savedRoleFilter == null) ? I18n.get(AppConstants.FILTER_ALL_ROLES)
+                : savedRoleFilter.getLocalizedName();
         cbRole.setValue(roleToRestore);
     }
 
@@ -152,7 +152,7 @@ public class UserManagementController {
                 UserStatus.ACTIVE.getLocalizedName(),
                 UserStatus.INACTIVE.getLocalizedName());
         String statusToRestore = (savedStatusFilter == null) ? I18n.get(AppConstants.FILTER_ALL_STATUS)
-                : savedStatusFilter;
+                : savedStatusFilter.getLocalizedName();
         cbStatus.setValue(statusToRestore);
     }
 
@@ -166,12 +166,12 @@ public class UserManagementController {
         cbRole.valueProperty().addListener((obs, oldValue, newValue) -> {
             // Store null for the "All" sentinel so it re-translates correctly on reload.
             savedRoleFilter = (newValue == null || newValue.equals(I18n.get(AppConstants.FILTER_ALL_ROLES))) ? null
-                    : newValue;
+                    : Role.fromLocalizedName(newValue);
             onSearch();
         });
         cbStatus.valueProperty().addListener((obs, oldValue, newValue) -> {
             savedStatusFilter = (newValue == null || newValue.equals(I18n.get(AppConstants.FILTER_ALL_STATUS))) ? null
-                    : newValue;
+                    : UserStatus.fromLocalizedName(newValue);
             onSearch();
         });
     }
@@ -183,6 +183,7 @@ public class UserManagementController {
         colUsername.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getUsername()));
         colUsername.setCellFactory(col -> new TableCell<>() {
             private final Label label = new Label();
+
             {
                 label.setStyle("-fx-cursor: hand; -fx-text-fill: -fx-text-base-color; -fx-underline: false;");
                 label.setOnMouseClicked(e -> {
@@ -315,7 +316,7 @@ public class UserManagementController {
 
             private final Button btnEdit = new Button(I18n.get("common.edit"));
             private final Button btnToggleActive = new Button();
-            private final HBox actions = new HBox(10, btnEdit, btnToggleActive);
+            private final HBox actions = new HBox(15, btnEdit, btnToggleActive);
 
             {
                 btnEdit.getStyleClass().add("btn-edit");
@@ -443,7 +444,7 @@ public class UserManagementController {
             prepareDialogForMode(dialog.controller(), user, isEdit);
             configureDialogCallbacks(dialog.controller(), user, isEdit, isEditingCurrentUser, originalRole);
 
-            dialog.stage().setMinWidth(460);
+            dialog.stage().setMinWidth(690);
             dialog.stage().setResizable(false);
             dialog.stage().showAndWait();
 

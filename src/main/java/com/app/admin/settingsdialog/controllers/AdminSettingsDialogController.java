@@ -129,8 +129,6 @@ public class AdminSettingsDialogController {
     @FXML
     private Button btnRestore;
     @FXML
-    private Button btnRebuild;
-    @FXML
     private Label lblStorageProgress;
     @FXML
     private HBox storageActionBox;
@@ -204,7 +202,6 @@ public class AdminSettingsDialogController {
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         chkStartWithWindows.setText(I18n.get("setting.startWithWindows.checkbox"));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
-        btnRebuild.setText(I18n.get("setting.storage.btn.rebuild"));
         if (backupSyncService.isRunning()) {
             lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
                     prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
@@ -488,34 +485,6 @@ public class AdminSettingsDialogController {
         runStorageRecoveryOperation(adminSettingsService::restore);
     }
 
-    @FXML
-    public void onRebuild() {
-        String backupPath = txtBackupPath.getText();
-        String dataPath = txtSavePath.getText();
-        if (backupPath == null || backupPath.isBlank()) {
-            showNotice(I18n.get("setting.storage.error.backup.dir.not.configured"), false);
-            return;
-        }
-        if (dataPath == null || dataPath.isBlank()) {
-            showNotice(I18n.get("setting.storage.error.data.dir.not.configured"), false);
-            return;
-        }
-        String reason = getStorageBlockedReason();
-        if (reason != null) {
-            showNotice(reason, false);
-            return;
-        }
-        Alert confirm = AlertHelper.createConfirmation(
-                I18n.get("setting.storage.rebuild.confirm.title"),
-                null,
-                I18n.get("setting.storage.rebuild.confirm.content"));
-        Optional<ButtonType> result = confirm.showAndWait();
-        if (result.isEmpty() || result.get() != ButtonType.OK)
-            return;
-
-        runStorageRecoveryOperation(adminSettingsService::rebuild);
-    }
-
     private void runStorageRecoveryOperation(
             Supplier<BackupSyncService.BackupSyncResult> operation) {
         setStorageControlsDisabled(true);
@@ -665,7 +634,6 @@ public class AdminSettingsDialogController {
 
     private void setStorageControlsDisabled(boolean disabled) {
         btnRestore.setDisable(disabled);
-        btnRebuild.setDisable(disabled);
         btnChooseSaveFolder.setDisable(disabled);
         btnChooseBackupFolder.setDisable(disabled);
     }

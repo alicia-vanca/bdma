@@ -30,9 +30,11 @@ import com.app.common.utils.StageUtil;
 
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import lombok.Getter;
 
@@ -133,8 +135,9 @@ public class MainApp extends Application {
     }
 
     public static void showLogin() {
+        primaryStage.setMaximized(false);
         primaryStage.setResizable(false);
-        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 400, 350);
+        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 600, 525);
     }
 
     public static void showAdmin() {
@@ -142,6 +145,7 @@ public class MainApp extends Application {
         // Change w1200 > w1201 fix a rounding issue that cause buttons misalignment
         // between scenes
         loadAndNavigate(ViewPaths.ADMIN_LAYOUT, "BDMA", 1201, 800);
+        primaryStage.setMaximized(true);
     }
 
     private static void loadAndNavigate(String fxml, String title, int w, int h) {
@@ -158,9 +162,18 @@ public class MainApp extends Application {
             }
 
             primaryStage.setTitle(title);
-            primaryStage.setWidth(w);
-            primaryStage.setHeight(h);
-            primaryStage.centerOnScreen();
+            if (!ViewPaths.LOGIN.equals(fxml)) {
+                Screen screen = Screen.getPrimary();
+                Rectangle2D bounds = screen.getVisualBounds();
+                primaryStage.setWidth(bounds.getWidth());
+                primaryStage.setHeight(bounds.getHeight());
+                primaryStage.setX(bounds.getMinX());
+                primaryStage.setY(bounds.getMinY());
+            } else {
+                primaryStage.setWidth(w);
+                primaryStage.setHeight(h);
+                primaryStage.centerOnScreen();
+            }
 
             if (primaryStage.getScene() == null) {
                 primaryStage.setScene(scene);

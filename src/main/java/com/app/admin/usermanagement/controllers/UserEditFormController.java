@@ -107,13 +107,13 @@ public class UserEditFormController {
      */
     private void setupPasswordPeek() {
         passwordIconView = new ImageView();
-        passwordIconView.setFitWidth(18);
-        passwordIconView.setFitHeight(18);
+        passwordIconView.setFitWidth(27);
+        passwordIconView.setFitHeight(27);
         btnPeekPassword.setGraphic(passwordIconView);
 
         passwordConfirmIconView = new ImageView();
-        passwordConfirmIconView.setFitWidth(18);
-        passwordConfirmIconView.setFitHeight(18);
+        passwordConfirmIconView.setFitWidth(27);
+        passwordConfirmIconView.setFitHeight(27);
         btnPeekPasswordConfirm.setGraphic(passwordConfirmIconView);
 
         setupPeekButton(btnPeekPassword, txtPassword, txtPasswordVisible, passwordIconView);

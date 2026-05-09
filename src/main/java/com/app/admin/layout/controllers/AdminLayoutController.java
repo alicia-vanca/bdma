@@ -662,7 +662,7 @@ public class AdminLayoutController extends BaseLayoutController {
         } else {
             titleLbl.setText(folderName);
         }
-        percentLbl.setText(String.format("%.0f%%", ratio * 100));
+        percentLbl.setText(String.format("(%.0f%%)", ratio * 100));
 
         long total = statsTarget.getTotalSpace();
         long free = statsTarget.getFreeSpace();

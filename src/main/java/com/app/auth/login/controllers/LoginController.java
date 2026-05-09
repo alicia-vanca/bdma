@@ -1,7 +1,7 @@
 package com.app.auth.login.controllers;
 
-import com.app.common.repositories.RecentUsernameRepository;
-import javafx.geometry.Side;
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -22,22 +22,22 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
 import com.app.common.modules.theme.ThemeManager;
+import com.app.common.repositories.RecentUsernameRepository;
 import com.app.common.services.UserService;
 import com.app.common.services.UserSettingService;
 
 import javafx.fxml.FXML;
+import javafx.geometry.Side;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.MenuItem;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
-
-import java.util.List;
 
 @Component
 public class LoginController {
@@ -68,11 +68,11 @@ public class LoginController {
     private ImageView passwordIconView;
 
     public LoginController(Session session,
-           UserService userService,
-           AppUpdateController appUpdateController,
-           UserSettingService userSettingService,
-           LoginService loginService,
-           RecentUsernameRepository recentUsernameRepository) {
+            UserService userService,
+            AppUpdateController appUpdateController,
+            UserSettingService userSettingService,
+            LoginService loginService,
+            RecentUsernameRepository recentUsernameRepository) {
         this.session = session;
         this.userService = userService;
         this.appUpdateController = appUpdateController;
@@ -103,7 +103,7 @@ public class LoginController {
 
         // Setup username dropdown with recent usernames
         setupUsernameDropdown();
-        
+
         username.textProperty().addListener((obs, oldVal, newVal) -> hideError());
         password.textProperty().addListener((obs, oldVal, newVal) -> hideError());
 
@@ -117,8 +117,8 @@ public class LoginController {
      */
     private void setupPasswordPeek() {
         passwordIconView = new ImageView();
-        passwordIconView.setFitWidth(18);
-        passwordIconView.setFitHeight(18);
+        passwordIconView.setFitWidth(27);
+        passwordIconView.setFitHeight(27);
         btnPeekPassword.setGraphic(passwordIconView);
 
         // Load initial icon based on current theme
@@ -163,7 +163,7 @@ public class LoginController {
      */
     private void setupUsernameDropdown() {
         ContextMenu contextMenu = new ContextMenu();
-        contextMenu.setStyle("-fx-min-width: 300px;");
+        contextMenu.setStyle("-fx-min-width: 450px;");
 
         // Hide menu when user starts typing
         username.textProperty().addListener((obs, oldVal, newVal) -> {
@@ -180,7 +180,7 @@ public class LoginController {
             if (!recents.isEmpty()) {
                 for (String recent : recents) {
                     MenuItem item = new MenuItem(recent);
-                    item.setStyle("-fx-padding: 8px 16px;");
+                    item.setStyle("-fx-padding: 12px 24px;");
                     item.setOnAction(action -> {
                         username.setText(recent);
                         contextMenu.hide();
