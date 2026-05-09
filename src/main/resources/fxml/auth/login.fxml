@@ -5,29 +5,29 @@
 <?import javafx.scene.layout.VBox?>
 <StackPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.app.auth.login.controllers.LoginController"
            styleClass="root">
-    <VBox spacing="10" alignment="CENTER" styleClass="login-card">
+    <VBox spacing="15" alignment="CENTER" styleClass="login-card">
         <padding>
-            <Insets top="10" right="40" bottom="40" left="40"/>
+            <Insets top="15" right="60" bottom="60" left="60"/>
         </padding>
-        <HBox spacing="10" alignment="CENTER_RIGHT">
+        <HBox spacing="15" alignment="CENTER_RIGHT">
             <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup"
-                styleClass="icon-btn"/>
+                    styleClass="icon-btn"/>
         </HBox>
         <Label text="%login.title" styleClass="title">
             <VBox.margin>
-                <Insets bottom="20"/>
+                <Insets bottom="30"/>
             </VBox.margin>
         </Label>
-        <VBox spacing="10">
+        <VBox spacing="15">
             <TextField fx:id="username" promptText="%login.username"
-                      styleClass="input"
-                      maxWidth="Infinity"/>
+                       styleClass="input"
+                       maxWidth="Infinity"/>
             <StackPane alignment="CENTER_RIGHT">
                 <PasswordField fx:id="password" promptText="%login.password" styleClass="input"/>
                 <TextField fx:id="passwordVisible" promptText="%login.password" styleClass="input" visible="false" managed="false"/>
                 <Button fx:id="btnPeekPassword" styleClass="peek-btn">
                     <StackPane.margin>
-                        <Insets right="5"/>
+                        <Insets right="8"/>
                     </StackPane.margin>
                 </Button>
             </StackPane>

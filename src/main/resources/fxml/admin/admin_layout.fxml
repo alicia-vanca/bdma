@@ -8,14 +8,14 @@
            styleClass="root">
     <BorderPane>
         <top>
-            <VBox styleClass="header-shell" spacing="8">
+            <VBox styleClass="header-shell" spacing="6">
                 <padding>
-                    <Insets top="10" right="15" bottom="10" left="15"/>
+                    <Insets top="8" right="23" bottom="8" left="23"/>
                 </padding>
-                <HBox alignment="CENTER_LEFT" spacing="10" styleClass="top-bar">
+                <HBox alignment="CENTER_LEFT" spacing="15" styleClass="top-bar">
                     <Label text="BDMA" styleClass="header-title"/>
                     <Region HBox.hgrow="ALWAYS"/>
-                    <HBox spacing="8" alignment="CENTER_RIGHT" styleClass="top-right-actions">
+                    <HBox spacing="12" alignment="CENTER_RIGHT" styleClass="top-right-actions">
                         <Label fx:id="labelGreeting" styleClass="greeting-label"/>
                         <Button fx:id="btnSettings"
                                 text="⚙"
@@ -27,7 +27,7 @@
                                 styleClass="btn-logout"/>
                     </HBox>
                 </HBox>
-                <HBox spacing="10" styleClass="tabs-row">
+                <HBox spacing="15" styleClass="tabs-row">
                     <Button text="%menu.dashboard"
                             fx:id="btnDashboard"
                             onAction="#goDashboard"
@@ -47,12 +47,12 @@
                     </center>
                 </BorderPane>
                 <VBox fx:id="noticeContainer"
-                      spacing="7"
+                      spacing="11"
                       alignment="BOTTOM_CENTER"
                       fillWidth="false"
                       mouseTransparent="true">
                     <StackPane.margin>
-                        <Insets right="0" bottom="20" left="0"/>
+                        <Insets right="0" bottom="30" left="0"/>
                     </StackPane.margin>
                 </VBox>
             </StackPane>
@@ -62,12 +62,12 @@
                 <!-- Warning strip: shown when storage is critical -->
                 <HBox fx:id="warningStrip"
                       alignment="CENTER_LEFT"
-                      spacing="8"
+                      spacing="12"
                       styleClass="status-warning-strip"
                       managed="false"
                       visible="false">
                     <padding>
-                        <Insets top="5" right="16" bottom="5" left="16"/>
+                        <Insets top="4" right="16" bottom="4" left="16"/>
                     </padding>
                     <Label text="⚠" styleClass="status-warning-icon"/>
                     <Label fx:id="lblStatusWarning"
@@ -78,45 +78,46 @@
                 <!-- Storage panels row -->
                 <HBox alignment="CENTER_LEFT" spacing="0" styleClass="status-storage-row">
                     <padding>
-                        <Insets top="10" right="20" bottom="10" left="20"/>
+                        <Insets top="4" right="16" bottom="4" left="16"/>
                     </padding>
                     <!-- Data storage panel -->
-                    <VBox spacing="5" HBox.hgrow="ALWAYS" styleClass="storage-panel">
+                    <VBox spacing="4" HBox.hgrow="ALWAYS" styleClass="storage-panel">
                         <HBox alignment="CENTER_LEFT">
                             <Label fx:id="lblDataStorageTitle" styleClass="storage-title"/>
                             <Region HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
                             <Label fx:id="lblDataStoragePercent" styleClass="storage-percent"/>
                         </HBox>
                         <ProgressBar fx:id="pbDataStorage"
                                      progress="0"
                                      styleClass="storage-progress"
                                      maxWidth="1.7976931348623157E308"/>
-                        <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
+
                     </VBox>
                     <Separator orientation="VERTICAL" styleClass="storage-separator">
                         <HBox.margin>
-                            <Insets left="20" right="20"/>
+                            <Insets left="16" right="16"/>
                         </HBox.margin>
                     </Separator>
                     <!-- Backup storage panel -->
-                    <VBox spacing="5" HBox.hgrow="ALWAYS" styleClass="storage-panel">
+                    <VBox spacing="8" HBox.hgrow="ALWAYS" styleClass="storage-panel">
                         <HBox alignment="CENTER_LEFT">
                             <Label fx:id="lblBackupStorageTitle" styleClass="storage-title"/>
                             <Region HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
                             <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"/>
                         </HBox>
                         <ProgressBar fx:id="pbBackupStorage"
                                      progress="0"
                                      styleClass="storage-progress"
                                      maxWidth="1.7976931348623157E308"/>
-                        <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
                     </VBox>
                 </HBox>
                 <!-- Drive conflict warning -->
                 <HBox managed="false" visible="false"
                       fx:id="driveConflictRow">
                     <padding>
-                        <Insets top="0" right="20" bottom="6" left="20"/>
+                        <Insets top="0" right="20" bottom="5" left="20"/>
                     </padding>
                     <Label fx:id="lblDriveConflictWarning" wrapText="true"
                            styleClass="settings-warning"/>

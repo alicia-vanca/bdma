@@ -3,7 +3,7 @@
 /* STATUS BAR */
 .status-label {
     -fx-text-fill: -text-color;
-    -fx-font-size: 12px;
+    -fx-font-size: 18px;
 }
 
 /* TABLE */
@@ -24,18 +24,22 @@
 .table-view .column-header-background,
 .table-view .filler,
 .table-view .column-header {
-    -fx-pref-height: 35;
-    -fx-min-height: 35;
+    -fx-pref-height: 40;
+    -fx-min-height: 40;
 }
 
 .table-view .table-cell {
     -fx-alignment: CENTER-LEFT;
     -fx-border-color: transparent -border-color transparent transparent;
-    -fx-padding: 0 12;
+    -fx-padding: 0 18;
 }
 
 .table-view .column-header {
     -fx-border-color: transparent -border-color -border-color transparent;
+}
+
+.table-view .column-header .label {
+    -fx-font-size: 14px;
 }
 
 .table-row-cell {
@@ -55,14 +59,14 @@
 }
 
 .combo-box.page-size-combo .arrow-button {
-    -fx-padding: 0 10 0 0;
-    -fx-pref-width: 15;
+    -fx-padding: 0 15 0 0;
+    -fx-pref-width: 23;
 }
 
 /* DatePicker height adjustment */
 .date-picker {
-    -fx-pref-height: 34;
-    -fx-max-height: 34;
-    -fx-pref-width: 110;
-    -fx-max-width: 110;
+    -fx-pref-height: 51;
+    -fx-max-height: 51;
+    -fx-pref-width: 165;
+    -fx-max-width: 165;
 }

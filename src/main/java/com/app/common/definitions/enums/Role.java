@@ -27,4 +27,11 @@ public enum Role {
             case USER -> "User";
         };
     }
+
+    public static Role fromLocalizedName(String name) {
+        for (Role r : values()) {
+            if (r.getLocalizedName().equals(name)) return r;
+        }
+        return null;
+    }
 }

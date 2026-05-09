@@ -22,7 +22,7 @@
       alignment="CENTER"
       prefWidth="720"
       minWidth="720"
-      prefHeight="740">
+      prefHeight="800">
         <Region styleClass="popup-spacer"/>
         <Label fx:id="lblTitle" styleClass="title"/>
         <Region styleClass="popup-header-spacer"/>
@@ -92,11 +92,6 @@
                             <HBox spacing="8" alignment="CENTER_LEFT">
                                 <Button fx:id="btnRestore"
                                         onAction="#onRestore"
-                                        styleClass="btn-secondary"
-                                        HBox.hgrow="ALWAYS"/>
-
-                                <Button fx:id="btnRebuild"
-                                        onAction="#onRebuild"
                                         styleClass="btn-secondary"
                                         HBox.hgrow="ALWAYS"/>
                             </HBox>

@@ -18,13 +18,16 @@
 
 /* APP TITLE */
 .header-title {
-    -fx-font-size: 20px;
+    -fx-font-size: 16px;
     -fx-font-weight: bold;
 }
 
 /* TABS ROW */
 .tabs-row {
-    -fx-padding: 0 0 2 0;
+    -fx-pref-height: 28;
+    -fx-max-height: 28;
+    -fx-min-height: 28;
+    -fx-padding: 0 0 3 0;
 }
 
 /* TOP RIGHT HEADER ACTIONS */
@@ -38,6 +41,7 @@
 }
 
 .btn-logout {
+    -fx-font-size: 13px;
     -fx-background-color: -danger;
     -fx-text-fill: white;
     -fx-background-radius: 6;
@@ -55,36 +59,39 @@
 .user-menu {
     -fx-background-color: -card-bg;
     -fx-text-fill: -text-color;
-    -fx-pref-width: 140;
-    -fx-min-width: 140;
-    -fx-max-width: 140;
+    -fx-pref-width: 210;
+    -fx-min-width: 210;
+    -fx-max-width: 210;
 }
 
 /* USER MENU POPUP */
 .context-menu {
-    -fx-pref-width: 140;
-    -fx-min-width: 140;
+    -fx-pref-width: 210;
+    -fx-min-width: 210;
 }
 
 .context-menu .menu-item {
-    -fx-pref-width: 140;
+    -fx-pref-width: 210;
     -fx-text-fill: -text-color;
 }
 
 /* HEADER TAB BUTTON */
 .menu-tab-btn {
+    -fx-font-size: 13px;
     -fx-background-color: transparent;
     -fx-text-fill: -text-color;
     -fx-background-radius: 6;
-    -fx-padding: 8 14;
-    -fx-min-width: 168;
-    -fx-pref-width: 168;
-    -fx-max-width: 168;
+    -fx-padding: 5 14;
+    -fx-min-width: 140;
+    -fx-pref-width: 140;
+    -fx-max-width: 140;
+    -fx-pref-height: 28;
+    -fx-max-height: 28;
     -fx-alignment: CENTER;
 }
 
 .settings-warning {
-    -fx-font-size: 14px;
+    -fx-font-size: 12px;
 }
 
 /* ===== STATUS BAR / FOOTER ===== */
@@ -123,12 +130,12 @@
 
 .storage-percent {
     -fx-font-size: 12px;
-    -fx-font-weight: 700;
+    -fx-opacity: 0.65;
 }
 
 .storage-detail {
     -fx-font-size: 11px;
-    -fx-opacity: 0.65;
+    -fx-font-weight: 700;
 }
 
 /* Storage progress bar */
@@ -162,4 +169,79 @@
 /* Vertical separator between panels */
 .storage-separator {
     -fx-background-color: -border-color;
+}
+
+.pagination-bar {
+    -fx-font-size: 13px;
+}
+
+.pagination-bar .label {
+    -fx-font-size: 13px;
+}
+
+.pagination-bar .button {
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+    -fx-padding: 4 10;
+}
+
+.pagination-bar .combo-box {
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+    -fx-min-height: 28;
+}
+
+.filter-bar {
+    -fx-font-size: 13px;
+}
+
+.filter-bar .label {
+    -fx-font-size: 13px;
+}
+
+.filter-bar .button {
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+    -fx-padding: 4 10;
+}
+
+.filter-bar .combo-box {
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+    -fx-min-height: 28;
+}
+
+.filter-bar .date-picker {
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+    -fx-max-height: 28;
+    -fx-pref-width: 130;
+    -fx-max-width: 130;
+}
+.filter-bar .date-picker .text-field {
+    -fx-pref-height: 28;
+    -fx-min-height: 28;
+    -fx-max-height: 28;
+    -fx-font-size: 13px;
+    -fx-padding: 4 4 4 7;
+}
+
+.filter-bar .date-picker .arrow-button {
+    -fx-pref-height: 28;
+    -fx-padding: 4 6 4 6;
+}
+
+.filter-bar .text-field {
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+    -fx-min-height: 28;
+    -fx-max-height: 28;
+    -fx-padding: 4 8;
+}
+
+.filter-bar ~ * .btn-primary,
+.btn-primary.btn-add {
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+    -fx-padding: 4 12;
 }

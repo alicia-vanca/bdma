@@ -4,15 +4,15 @@
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.layout.controllers.FileListController"
       stylesheets="@/css/admin/file-list-panel.css"
-      spacing="15" VBox.vgrow="ALWAYS">
+      spacing="23" VBox.vgrow="ALWAYS">
     <!-- Filter bar -->
-    <HBox spacing="10" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34">
-        <HBox spacing="2" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34">
+    <HBox spacing="10" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34" styleClass="filter-bar">
+        <HBox spacing="3" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34">
             <DatePicker fx:id="dateFromPicker" promptText="%filter.dateFrom" styleClass="date-picker"/>
             <Label text="→"/>
             <DatePicker fx:id="dateToPicker" promptText="%filter.dateTo" styleClass="date-picker"/>
         </HBox>
-        <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers" prefWidth="150"/>
+        <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers" prefWidth="160"/>
         <ComboBox fx:id="typeFilterCombo" prefWidth="130"/>
         <Button text="%common.reset" onAction="#clearFilter" styleClass="btn-secondary"/>
     </HBox>
@@ -22,22 +22,22 @@
             <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
         </columnResizePolicy>
         <columns>
-            <TableColumn fx:id="colName" text="%file.name" prefWidth="29"/>
+            <TableColumn fx:id="colName"   text="%file.name"   prefWidth="36"/>
             <TableColumn fx:id="colDevice" text="%file.device" prefWidth="9"/>
-            <TableColumn fx:id="colUser"   text="%file.user"   prefWidth="10"/>
-            <TableColumn fx:id="colSize"   text="%file.size"   prefWidth="10"/>
+            <TableColumn fx:id="colUser"   text="%file.user"   prefWidth="9"/>
+            <TableColumn fx:id="colSize"   text="%file.size"   prefWidth="9"/>
             <TableColumn fx:id="colStatus" text="%file.status" prefWidth="10"/>
             <TableColumn fx:id="colType"   text="%file.type"   prefWidth="9"/>
-            <TableColumn fx:id="colDate"   text="%file.date"   prefWidth="19"/>
+            <TableColumn fx:id="colDate"   text="%file.date"   prefWidth="16"/>
         </columns>
         <placeholder>
             <Label text="%file.noData"/>
         </placeholder>
     </TableView>
     <!-- Status bar / Pagination -->
-    <HBox alignment="CENTER_LEFT" spacing="10">
+    <HBox alignment="CENTER_LEFT" spacing="10" styleClass="pagination-bar">
         <Label text="%common.show"/>
-        <ComboBox fx:id="cbPageSize" prefWidth="60" styleClass="page-size-combo"/>
+        <ComboBox fx:id="cbPageSize" prefWidth="70" styleClass="page-size-combo"/>
         <Label text="%common.per.page"/>
         <Region HBox.hgrow="ALWAYS"/>
         <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage"

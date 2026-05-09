@@ -38,7 +38,7 @@
 }
 
 .settings-card {
-    -fx-padding: 16;
+    -fx-padding: 8;
 }
 
 .settings-inline-row {
@@ -85,4 +85,33 @@
 
 .settings-note.status-error {
     -fx-text-fill: #e74c3c;
+}
+
+.settings-dialog-container .input {
+    -fx-pref-height: 34;
+    -fx-min-height: 34;
+    -fx-padding: 8;
+}
+
+.settings-dialog-container .btn-secondary,
+.settings-dialog-container .btn-primary {
+    -fx-pref-height: 33;
+    -fx-padding: 0 16;
+}
+
+.settings-dialog-container .combo-box {
+    -fx-pref-height: 34;
+    -fx-min-height: 34;
+}
+
+.settings-dialog-container {
+    -fx-font-size: 13px;
+}
+
+.settings-dialog-container .popup-spacer {
+    -fx-pref-height: 10;
+}
+
+.settings-dialog-container .popup-header-spacer {
+    -fx-pref-height: 5;
 }

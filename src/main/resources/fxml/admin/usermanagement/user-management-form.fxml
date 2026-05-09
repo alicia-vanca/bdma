@@ -7,10 +7,10 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.geometry.Insets?>
-<VBox spacing="10"
+<VBox spacing="15"
       alignment="CENTER"
-      prefWidth="420"
-      minWidth="420"
+      prefWidth="630"
+      minWidth="630"
       xmlns="http://javafx.com/javafx/21"
       xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.usermanagement.controllers.UserEditFormController"
@@ -19,76 +19,76 @@
        <Region styleClass="popup-spacer"/>
        <Label fx:id="lblTitle" styleClass="title"/>
        <Region styleClass="popup-header-spacer"/>
-       <GridPane hgap="12" vgap="12" maxWidth="1.7976931348623157E308">
+       <GridPane hgap="18" vgap="18" maxWidth="1.7976931348623157E308">
               <columnConstraints>
-                     <ColumnConstraints minWidth="110"/>
+                     <ColumnConstraints minWidth="165"/>
                      <ColumnConstraints hgrow="ALWAYS"/>
               </columnConstraints>
               <Label text="%user.username.label" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
               <TextField fx:id="txtUsername"
-                   promptText="%user.username"
-                   styleClass="input"
-                   GridPane.rowIndex="0"
-                   GridPane.columnIndex="1"/>
+                         promptText="%user.username"
+                         styleClass="input"
+                         GridPane.rowIndex="0"
+                         GridPane.columnIndex="1"/>
               <Label fx:id="lblUsername"
-               visible="false"
-               managed="false"
-               styleClass="account-readonly-value"
-               GridPane.rowIndex="0"
-               GridPane.columnIndex="1"/>
+                     visible="false"
+                     managed="false"
+                     styleClass="account-readonly-value"
+                     GridPane.rowIndex="0"
+                     GridPane.columnIndex="1"/>
               <Label text="%user.role.label" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
               <ComboBox fx:id="cbRole"
-                  promptText="%user.role.select"
-                  maxWidth="1.7976931348623157E308"
-                  GridPane.rowIndex="1"
-                  GridPane.columnIndex="1"/>
+                        promptText="%user.role.select"
+                        maxWidth="1.7976931348623157E308"
+                        GridPane.rowIndex="1"
+                        GridPane.columnIndex="1"/>
               <Label fx:id="lblRole"
-               visible="false"
-               managed="false"
-               styleClass="account-readonly-value"
-               GridPane.rowIndex="1"
-               GridPane.columnIndex="1"/>
+                     visible="false"
+                     managed="false"
+                     styleClass="account-readonly-value"
+                     GridPane.rowIndex="1"
+                     GridPane.columnIndex="1"/>
               <Label fx:id="lblPasswordCaption"
-               text="%user.password.label"
-               GridPane.rowIndex="2"
-               GridPane.columnIndex="0"/>
+                     text="%user.password.label"
+                     GridPane.rowIndex="2"
+                     GridPane.columnIndex="0"/>
               <StackPane alignment="CENTER_RIGHT" GridPane.rowIndex="2" GridPane.columnIndex="1">
                      <PasswordField fx:id="txtPassword"
-                              promptText="%user.password.hint"
-                              styleClass="input"/>
+                                    promptText="%user.password.hint"
+                                    styleClass="input"/>
                      <TextField fx:id="txtPasswordVisible"
-                              promptText="%user.password.hint"
-                              styleClass="input"
-                              visible="false"
-                              managed="false"/>
+                                promptText="%user.password.hint"
+                                styleClass="input"
+                                visible="false"
+                                managed="false"/>
                      <Button fx:id="btnPeekPassword" styleClass="peek-btn">
                             <StackPane.margin>
-                                   <Insets right="5"/>
+                                   <Insets right="8"/>
                             </StackPane.margin>
                      </Button>
               </StackPane>
               <Label fx:id="lblPasswordConfirmCaption"
-               text="%user.password.confirm.label"
-               GridPane.rowIndex="3"
-               GridPane.columnIndex="0"/>
+                     text="%user.password.confirm.label"
+                     GridPane.rowIndex="3"
+                     GridPane.columnIndex="0"/>
               <StackPane alignment="CENTER_RIGHT" GridPane.rowIndex="3" GridPane.columnIndex="1">
                      <PasswordField fx:id="txtPasswordConfirm"
-                              promptText="%user.password.confirm.hint"
-                              styleClass="input"/>
+                                    promptText="%user.password.confirm.hint"
+                                    styleClass="input"/>
                      <TextField fx:id="txtPasswordConfirmVisible"
-                              promptText="%user.password.confirm.hint"
-                              styleClass="input"
-                              visible="false"
-                              managed="false"/>
+                                promptText="%user.password.confirm.hint"
+                                styleClass="input"
+                                visible="false"
+                                managed="false"/>
                      <Button fx:id="btnPeekPasswordConfirm" styleClass="peek-btn">
                             <StackPane.margin>
-                                   <Insets right="5"/>
+                                   <Insets right="8"/>
                             </StackPane.margin>
                      </Button>
               </StackPane>
        </GridPane>
        <Label fx:id="lblError" visible="false" styleClass="message-error"/>
-       <HBox spacing="10" alignment="CENTER">
+       <HBox spacing="15" alignment="CENTER">
               <Button text="%common.save" onAction="#onSave" styleClass="btn-primary"/>
               <Button text="%common.cancel" onAction="#onCancel" styleClass="btn-secondary"/>
        </HBox>

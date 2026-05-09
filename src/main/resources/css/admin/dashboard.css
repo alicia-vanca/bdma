@@ -13,8 +13,8 @@
 
 .panel-title {
     -fx-font-weight: bold;
-    -fx-font-size: 12px;
-    -fx-padding: 0 0 8 0;
+    -fx-font-size: 18px;
+    -fx-padding: 0 0 12 0;
 }
 
 #deviceListView {
@@ -48,33 +48,24 @@
 }
 
 .device-cell-row {
-    -fx-padding: 6 4 6 4;
+    -fx-padding: 9 6 9 6;
 }
 
 .device-cell-name {
     -fx-font-weight: bold;
-    -fx-font-size: 13px;
+    -fx-font-size: 20px;
 }
 
 .device-cell-connected {
-    -fx-font-size: 11px;
+    -fx-font-size: 17px;
 }
 
 .device-cell-offline {
-    -fx-font-size: 11px;
+    -fx-font-size: 17px;
 }
 
 .device-cell-unvalidated {
-    -fx-font-size: 11px;
-}
-
-.edit-icon-svg {
-    -fx-fill: #888;
-    -fx-cursor: hand;
-}
-
-.edit-icon-svg:hover {
-    -fx-fill: #000;
+    -fx-font-size: 17px;
 }
 
 .edit-icon-svg {

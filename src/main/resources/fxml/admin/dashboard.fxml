@@ -4,19 +4,19 @@
 <HBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.layout.controllers.DashboardController"
       styleClass="content">
-    <VBox styleClass="device-panel" minWidth="220" maxWidth="220">
+    <VBox styleClass="device-panel" minWidth="230" maxWidth="230">
         <padding>
-            <Insets top="0" right="8" bottom="0" left="0"/>
+            <Insets top="0" right="12" bottom="0" left="0"/>
         </padding>
         <Label text="%dashboard.devices" styleClass="panel-title"/>
         <ListView fx:id="deviceListView" VBox.vgrow="ALWAYS"/>
     </VBox>
     <Separator orientation="VERTICAL"/>
-    <VBox spacing="15" HBox.hgrow="ALWAYS" alignment="TOP_LEFT">
+    <VBox spacing="23" HBox.hgrow="ALWAYS" alignment="TOP_LEFT">
         <padding>
-            <Insets top="0" right="0" bottom="0" left="12"/>
+            <Insets top="0" right="0" bottom="0" left="18"/>
         </padding>
-        <Label text="%menu.dashboard" styleClass="title" minHeight="34" maxHeight="34"/>
+        <Label text="%menu.dashboard" styleClass="title"/>
         <StackPane fx:id="fileListContainer" VBox.vgrow="ALWAYS"/>
     </VBox>
 </HBox>

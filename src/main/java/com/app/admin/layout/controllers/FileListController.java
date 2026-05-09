@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
+import com.app.common.dtos.FileListFilterState;
 import com.app.common.dtos.FileView;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
@@ -32,6 +33,7 @@ import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.DateCell;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
@@ -87,6 +89,7 @@ public class FileListController {
     private final UserService userService;
     private final Session session;
     private final FolderManagerService folderManagerService;
+    private final FileListFilterState filterState;
 
     private String activeCameraId;
     private boolean initializing = true;
@@ -112,11 +115,13 @@ public class FileListController {
 
     public FileListController(FileService fileService, UserService userService,
             Session session,
-            FolderManagerService folderManagerService) {
+            FolderManagerService folderManagerService,
+            FileListFilterState filterState) {
         this.fileService = fileService;
         this.userService = userService;
         this.session = session;
         this.folderManagerService = folderManagerService;
+        this.filterState = filterState;
     }
 
     @FXML
@@ -133,12 +138,37 @@ public class FileListController {
         }
         loadTypes();
         setupPageSizeComboBox();
+        restoreFilterState();
         initializing = true;
 
         setupAutoFilter();
 
         initializing = false;
+        this.activeCameraId = filterState.get().getCameraId();
         refresh(buildFilter());
+    }
+
+
+    private void restoreFilterState() {
+        FileFilter f = filterState.get();
+        if (f.getDateFrom() != null) {
+            dateFromPicker.setValue(f.getDateFrom());
+        }
+        if (f.getDateTo() != null) {
+            dateToPicker.setValue(f.getDateTo());
+        }
+        if (f.getUserId() != null) {
+            userFilterCombo.getItems().stream()
+                    .filter(o -> Objects.equals(o.id(), f.getUserId()))
+                    .findFirst()
+                    .ifPresent(userFilterCombo.getSelectionModel()::select);
+        }
+        if (f.getType() != null) {
+            typeFilterCombo.getItems().stream()
+                    .filter(o -> Objects.equals(o.key(), f.getType()))
+                    .findFirst()
+                    .ifPresent(typeFilterCombo.getSelectionModel()::select);
+        }
     }
 
     private void setupDatePickers() {
@@ -158,6 +188,34 @@ public class FileListController {
 
         dateFromPicker.setConverter(converter);
         dateToPicker.setConverter(converter);
+
+        dateFromPicker.valueProperty().addListener((obs, oldVal, newVal) -> {
+            dateToPicker.setDayCellFactory(newVal == null ? null : picker -> new DateCell() {
+                @Override
+                public void updateItem(LocalDate date, boolean empty) {
+                    super.updateItem(date, empty);
+                    setDisable(date.isBefore(newVal));
+                }
+            });
+            if (newVal != null && dateToPicker.getValue() != null
+                    && dateToPicker.getValue().isBefore(newVal)) {
+                dateToPicker.setValue(null);
+            }
+        });
+
+        dateToPicker.valueProperty().addListener((obs, oldVal, newVal) -> {
+            dateFromPicker.setDayCellFactory(newVal == null ? null : picker -> new DateCell() {
+                @Override
+                public void updateItem(LocalDate date, boolean empty) {
+                    super.updateItem(date, empty);
+                    setDisable(date.isAfter(newVal));
+                }
+            });
+            if (newVal != null && dateFromPicker.getValue() != null
+                    && dateFromPicker.getValue().isAfter(newVal)) {
+                dateFromPicker.setValue(null);
+            }
+        });
     }
 
     private void setupColumns() {
@@ -227,11 +285,13 @@ public class FileListController {
 
     public void filterByDevice(String cameraId) {
         this.activeCameraId = cameraId;
+        filterState.get().setCameraId(cameraId);
         refresh(buildFilter());
     }
 
     @FXML
     public void clearFilter() {
+        filterState.clear();
         dateFromPicker.setValue(null);
         dateToPicker.setValue(null);
         userFilterCombo.getSelectionModel().selectFirst();
@@ -412,6 +472,7 @@ public class FileListController {
             if (initializing) {
                 return;
             }
+            filterState.get().setDateFrom(newVal);
             refresh(buildFilter());
         });
 
@@ -419,6 +480,7 @@ public class FileListController {
             if (initializing) {
                 return;
             }
+            filterState.get().setDateTo(newVal);
             refresh(buildFilter());
         });
 
@@ -426,6 +488,7 @@ public class FileListController {
             if (initializing) {
                 return;
             }
+            filterState.get().setUserId(newVal != null ? newVal.id() : null);
             refresh(buildFilter());
         });
 
@@ -433,6 +496,7 @@ public class FileListController {
             if (initializing) {
                 return;
             }
+            filterState.get().setType(newVal != null ? newVal.key() : null);
             refresh(buildFilter());
         });
     }
@@ -466,6 +530,7 @@ public class FileListController {
      * Called during logout to ensure proper resource cleanup.
      */
     public void cleanup() {
+        filterState.clear();
         verificationExecutor.shutdownNow();
         fileVerificationCache.clear();
         log.debug("FileListController cleanup: executor shutdown, cache cleared");
