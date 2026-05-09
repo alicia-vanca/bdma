@@ -19,9 +19,6 @@ public class StorageHealthMonitor {
     private final ApplicationEventPublisher publisher;
     private final Session session;
 
-    private volatile boolean dataUnavailablePublished;
-    private volatile boolean backupUnavailablePublished;
-
     public StorageHealthMonitor(FolderManagerService folderManagerService, ApplicationEventPublisher publisher,
             Session session) {
         this.folderManagerService = folderManagerService;
@@ -29,50 +26,48 @@ public class StorageHealthMonitor {
         this.session = session;
     }
 
-    public void checkStorageHealth() {
+    public void checkStorageHealth(FolderType target) {
         // Skip health check if user not logged in
         if (session.getUser() == null) {
             return;
         }
-
-        boolean dataAccessible = folderManagerService.isDataDirAccessible();
-        boolean backupAccessible = folderManagerService.isBackupDirAccessible();
-
-        publishState(FolderType.SYNC, dataAccessible);
-        publishState(FolderType.BACKUP, backupAccessible);
+        if (target == null || target == FolderType.SYNC) {
+            boolean syncDriveAccessible = folderManagerService.isDataDirAccessible();
+            publishState(FolderType.SYNC, syncDriveAccessible);
+        }
+        if (target == null || target == FolderType.BACKUP) {
+            boolean backupDriveAccessible = folderManagerService.isBackupDirAccessible();
+            publishState(FolderType.BACKUP, backupDriveAccessible);
+        }
     }
 
-    public void checkNow() {
-        checkStorageHealth();
+    public void checkNow(FolderType target) {
+        checkStorageHealth(target);
     }
 
     private void publishState(FolderType target, boolean accessible) {
         if (target == FolderType.SYNC) {
-            if (!accessible && !dataUnavailablePublished) {
+            if (!accessible) {
                 log.debug("StorageHealthMonitor firing StorageUnavailableEvent: target={} reason={}",
                         FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE);
                 publisher.publishEvent(
                         new StorageUnavailableEvent(FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE));
-                dataUnavailablePublished = true;
-            } else if (accessible && dataUnavailablePublished) {
+            } else if (accessible) {
                 log.debug("StorageHealthMonitor firing StorageRestoredEvent: target={}", FolderType.SYNC);
                 publisher.publishEvent(new StorageRestoredEvent(FolderType.SYNC));
-                dataUnavailablePublished = false;
             }
             return;
         }
 
         if (target == FolderType.BACKUP) {
-            if (!accessible && !backupUnavailablePublished) {
+            if (!accessible) {
                 log.debug("StorageHealthMonitor firing StorageUnavailableEvent: target={} reason={}",
                         FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE);
                 publisher.publishEvent(
                         new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
-                backupUnavailablePublished = true;
-            } else if (accessible && backupUnavailablePublished) {
+            } else if (accessible) {
                 log.debug("StorageHealthMonitor firing StorageRestoredEvent: target={}", FolderType.BACKUP);
                 publisher.publishEvent(new StorageRestoredEvent(FolderType.BACKUP));
-                backupUnavailablePublished = false;
             }
         }
     }

@@ -418,7 +418,7 @@ public class AdminSettingsDialogController {
             return;
         }
         try {
-            adminSettingsService.saveFolder(path, type);
+            adminSettingsService.saveFolder(type, path);
             driveResolverService.invalidateCache();
             eventPublisher.publishEvent(new StorageRestoredEvent(type));
             showNotice(I18n.get("setting.storage.success"), true);

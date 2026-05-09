@@ -14,8 +14,9 @@ import com.app.common.definitions.AppConstants;
 
 /**
  * Static utility service for protecting paths inside bdma folders.
+ * 
  * Strategy:
- * - bdma root folder: deny delete with inheritance ((OI)(CI)(D))
+ * - bdma root folder: deny delete (D)
  * - child folders created by ensureBdmaDir: lock with the same delete-deny rule
  */
 public class FolderSecurityService {
@@ -39,8 +40,9 @@ public class FolderSecurityService {
 
     /**
      * Ensure directory path exists inside a protected bdma folder.
+     *
      * Steps:
-     * 1) Lock bdma folder with inheritable delete-deny ((OI)(CI)(D))
+     * 1) Lock bdma folder with delete-deny (D)
      * 2) Walk from bdma folder to target and create missing directories
      *
      * @param dirPath absolute path to the directory
