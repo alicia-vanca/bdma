@@ -7,11 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class BackupRestoreFailure {
-    private String fileName;
-    private String operation;
+public class RestoreFailure {
+    private String srcPath;
     private String errorMessage;
-    private int retryCount;
-    private String lastAttemptedAt;
-    private String status;
 }

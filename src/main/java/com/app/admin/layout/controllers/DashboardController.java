@@ -368,7 +368,7 @@ public class DashboardController extends BaseLayoutController {
 
     // Handle device disconnection events with proper logic for both validated and unvalidated devices
     private void handleDisconnectedEvent(DeviceEvent event) {
-        String cameraId = null;
+        String cameraId;
         
         // Try to get cameraId from validation result first
         if (event.validationResult() != null) {
@@ -595,5 +595,11 @@ public class DashboardController extends BaseLayoutController {
                         && !dbCameraIds.contains(summary.getCameraId()));
 
         sortDeviceItems();
+    }
+
+    public void onUserAutoCreated() {
+        if (fileListController != null) {
+            fileListController.reloadUserFilter();
+        }
     }
 }

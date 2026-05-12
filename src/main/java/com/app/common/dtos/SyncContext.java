@@ -15,8 +15,7 @@ public record SyncContext(
         boolean isAdmin,
         File saveDir,
         boolean autoDelete,
-        String deviceName,
-        boolean strictDataDir) {
+        String deviceName) {
     public boolean canSync(String fileUserName) {
         if (isAdmin)
             return true;

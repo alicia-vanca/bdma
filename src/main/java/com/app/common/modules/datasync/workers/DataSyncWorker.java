@@ -271,9 +271,7 @@ public class DataSyncWorker implements Runnable {
         List<FileRecord> syncedFiles = dataSyncService.loadSyncedFiles(deviceId);
         Set<String> relativeSyncedPaths = new java.util.HashSet<>();
         for (FileRecord syncedFile : syncedFiles) {
-            PathResolutionResult resolution = syncContext.strictDataDir()
-                    ? resolveFromDataDirOnly(syncedFile.getSyncedPath(), syncedFile.getFileSize(), syncContext.saveDir())
-                    : folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedFile.getSyncedPath(), syncedFile.getFileSize());
+            PathResolutionResult resolution = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedFile.getSyncedPath(), syncedFile.getFileSize());
 
             if (!resolution.isFound()) {
                 continue;
@@ -315,18 +313,6 @@ public class DataSyncWorker implements Runnable {
                 : fileCollection.unsyncedFiles();
 
         return new SyncPreparation(fileCollection, relativeSyncedPaths, lookupCache, filesToBeProcessed);
-    }
-
-    private PathResolutionResult resolveFromDataDirOnly(String path, long size, File saveDir) {
-        Path saveDirRoot = saveDir.toPath().getRoot();
-        if (saveDirRoot == null) {
-            return PathResolutionResult.notFound();
-        }
-        File candidate = new File(saveDirRoot.toString(), path);
-        if (candidate.exists() && candidate.length() == size) {
-            return PathResolutionResult.found(candidate.toPath());
-        }
-        return PathResolutionResult.notFound();
     }
 
     private List<String> findFilesFromMassStorage(String hardwareId) {
@@ -659,8 +645,7 @@ public class DataSyncWorker implements Runnable {
                         currentContext.isAdmin(),
                         latestDataDir,
                         currentContext.autoDelete(),
-                        currentContext.deviceName(),
-                        false);
+                        currentContext.deviceName());
             }
             return null;
         }

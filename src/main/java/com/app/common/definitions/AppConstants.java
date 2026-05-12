@@ -39,6 +39,7 @@ public final class AppConstants {
     public static final String KEY_THEME = "appConfig.theme";
     public static final String KEY_LAST_CHECK_DATE = "appUpdate.lastCheckDate";
     public static final String KEY_SKIPPED_VERSION = "appUpdate.skippedVersion";
+    public static final String KEY_LAST_RESTORE_PROGRESS = "last.restore.progress";
 
     public static final String STARTUP_REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     public static final String STARTUP_REG_VALUE = "BDMA";

@@ -104,7 +104,7 @@ public class FolderSecurityService {
      * @param path the path to lock
      * @throws IOException if lock operations fail
      */
-    private static void lockSinglePath(Path path) throws IOException {
+    public static void lockSinglePath(Path path) throws IOException {
         try {
             String user = buildIcaclsTrustee();
             runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
@@ -122,7 +122,7 @@ public class FolderSecurityService {
      * Unlock a single bdma folder path by removing delete deny ACL from the user.
      * Existing files/subdirectories retain inherited ACL updates from the root.
      */
-    private static void unlockSinglePath(Path path) throws IOException {
+    public static void unlockSinglePath(Path path) throws IOException {
         try {
             String user = buildIcaclsTrustee();
             runCommand(CMD_ICACLS,
@@ -173,26 +173,6 @@ public class FolderSecurityService {
         return null;
     }
 
-    public static void removeDenyAcl(Path path) throws IOException {
-        try {
-            String user = buildIcaclsTrustee();
-            runCommand(CMD_ICACLS, path.toString(), ICACLS_REMOVE_DENY, user);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("removeDenyAcl interrupted for: " + path, e);
-        }
-    }
-
-    public static void applyDenyAcl(Path path) throws IOException {
-        try {
-            String user = buildIcaclsTrustee();
-            runCommand(CMD_ICACLS, path.toString(), ICACLS_DENY, user + ":(D)");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("applyDenyAcl interrupted for: " + path, e);
-        }
-    }
-
     /**
      * Execute a system command and capture output.
      *
@@ -229,5 +209,9 @@ public class FolderSecurityService {
         }
 
         return code;
+    }
+
+    public static boolean isValidBackupFile(Path backupPath){
+        return true;
     }
 }

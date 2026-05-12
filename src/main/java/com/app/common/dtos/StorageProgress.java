@@ -1,30 +1,21 @@
 package com.app.common.dtos;
 
-import com.app.common.definitions.enums.SyncDirection;
 import lombok.Getter;
 
 @Getter
 public class StorageProgress {
-
-    private SyncDirection direction;
-    private String operation;
     private int total;
     private int success;
     private int failed;
+    private int checksumInvalid;
+    private int skipped;
 
-    // chỉ dùng cho final message
-    private String status;
-
-    public synchronized void init(SyncDirection direction, int total) {
-
-        this.direction = direction;
-        this.operation = direction == SyncDirection.BACKUP_TO_DATA
-                ? "setting.storage.btn.restore"
-                : "setting.storage.btn.rebuild";
+    public synchronized void init(int total) {
         this.total = total;
         this.success = 0;
         this.failed = 0;
-        this.status = null;
+        this.checksumInvalid = 0;
+        this.skipped = 0;
     }
 
     public synchronized void incrementSuccess() {
@@ -35,36 +26,23 @@ public class StorageProgress {
         failed++;
     }
 
-    public synchronized void completed() {
-        this.status = "setting.storage.status.completed";
+    public synchronized void incrementChecksumInvalid() {
+        checksumInvalid++;
     }
 
-    public synchronized void failed() {
-        this.status = "setting.storage.status.failed";
+    public synchronized void incrementSkipped(int count) {
+        skipped += count;
     }
 
     public synchronized Object[] buildProgressArgs() {
-        return new Object[]{
-                total,
-                success,
-                failed
-        };
-    }
-
-    public synchronized Object[] buildFinalArgs() {
-        return new Object[]{
-                status == null ? "" : status,
-                success,
-                total,
-                failed
-        };
+        return new Object[]{total, success, failed, checksumInvalid, skipped};
     }
 
     public synchronized void reset() {
-        operation = "";
         total = 0;
         success = 0;
         failed = 0;
-        status = null;
+        checksumInvalid = 0;
+        skipped = 0;
     }
 }
