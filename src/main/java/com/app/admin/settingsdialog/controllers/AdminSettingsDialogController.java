@@ -13,18 +13,18 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
 import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
-import com.app.admin.settingsdialog.services.BackupSyncService;
+import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.Language;
-import com.app.common.definitions.enums.SyncDirection;
 import com.app.common.definitions.enums.Theme;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.helpers.AlertHelper;
@@ -38,6 +38,7 @@ import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
+import com.app.common.repositories.RestoreFailureRepository;
 import com.app.common.services.DriveResolverService;
 import com.app.common.services.UserSettingService;
 
@@ -72,9 +73,10 @@ public class AdminSettingsDialogController {
     private final DriveResolverService driveResolverService;
     private final AdminLayoutController adminLayoutController;
     private final ApplicationEventPublisher eventPublisher;
-    private final BackupSyncService backupSyncService;
+    private final RestoreService restoreService;
     private final DeviceSyncQueue deviceSyncQueue;
     private final DataBackupQueue dataBackupQueue;
+    private final RestoreFailureRepository restoreFailureRepository;
 
     @FXML
     private VBox panel;
@@ -150,9 +152,10 @@ public class AdminSettingsDialogController {
             DriveResolverService driveResolverService,
             AdminLayoutController adminLayoutController,
             ApplicationEventPublisher eventPublisher,
-            BackupSyncService backupSyncService,
+            RestoreService restoreService,
             DeviceSyncQueue deviceSyncQueue,
-            DataBackupQueue dataBackupQueue) {
+            DataBackupQueue dataBackupQueue,
+            RestoreFailureRepository restoreFailureRepository) {
         this.adminSettingsService = adminSettingsService;
         this.session = session;
         this.userSettingService = userSettingService;
@@ -160,9 +163,10 @@ public class AdminSettingsDialogController {
         this.driveResolverService = driveResolverService;
         this.adminLayoutController = adminLayoutController;
         this.eventPublisher = eventPublisher;
-        this.backupSyncService = backupSyncService;
+        this.restoreService = restoreService;
         this.deviceSyncQueue = deviceSyncQueue;
         this.dataBackupQueue = dataBackupQueue;
+        this.restoreFailureRepository = restoreFailureRepository;
     }
 
     @FXML
@@ -202,18 +206,6 @@ public class AdminSettingsDialogController {
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         chkStartWithWindows.setText(I18n.get("setting.startWithWindows.checkbox"));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
-        if (backupSyncService.isRunning()) {
-            lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
-                    prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
-                            backupSyncService.getCurrentProgress().buildProgressArgs())));
-            return;
-        }
-
-        if (!backupSyncService.getLastFailures().isEmpty()) {
-            lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_FINAL,
-                    prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
-                            backupSyncService.getCurrentProgress().buildFinalArgs())));
-        }
         btnRetryFailedRestore.setText(I18n.get("setting.storage.btn.retry"));
     }
 
@@ -249,34 +241,47 @@ public class AdminSettingsDialogController {
         chkStartWithWindows.setSelected(adminSettingsService.getStartWithWindows());
         checkAndShowDriveConflict();
 
-        if (backupSyncService.isCancelled()) {
+        if (restoreService.isCancelled()) {
             hideProgressUI();
             return;
         }
 
-        if (backupSyncService.isRunning()) {
+        if (restoreService.isRunning()) {
             setStorageControlsDisabled(true);
             storageActionBox.setVisible(true);
             storageActionBox.setManaged(true);
+            btnRetryFailedRestore.setVisible(false);
+            btnRetryFailedRestore.setManaged(false);
             lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
-                    prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
-                            backupSyncService.getCurrentProgress().buildProgressArgs())));
+                    restoreService.getCurrentProgress().buildProgressArgs()));
             startProgressUpdater();
             return;
         }
 
-        if (!backupSyncService.getLastFailures().isEmpty()) {
+        if (!restoreFailureRepository.findAll().isEmpty()) {
             storageActionBox.setVisible(true);
             storageActionBox.setManaged(true);
-            lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_FINAL,
-                    prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
-                            backupSyncService.getCurrentProgress().buildFinalArgs())));
             btnRetryFailedRestore.setVisible(true);
             btnRetryFailedRestore.setManaged(true);
+
+            String saved = adminSettingsService.getLastRestoreProgress();
+            if (saved != null && !saved.isBlank()) {
+                String[] parts = saved.split(",");
+                Object[] args = new Object[]{
+                        Integer.parseInt(parts[0]),
+                        Integer.parseInt(parts[1]),
+                        Integer.parseInt(parts[2]),
+                        Integer.parseInt(parts[3]),
+                        Integer.parseInt(parts[4])
+                };
+                lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_FINAL, args));
+            } else {
+                lblStorageProgress.setText(I18n.get("setting.storage.has.pending.retry"));
+            }
+
             lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
             lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_ERROR);
         } else {
-            // No failures - ensure we don't show success status here since this is just loading
             lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
         }
     }
@@ -405,6 +410,7 @@ public class AdminSettingsDialogController {
             txtField.setText(selected.getAbsolutePath());
             checkAndShowDriveConflict();
             persistFolder(txtField, type);
+            restoreFailureRepository.clearAll();
             hideProgressUI();
         }
 
@@ -485,53 +491,47 @@ public class AdminSettingsDialogController {
         runStorageRecoveryOperation(adminSettingsService::restore);
     }
 
-    private void runStorageRecoveryOperation(
-            Supplier<BackupSyncService.BackupSyncResult> operation) {
+    private void runStorageRecoveryOperation(Supplier<RestoreService.BackupSyncResult> operation) {
         setStorageControlsDisabled(true);
-        backupSyncService.setOnProgressInitialized(() ->
+        restoreService.setOnProgressInitialized(() ->
                 Platform.runLater(() -> {
                     storageActionBox.setVisible(true);
                     storageActionBox.setManaged(true);
                     btnRetryFailedRestore.setVisible(false);
                     btnRetryFailedRestore.setManaged(false);
                     lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
-                            prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
-                                    backupSyncService.getCurrentProgress().buildProgressArgs())));
+                            restoreService.getCurrentProgress().buildProgressArgs()));
                     startProgressUpdater();
                 })
         );
 
-        Thread.ofVirtual().start(() -> {
-            BackupSyncService.BackupSyncResult syncResult = operation.get();
+        Thread thread = new Thread(() -> {
+            RestoreService.BackupSyncResult syncResult = operation.get();
             eventPublisher.publishEvent(new StorageRecoveryCompletedEvent(this.toString()));
 
             Platform.runLater(() -> {
                 stopProgressUpdater();
                 setStorageControlsDisabled(false);
-                lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_FINAL,
-                        prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
-                                backupSyncService.getCurrentProgress().buildFinalArgs())));
-                if (syncResult.success()) {
-                    if (syncResult.failures().isEmpty()) {
-                        lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
-                        lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_SUCCESS);
-                        Executors.newSingleThreadScheduledExecutor()
-                                .schedule(() -> Platform.runLater(this::hideProgressUI), 3, TimeUnit.SECONDS);
-                    } else {
-                        btnRetryFailedRestore.setVisible(true);
-                        btnRetryFailedRestore.setManaged(true);
-                        lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
-                        lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_ERROR);
-                    }
+                lblStorageProgress.setText(
+                        I18n.get(I18N_SETTING_STORAGE_FINAL, restoreService.getCurrentProgress().buildProgressArgs()));
+                if (syncResult.failures().isEmpty()) {
+                    lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
+                    lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_SUCCESS);
+                    Executors.newSingleThreadScheduledExecutor()
+                            .schedule(() -> Platform.runLater(this::hideProgressUI), 3, TimeUnit.SECONDS);
                 } else {
                     btnRetryFailedRestore.setVisible(true);
                     btnRetryFailedRestore.setManaged(true);
                     lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
                     lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_ERROR);
-                    showNotice(I18n.get(syncResult.errorMessage()), false);
+                }
+                if (!syncResult.success()) {
+                    showNotice(syncResult.errorMessage(), false);
                 }
             });
         });
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private boolean isDriveConflict(String pathA, String pathB) {
@@ -558,7 +558,7 @@ public class AdminSettingsDialogController {
     }
 
     private String getStorageBlockedReason() {
-        if (backupSyncService.isRunning()) {
+        if (restoreService.isRunning()) {
             return I18n.get("setting.storage.error.already.running");
         }
         if (deviceSyncQueue.isActive()) {
@@ -576,21 +576,17 @@ public class AdminSettingsDialogController {
         storageActionBox.setManaged(true);
         progressScheduler = Executors.newSingleThreadScheduledExecutor();
         progressScheduler.scheduleAtFixedRate(() -> {
-            if (!backupSyncService.isRunning()) {
-                return;
-            }
+            if (!restoreService.isRunning()) return;
+
             String message = I18n.get(I18N_SETTING_STORAGE_PROGRESS,
-                    prependArg(I18n.get(backupSyncService.getCurrentProgress().getOperation()),
-                            backupSyncService.getCurrentProgress().buildProgressArgs()));
-            if (backupSyncService.getCurrentProgress().getFailed() > 0) {
+                    restoreService.getCurrentProgress().buildProgressArgs());
+            boolean hasFailed = restoreService.getCurrentProgress().getFailed() > 0;
+
+            Platform.runLater(() -> {
                 lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
-                lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_ERROR);
-            } else {
-                lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
-                lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_SUCCESS);
-            }
-                Platform.runLater(() ->
-                        lblStorageProgress.setText(message));
+                lblStorageProgress.getStyleClass().add(hasFailed ? CSS_CLASS_STATUS_ERROR : CSS_CLASS_STATUS_SUCCESS);
+                lblStorageProgress.setText(message);
+            });
         }, 0, 3, TimeUnit.SECONDS);
     }
 
@@ -611,30 +607,21 @@ public class AdminSettingsDialogController {
 
     @FXML
     public void onRetryFailedRestore() {
-        backupSyncService.clearLastFailures();
-        SyncDirection direction = backupSyncService.getCurrentProgress().getDirection();
-
-        if (direction == SyncDirection.BACKUP_TO_DATA) {
-            runStorageRecoveryOperation(adminSettingsService::restore);
-            return;
-        }
-
-        if (direction == SyncDirection.DATA_TO_BACKUP) {
-            runStorageRecoveryOperation(adminSettingsService::rebuild);
-        }
-    }
-
-    private Object[] prependArg(Object first, Object[] rest) {
-        Object[] result = new Object[rest.length + 1];
-        result[0] = first;
-        rest[0] = I18n.get(rest[0].toString());
-        System.arraycopy(rest, 0, result, 1, rest.length);
-        return result;
+        runStorageRecoveryOperation(adminSettingsService::retryFailed);
     }
 
     private void setStorageControlsDisabled(boolean disabled) {
         btnRestore.setDisable(disabled);
         btnChooseSaveFolder.setDisable(disabled);
         btnChooseBackupFolder.setDisable(disabled);
+    }
+
+    @EventListener
+    public void onStorageRestored(StorageRestoredEvent event) {
+        Platform.runLater(() -> {
+            adminSettingsService.getFolderPath(FolderType.SYNC).ifPresent(txtSavePath::setText);
+            adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
+            checkAndShowDriveConflict();
+        });
     }
 }

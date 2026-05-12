@@ -465,6 +465,11 @@ public class FileListController {
         userFilterCombo.getSelectionModel().selectFirst();
     }
 
+    public void reloadUserFilter() {
+        if (!session.isAdmin()) return;
+        Platform.runLater(this::loadUsers);
+    }
+
     // Auto-refresh file list when any filter changes, skip during initial setup to
     // avoid redundant queries
     private void setupAutoFilter() {

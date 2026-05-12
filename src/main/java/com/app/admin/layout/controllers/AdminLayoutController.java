@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -16,7 +15,7 @@ import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
-import com.app.admin.settingsdialog.services.BackupSyncService;
+import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
@@ -37,6 +36,9 @@ import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
+import com.app.common.modules.datasync.services.DataSyncService;
+import com.app.common.modules.foldermanager.events.StorageDirRestoredEvent;
+import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
@@ -45,13 +47,11 @@ import com.app.common.modules.foldermanager.services.StorageHealthMonitor;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
-import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.AppConfigService;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.services.SyncProgressTracker;
 import com.app.common.services.UserSettingService;
-import com.app.common.services.AdbClient;
 import com.app.common.utils.FileUtil;
 import com.app.user.userdetail.controllers.UserInfoController;
 
@@ -112,9 +112,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private final AppConfigService appConfigService;
     private final ApplicationEventPublisher publisher;
     private final StorageHealthMonitor storageHealthMonitor;
-    private final BackupSyncService backupSyncService;
-    private final AdbClient adbClient;
-    private final ValidatedDeviceRepository validatedDeviceRepository;
+    private final RestoreService restoreService;
+    private final DataSyncService dataSyncService;
 
     @FXML
     private StackPane contentArea;
@@ -186,9 +185,8 @@ public class AdminLayoutController extends BaseLayoutController {
             AppConfigService appConfigService,
             ApplicationEventPublisher publisher,
             StorageHealthMonitor storageHealthMonitor,
-            BackupSyncService backupSyncService,
-            AdbClient adbClient,
-            ValidatedDeviceRepository validatedDeviceRepository) {
+            RestoreService restoreService,
+            DataSyncService dataSyncService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
@@ -203,9 +201,8 @@ public class AdminLayoutController extends BaseLayoutController {
         this.appConfigService = appConfigService;
         this.publisher = publisher;
         this.storageHealthMonitor = storageHealthMonitor;
-        this.backupSyncService = backupSyncService;
-        this.adbClient = adbClient;
-        this.validatedDeviceRepository = validatedDeviceRepository;
+        this.restoreService = restoreService;
+        this.dataSyncService = dataSyncService;
     }
 
     @Override
@@ -257,6 +254,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (result != null) {
             currentDashboardController = result.controller();
             currentDashboardController.setOnRequestValidate(this::handleRequestValidate);
+            dataSyncService.setOnUserAutoCreated(username -> currentDashboardController.onUserAutoCreated());
             setContent(result.node());
         }
         setActiveButton(getMenuButtons(), btnDashboard);
@@ -293,8 +291,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (currentDashboardController != null) {
             currentDashboardController.resetState();
         }
-        backupSyncService.cancel();
-        backupSyncService.clearLastFailures();
+        restoreService.cancel();
         deviceSyncQueue.clearAll();
         syncProgressTracker.clearAll();
 
@@ -405,7 +402,7 @@ public class AdminLayoutController extends BaseLayoutController {
                     result.getMatchedWhitelistId());
 
             showNoticeSuccess(I18n.get("device.connected.saved", result.getDeviceName()));
-            if (!backupSyncService.isRunning()) {
+            if (!restoreService.isRunning()) {
                 autoSyncDevice(result.getHardwareId(), result.getDeviceName());
             }
             return;
@@ -515,7 +512,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
         boolean queued = deviceSyncQueue.add(hardwareId,
                 new SyncContext(session.getUser().getUsername(), session.isAdmin(),
-                        folderManagerService.getDataDir(), autoDelete, deviceName, false));
+                        folderManagerService.getDataDir(), autoDelete, deviceName));
         if (queued) {
             showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
         }
@@ -1031,6 +1028,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
         appConfigService.saveConfigValue(target, selected.getAbsolutePath());
         folderManagerService.init();
+        publisher.publishEvent(new StorageRestoredEvent(target));
+        publisher.publishEvent(new StorageDirRestoredEvent(target));
         showNoticeSuccess(I18n.get(I18N_SETTING_STORAGE_SUCCESS));
         storageHealthMonitor.checkNow();
         if (log.isInfoEnabled()) {
@@ -1082,58 +1081,11 @@ public class AdminLayoutController extends BaseLayoutController {
         return null;
     }
 
-    private void autoSyncDeviceAfterRestore(String hardwareId) {
-        if (syncStorageBlocked != null) {
-            pendingStorageSyncs.put(hardwareId, "");
-            return;
-        }
-
-        if (!folderManagerService.isDataDirAccessible()) {
-            return;
-        }
-
-        String isAutoDeleteStr = appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC);
-        boolean autoDelete = "true".equalsIgnoreCase(isAutoDeleteStr);
-
-        deviceSyncQueue.add(hardwareId,
-                new SyncContext(session.getUser().getUsername(), session.isAdmin(),
-                        folderManagerService.getDataDir(), autoDelete, "", true));
-    }
-
     @EventListener
     public void onStorageRestoreCompleted(StorageRecoveryCompletedEvent event) {
-
         if (session.getUser() == null) {
             return;
         }
-
-        boolean wasCancelled = backupSyncService.isCancelled();
-
-        Thread.ofVirtual().start(() -> {
-            try {
-                List<String> connectedSerials = adbClient.listConnectedSerials();
-                if (wasCancelled) {
-                    connectedSerials.forEach(serial -> {
-                        String deviceName = validatedDeviceRepository
-                                .findByHardwareId(serial)
-                                .map(ValidatedDevice::getDeviceName)
-                                .orElse(serial);
-                        Platform.runLater(() -> autoSyncDevice(serial, deviceName));
-                    });
-                } else {
-                    connectedSerials.forEach(this::autoSyncDeviceAfterRestore);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to queue devices after restore completed", e);
-            }
-        });
-        try {
-            List<String> connectedSerials = adbClient.listConnectedSerials();
-            connectedSerials.forEach(this::autoSyncDeviceAfterRestore);
-        } catch (Exception e) {
-            log.warn("Failed to queue devices after restore", e);
-        }
-
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
                 currentDashboardController.onFileBackupCompleted();
