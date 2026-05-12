@@ -12,26 +12,29 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import com.app.common.dtos.SyncContext;
-import com.app.common.services.SyncProgressTracker;
+import com.app.common.modules.queuemanager.services.QueueManagerService;
+import com.app.common.services.DeviceMiniStatus;
 
 @Component
 public class DeviceSyncQueue {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceSyncQueue.class);
 
-    public DeviceSyncQueue(SyncProgressTracker progressTracker) {
-        this.progressTracker = progressTracker;
-    }
-
-    public record Entry(String hardwareId, SyncContext context) {
-    }
-
     private final BlockingQueue<Entry> queue = new LinkedBlockingQueue<>();
     private final Set<String> inQueue = ConcurrentHashMap.newKeySet();
 
     private volatile String current = null;
 
-    private final SyncProgressTracker progressTracker;
+    private final DeviceMiniStatus deviceMiniStatus;
+    private final QueueManagerService queueManagerService;
+
+    public DeviceSyncQueue(DeviceMiniStatus deviceMiniStatus, QueueManagerService queueManagerService) {
+        this.deviceMiniStatus = deviceMiniStatus;
+        this.queueManagerService = queueManagerService;
+    }
+
+    public record Entry(String hardwareId, SyncContext context) {
+    }
 
     public boolean isActive() {
         return current != null || !queue.isEmpty();
@@ -48,7 +51,8 @@ public class DeviceSyncQueue {
         }
 
         if (queue.offer(new Entry(hardwareId, context))) {
-            progressTracker.markQueued(hardwareId);
+            deviceMiniStatus.markQueued(hardwareId);
+            queueManagerService.addDeviceToSyncTracker(hardwareId, context.deviceName());
             log.info("Added to Device sync queue: {}", hardwareId);
             return true;
         } else {
@@ -71,7 +75,7 @@ public class DeviceSyncQueue {
         if (hardwareId.equals(current)) {
             current = null;
         }
-        progressTracker.markDone(hardwareId);
+        deviceMiniStatus.markDone(hardwareId);
     }
 
     // Cancel a queued or in-progress sync when the device disconnects.
@@ -83,9 +87,9 @@ public class DeviceSyncQueue {
         queue.removeIf(e -> e.hardwareId().equals(hardwareId));
         inQueue.remove(hardwareId);
         if (hardwareId.equals(current)) {
-            progressTracker.markCancelled(hardwareId);
+            deviceMiniStatus.markCancelled(hardwareId);
         } else {
-            progressTracker.markDone(hardwareId);
+            deviceMiniStatus.markDone(hardwareId);
         }
         log.info("Removed from Device sync queue: {}", hardwareId);
     }
@@ -94,7 +98,7 @@ public class DeviceSyncQueue {
         List<Entry> entries = new ArrayList<>();
         queue.drainTo(entries);
         for (Entry entry : entries) {
-            progressTracker.markDone(entry.hardwareId());
+            deviceMiniStatus.markDone(entry.hardwareId());
         }
         inQueue.clear();
         current = null;

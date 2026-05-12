@@ -16,7 +16,11 @@
         <padding>
             <Insets top="0" right="0" bottom="0" left="18"/>
         </padding>
-        <Label text="%menu.dashboard" styleClass="title"/>
+        <HBox alignment="TOP_LEFT" spacing="10" prefHeight="34" minHeight="34" maxHeight="34">
+            <Label text="%menu.dashboard" styleClass="title"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="%queue.dialog.title" onAction="#openQueueDialog" styleClass="btn-primary"/>
+        </HBox>
         <StackPane fx:id="fileListContainer" VBox.vgrow="ALWAYS"/>
     </VBox>
 </HBox>
