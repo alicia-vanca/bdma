@@ -36,7 +36,6 @@ import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
-import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.events.StorageDirRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
@@ -115,7 +114,6 @@ public class AdminLayoutController extends BaseLayoutController {
     private final RestoreService restoreService;
     private final DataSyncService dataSyncService;
     private final AdminSettingsDialogService adminSettingsService;
-    private final ValidatedDeviceRepository validatedDeviceRepository;
 
     @FXML
     private StackPane contentArea;
@@ -187,8 +185,7 @@ public class AdminLayoutController extends BaseLayoutController {
             ApplicationEventPublisher publisher,
             StorageHealthMonitor storageHealthMonitor,
             RestoreService restoreService,
-            DataSyncService dataSyncService
-            ValidatedDeviceRepository validatedDeviceRepository,
+            DataSyncService dataSyncService,
             AdminSettingsDialogService adminSettingsService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
@@ -205,7 +202,6 @@ public class AdminLayoutController extends BaseLayoutController {
         this.storageHealthMonitor = storageHealthMonitor;
         this.restoreService = restoreService;
         this.dataSyncService = dataSyncService;
-        this.validatedDeviceRepository = validatedDeviceRepository;
         this.adminSettingsService = adminSettingsService;
     }
 
@@ -532,7 +528,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
         boolean queued = deviceSyncQueue.add(hardwareId,
                 new SyncContext(session.getUser().getUsername(), session.isAdmin(),
-                        folderManagerService.getDataDir(), autoDelete, deviceName, false));
+                        folderManagerService.getDataDir(), autoDelete, deviceName));
         // Only show success notice if device wasn't already in queue
         if (queued) {
             showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
