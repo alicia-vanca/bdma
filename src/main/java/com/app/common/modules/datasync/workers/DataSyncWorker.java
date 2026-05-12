@@ -527,10 +527,10 @@ public class DataSyncWorker implements Runnable {
             if (!result.shouldRetry()) {
                 i++;
 
-                if (!result.isSuccess()) {
-                    handleFailedFileSync(file, result, failedList);
-                } else {
+                if (result.isSuccess()) {
                     recordFileSyncSuccess(hardwareId, file, counters);
+                } else {
+                    handleFailedFileSync(file, result, failedList);
                 }
             }
         }
@@ -561,7 +561,6 @@ public class DataSyncWorker implements Runnable {
     // file sync.
     private void recordFileSyncSuccess(String hardwareId, SyncFile file, SyncCounters counters) {
         counters.passed++;
-        logSyncedFile(file.localPath(), counters.passed, counters.total);
         queueManagerService.markSyncFileCompleted(hardwareId, file.relativeLocalPath());
         progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
     }
