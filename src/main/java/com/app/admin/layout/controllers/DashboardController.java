@@ -58,6 +58,7 @@ public class DashboardController extends BaseLayoutController {
     private FileListController fileListController;
     private boolean deviceStateInitialized;
     private Consumer<DeviceSummary> onRequestValidate;
+    private Consumer<DeviceSummary> onRequestSync;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
             DashboardController::sortName,
             String.CASE_INSENSITIVE_ORDER)
@@ -77,6 +78,10 @@ public class DashboardController extends BaseLayoutController {
     public void setOnRequestValidate(Consumer<DeviceSummary> callback) {
         this.onRequestValidate = callback;
         updateCellFactory();
+    }
+
+    public void setOnRequestSync(Consumer<DeviceSummary> callback) {
+        this.onRequestSync = callback;
     }
 
     private void updateCellFactory() {
@@ -290,8 +295,12 @@ public class DashboardController extends BaseLayoutController {
                 return;
             fileListController.filterByDevice(summary.getCameraId());
 
-            if (event.getClickCount() == 2 && summary.isUnvalidated() && onRequestValidate != null) {
-                onRequestValidate.accept(summary);
+            if (event.getClickCount() == 2) {
+                if (summary.isUnvalidated() && onRequestValidate != null) {
+                    onRequestValidate.accept(summary);
+                } else if (!summary.isUnvalidated() && onRequestSync != null) {
+                    onRequestSync.accept(summary);
+                }
             }
         });
     }

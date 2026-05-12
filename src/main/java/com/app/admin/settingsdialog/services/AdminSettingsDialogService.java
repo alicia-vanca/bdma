@@ -41,10 +41,10 @@ public class AdminSettingsDialogService {
         return (path != null && !path.isBlank()) ? Optional.of(path) : Optional.empty();
     }
 
-    public void saveFolder(String path, FolderType type) {
+    public void saveFolder(FolderType type, String path) {
         String normalizedPath = Path.of(path).toAbsolutePath().normalize().toString();
         appConfigService.saveConfigValue(type, normalizedPath);
-        folderManagerService.init();
+        folderManagerService.init(type);
         log.info("Saved folder [{}]: {}", type.name(), normalizedPath);
     }
 

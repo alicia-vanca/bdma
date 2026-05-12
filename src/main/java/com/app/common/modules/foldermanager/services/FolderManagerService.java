@@ -56,22 +56,28 @@ public class FolderManagerService {
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
     public void init() {
-        String dataDirPath = appConfigService.getConfigValue(AppConstants.KEY_DATA_DIR);
-        if (dataDirPath == null || dataDirPath.isBlank()) {
-            dataDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataSave").toString();
-            appConfigService.saveConfigValue(AppConstants.KEY_DATA_DIR, dataDirPath);
-            log.info("Initialized default save folder: {}", dataDirPath);
-        }
+        init(null);
+    }
 
-        String backupDirPath = appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR);
-        if (backupDirPath == null || backupDirPath.isBlank()) {
-            backupDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataBackup").toString();
-            appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
-            log.info("Initialized default backup folder: {}", backupDirPath);
+    public void init(FolderType target) {
+        if (target == null || target == FolderType.SYNC) {
+            String dataDirPath = appConfigService.getConfigValue(AppConstants.KEY_DATA_DIR);
+            if (dataDirPath == null || dataDirPath.isBlank()) {
+                dataDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataSave").toString();
+                appConfigService.saveConfigValue(AppConstants.KEY_DATA_DIR, dataDirPath);
+                log.info("Initialized default save folder: {}", dataDirPath);
+            }
+            initDataDir(dataDirPath);
         }
-
-        initDataDir(dataDirPath);
-        initBackupDir(backupDirPath);
+        if (target == null || target == FolderType.BACKUP) {
+            String backupDirPath = appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR);
+            if (backupDirPath == null || backupDirPath.isBlank()) {
+                backupDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataBackup").toString();
+                appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
+                log.info("Initialized default backup folder: {}", backupDirPath);
+            }
+            initBackupDir(backupDirPath);
+        }
         clearTemp();
     }
 

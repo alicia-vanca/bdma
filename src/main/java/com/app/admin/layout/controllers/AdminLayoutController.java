@@ -15,9 +15,9 @@ import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
+import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
-import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.StorageIssueReason;
@@ -36,6 +36,7 @@ import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
+import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.events.StorageDirRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
@@ -47,7 +48,7 @@ import com.app.common.modules.foldermanager.services.StorageHealthMonitor;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
-import com.app.common.services.AppConfigService;
+import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.services.SyncProgressTracker;
@@ -109,11 +110,12 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DataBackupRunner backupRunner;
     private final SyncProgressTracker syncProgressTracker;
     private final FolderManagerService folderManagerService;
-    private final AppConfigService appConfigService;
     private final ApplicationEventPublisher publisher;
     private final StorageHealthMonitor storageHealthMonitor;
     private final RestoreService restoreService;
     private final DataSyncService dataSyncService;
+    private final AdminSettingsDialogService adminSettingsService;
+    private final ValidatedDeviceRepository validatedDeviceRepository;
 
     @FXML
     private StackPane contentArea;
@@ -182,11 +184,12 @@ public class AdminLayoutController extends BaseLayoutController {
             DataSyncRunner syncRunner,
             DataBackupRunner backupRunner,
             FolderManagerService folderManagerService,
-            AppConfigService appConfigService,
             ApplicationEventPublisher publisher,
             StorageHealthMonitor storageHealthMonitor,
             RestoreService restoreService,
-            DataSyncService dataSyncService) {
+            DataSyncService dataSyncService
+            ValidatedDeviceRepository validatedDeviceRepository,
+            AdminSettingsDialogService adminSettingsService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
@@ -198,11 +201,12 @@ public class AdminLayoutController extends BaseLayoutController {
         this.backupRunner = backupRunner;
         this.syncProgressTracker = syncProgressTracker;
         this.folderManagerService = folderManagerService;
-        this.appConfigService = appConfigService;
         this.publisher = publisher;
         this.storageHealthMonitor = storageHealthMonitor;
         this.restoreService = restoreService;
         this.dataSyncService = dataSyncService;
+        this.validatedDeviceRepository = validatedDeviceRepository;
+        this.adminSettingsService = adminSettingsService;
     }
 
     @Override
@@ -254,10 +258,31 @@ public class AdminLayoutController extends BaseLayoutController {
         if (result != null) {
             currentDashboardController = result.controller();
             currentDashboardController.setOnRequestValidate(this::handleRequestValidate);
+            currentDashboardController.setOnRequestSync(this::handleRequestSync);
             dataSyncService.setOnUserAutoCreated(username -> currentDashboardController.onUserAutoCreated());
             setContent(result.node());
         }
         setActiveButton(getMenuButtons(), btnDashboard);
+    }
+
+    private void handleRequestValidate(DeviceSummary summary) {
+        if (summary == null || summary.getValidationResult() == null) {
+            showNoticeError(I18n.get("device.validation.failed"));
+            return;
+        }
+        showSaveDeviceConfirmation(summary.getValidationResult());
+    }
+
+    private void handleRequestSync(DeviceSummary summary) {
+        if (summary == null) {
+            showNoticeError(I18n.get("device.sync.failed"));
+            return;
+        }
+        // Don't show sync dialog if device is no longer connected
+        if (!summary.isConnected()) {
+            return;
+        }
+        showSyncConfirmation(summary.getHardwareId(), summary.getDeviceName());
     }
 
     @FXML
@@ -359,31 +384,8 @@ public class AdminLayoutController extends BaseLayoutController {
         } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
             deviceSyncQueue.remove(event.hardwareId());
             pendingStorageSyncs.remove(event.hardwareId());
-            Platform.runLater(() -> closeValidationDialogForHardwareId(event.hardwareId()));
+            Platform.runLater(() -> closeDialogForHardwareId(event.hardwareId()));
         }
-    }
-
-    // Programmatically dismiss any open validation dialog for a device that
-    // disconnected so the user is not left waiting on a stale prompt.
-    private void closeValidationDialogForHardwareId(String hardwareId) {
-        Alert alert = activeAlertsByHardwareId.remove(hardwareId);
-        if (alert == null) {
-            return;
-        }
-
-        alert.setResult(ButtonType.CANCEL);
-        DialogPane pane = alert.getDialogPane();
-        if (pane != null && pane.getScene() != null && pane.getScene().getWindow() != null) {
-            pane.getScene().getWindow().hide();
-        }
-    }
-
-    private void registerAlert(String hardwareId, Alert alert) {
-        activeAlertsByHardwareId.put(hardwareId, alert);
-    }
-
-    private void unregisterAlert(String hardwareId, Alert alert) {
-        activeAlertsByHardwareId.remove(hardwareId, alert);
     }
 
     // Skip invalid or unrecognized connections; only process confirmed valid
@@ -403,7 +405,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
             showNoticeSuccess(I18n.get("device.connected.saved", result.getDeviceName()));
             if (!restoreService.isRunning()) {
-                autoSyncDevice(result.getHardwareId(), result.getDeviceName());
+                registerDeviceForSync(result.getHardwareId(), result.getDeviceName());
             }
             return;
         }
@@ -452,7 +454,89 @@ public class AdminLayoutController extends BaseLayoutController {
             currentDashboardController.markDeviceSaved(result, saved.getDeviceName());
         }
         showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
-        autoSyncDevice(result.getHardwareId(), saved.getDeviceName());
+        registerDeviceForSync(result.getHardwareId(), saved.getDeviceName());
+        refreshDashboardIfActive();
+    }
+
+    private void showSyncConfirmation(String hardwareId, String deviceName) {
+        // Check if device is already in sync queue
+        if (deviceSyncQueue.isInQueue(hardwareId)) {
+            showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
+            return;
+        }
+
+        boolean autoDelete = adminSettingsService.getAutoDelete();
+        String contentKey = autoDelete ? "device.sync.content.autodelete" : "device.sync.content.keep";
+
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("device.sync.title"),
+                I18n.get("device.sync.header", deviceName),
+                I18n.get(contentKey));
+
+        ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
+        ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
+        AlertHelper.setButtons(confirm, yesButton, noButton);
+
+        registerAlert(hardwareId, confirm);
+        try {
+            Optional<ButtonType> chosen = confirm.showAndWait();
+            if (chosen.isEmpty() || chosen.get() != yesButton) {
+                return;
+            }
+
+            // Check if device is in pending queue
+            boolean isInPending = pendingStorageSyncs.containsKey(hardwareId);
+            if (isInPending) {
+                // Move from pending to sync queue
+                pendingStorageSyncs.remove(hardwareId);
+            }
+            registerDeviceForSync(hardwareId, deviceName);
+            refreshDashboardIfActive();
+        } finally {
+            unregisterAlert(hardwareId, confirm);
+        }
+    }
+
+    private void registerAlert(String hardwareId, Alert alert) {
+        activeAlertsByHardwareId.put(hardwareId, alert);
+    }
+
+    private void unregisterAlert(String hardwareId, Alert alert) {
+        activeAlertsByHardwareId.remove(hardwareId, alert);
+    }
+
+    // Programmatically dismiss any open dialog for a device that disconnected so
+    // the user is not left waiting on a stale prompt.
+    private void closeDialogForHardwareId(String hardwareId) {
+        Alert alert = activeAlertsByHardwareId.remove(hardwareId);
+        if (alert == null) {
+            return;
+        }
+
+        alert.setResult(ButtonType.CANCEL);
+        DialogPane pane = alert.getDialogPane();
+        if (pane != null && pane.getScene() != null && pane.getScene().getWindow() != null) {
+            pane.getScene().getWindow().hide();
+        }
+    }
+
+    // Auto-sync device without confirmation dialog
+    private void registerDeviceForSync(String hardwareId, String deviceName) {
+        if (syncStorageBlocked != null) {
+            log.debug("Sync drive is pending recovery, adding device {} to pending list", hardwareId);
+            pendingStorageSyncs.put(hardwareId, deviceName);
+            return;
+        }
+
+        boolean autoDelete = adminSettingsService.getAutoDelete();
+
+        boolean queued = deviceSyncQueue.add(hardwareId,
+                new SyncContext(session.getUser().getUsername(), session.isAdmin(),
+                        folderManagerService.getDataDir(), autoDelete, deviceName, false));
+        // Only show success notice if device wasn't already in queue
+        if (queued) {
+            showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
+        }
         refreshDashboardIfActive();
     }
 
@@ -490,33 +574,6 @@ public class AdminLayoutController extends BaseLayoutController {
             currentDashboardController.onFileBackupCompleted();
         }
         refreshStorageStatus();
-    }
-
-    private void handleRequestValidate(DeviceSummary summary) {
-        if (summary == null || summary.getValidationResult() == null) {
-            showNoticeError(I18n.get("device.validation.failed"));
-            return;
-        }
-        showSaveDeviceConfirmation(summary.getValidationResult());
-    }
-
-    // Auto-sync device without confirmation dialog
-    private void autoSyncDevice(String hardwareId, String deviceName) {
-        if (syncStorageBlocked != null) {
-            pendingStorageSyncs.put(hardwareId, deviceName);
-            return;
-        }
-
-        String isAutoDeleteStr = appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC);
-        boolean autoDelete = "true".equalsIgnoreCase(isAutoDeleteStr);
-
-        boolean queued = deviceSyncQueue.add(hardwareId,
-                new SyncContext(session.getUser().getUsername(), session.isAdmin(),
-                        folderManagerService.getDataDir(), autoDelete, deviceName));
-        if (queued) {
-            showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
-        }
-        refreshDashboardIfActive();
     }
 
     public void refreshStorageStatus() {
@@ -762,19 +819,19 @@ public class AdminLayoutController extends BaseLayoutController {
         boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
 
         if (isLowSpace && isSyncTarget && backupLowSpaceDialogVisible) {
-            logDebug("Backup drive low-space dialog is openning. Queueing sync low-space dialog.");
+            logDebug("Backup drive low-space dialog is opening. Queueing sync low-space dialog.");
             return true;
         }
         if (isLowSpace && !isSyncTarget && syncLowSpaceDialogVisible) {
-            logDebug("Sync drive low-space dialog is openning. Queueing backup low-space dialog.");
+            logDebug("Sync drive low-space dialog is opening. Queueing backup low-space dialog.");
             return true;
         }
         if (!isLowSpace && isSyncTarget && backupUnavailableDialogVisible) {
-            logDebug("Backup drive unavailable dialog is openning. Queueing sync unavailable dialog.");
+            logDebug("Backup drive unavailable dialog is opening. Queueing sync unavailable dialog.");
             return true;
         }
         if (!isLowSpace && !isSyncTarget && syncUnavailableDialogVisible) {
-            logDebug("Sync drive unavailable dialog is openning. Queueing backup unavailable dialog.");
+            logDebug("Sync drive unavailable dialog is opening. Queueing backup unavailable dialog.");
             return true;
         }
         return false;
@@ -966,10 +1023,12 @@ public class AdminLayoutController extends BaseLayoutController {
 
     private void drainPendingSyncs() {
         if (!pendingStorageSyncs.isEmpty()) {
+            // Continue pending devices
+            log.debug("Sync drive recoveried, continuing {} pending device(s)", pendingStorageSyncs.size());
             Map<String, String> toRetry = new HashMap<>(pendingStorageSyncs);
             pendingStorageSyncs.clear();
             logDebug("Draining {} pending sync(s) after storage folder saved", toRetry.size());
-            toRetry.forEach(this::autoSyncDevice);
+            Platform.runLater(() -> toRetry.forEach(this::registerDeviceForSync));
         }
     }
 
@@ -978,12 +1037,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (event != null) {
             if (event.getTarget() == FolderType.SYNC) {
                 syncStorageBlocked = null;
-                if (!pendingStorageSyncs.isEmpty()) {
-                    // Continue pending devices
-                    Map<String, String> toRetry = new HashMap<>(pendingStorageSyncs);
-                    pendingStorageSyncs.clear();
-                    Platform.runLater(() -> toRetry.forEach(this::autoSyncDevice));
-                }
+                drainPendingSyncs();
             } else if (event.getTarget() == FolderType.BACKUP) {
                 backupStorageBlocked = null;
             }
@@ -1026,12 +1080,12 @@ public class AdminLayoutController extends BaseLayoutController {
             return new FolderSelectionResult(false, rejection);
         }
 
-        appConfigService.saveConfigValue(target, selected.getAbsolutePath());
-        folderManagerService.init();
+        adminSettingsService.saveFolder(target, selected.getAbsolutePath());
+        folderManagerService.init(target);
         publisher.publishEvent(new StorageRestoredEvent(target));
         publisher.publishEvent(new StorageDirRestoredEvent(target));
         showNoticeSuccess(I18n.get(I18N_SETTING_STORAGE_SUCCESS));
-        storageHealthMonitor.checkNow();
+        storageHealthMonitor.checkNow(target);
         if (log.isInfoEnabled()) {
             log.info("Storage folder changed from unavailable dialog. target={} path={}",
                     target, selected.getAbsolutePath());
@@ -1052,7 +1106,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private File readConfiguredRootPath(FolderType target) {
-        String path = appConfigService.getConfigValue(target);
+        String path = adminSettingsService.getFolderPath(target).orElse(null);
         if (path == null || path.isBlank()) {
             return null;
         }
