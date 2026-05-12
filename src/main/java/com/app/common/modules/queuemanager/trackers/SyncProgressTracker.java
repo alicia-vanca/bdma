@@ -110,9 +110,6 @@ public class SyncProgressTracker {
      * Mark file sync as completed.
      */
     public void markFileCompleted(String hardwareId, String filePath) {
-        if (log.isDebugEnabled()) {
-            log.debug("markFileCompleted called: hardwareId={} filePath={}", hardwareId, filePath);
-        }
         Map<String, FileQueueItem> files = deviceFiles.get(hardwareId);
         if (files != null) {
             FileQueueItem file = files.get(filePath);
