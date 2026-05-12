@@ -275,7 +275,8 @@ public class DataSyncWorker implements Runnable {
         List<FileRecord> syncedFiles = dataSyncService.loadSyncedFiles(deviceId);
         Set<String> relativeSyncedPaths = new java.util.HashSet<>();
         for (FileRecord syncedFile : syncedFiles) {
-            PathResolutionResult resolution = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedFile.getSyncedPath(), syncedFile.getFileSize());
+            PathResolutionResult resolution = folderManagerService
+                    .findAbsolutePathFromNonDriveLetterPath(syncedFile.getSyncedPath(), syncedFile.getFileSize());
 
             if (!resolution.isFound()) {
                 continue;
@@ -652,7 +653,7 @@ public class DataSyncWorker implements Runnable {
 
     // Pull file from device and verify size against the expected remote size.
     private PullResult pullAndVerify(String hardwareId, String remotePath, String localPath, long expectedSize) {
-        String tempPath = localPath + ".tmp";
+        String tempPath = localPath + AppConstants.TMP_EXTENSION;
         boolean moveSucceeded = false;
         try {
             PullResult result = folderManagerService
