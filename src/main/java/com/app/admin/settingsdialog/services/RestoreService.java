@@ -90,7 +90,6 @@ public class RestoreService {
         isCancelled.set(false);
     }
 
-
     /**
      * Synchronizes files between backup and data directories.
      * - Copies all files from source to target (REPLACE_EXISTING)
@@ -144,7 +143,11 @@ public class RestoreService {
         Path dirPath = sourceDir.toPath();
         FolderSecurityService.unlockSinglePath(dirPath);
         try (var stream = Files.walk(dirPath)) {
-            return stream.filter(Files::isRegularFile).toList();
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> !FolderSecurityService.isChecksumSidecarFile(path))
+                    .filter(path -> !path.toString().endsWith(AppConstants.TMP_EXTENSION))
+                    .toList();
         } finally {
             FolderSecurityService.lockSinglePath(dirPath);
         }
@@ -353,11 +356,7 @@ public class RestoreService {
             Path relative, File dataDir, RestoreContext ctx) throws IOException {
         if (!FolderSecurityService.isValidBackupFile(srcPath)) {
             log.warn("[RESTORE] Invalid checksum, deleting: {}", srcPath);
-            try {
-                Files.deleteIfExists(srcPath);
-            } catch (IOException e) {
-                log.warn("[RESTORE] Failed to delete invalid checksum file: {}", srcPath, e);
-            }
+            deleteInvalidFileWithHashes(srcPath);
             currentProgress.incrementChecksumInvalid();
             return true;
         }
@@ -366,6 +365,35 @@ public class RestoreService {
             return true;
         }
         return false;
+    }
+
+    // Delete invalid backup file and its associated hash files (.sha256 and
+    // .sha256.backup)
+    private void deleteInvalidFileWithHashes(Path filePath) {
+        try {
+            Files.deleteIfExists(filePath);
+            log.info("[RESTORE] Deleted invalid file: {}", filePath);
+        } catch (IOException e) {
+            log.warn("[RESTORE] Failed to delete invalid file: {}", filePath, e);
+        }
+
+        Path primaryHash = FolderSecurityService.primaryChecksumPath(filePath);
+        try {
+            if (Files.deleteIfExists(primaryHash)) {
+                log.info("[RESTORE] Deleted primary hash: {}", primaryHash);
+            }
+        } catch (IOException e) {
+            log.warn("[RESTORE] Failed to delete primary hash: {}", primaryHash, e);
+        }
+
+        Path backupHash = FolderSecurityService.backupChecksumPath(filePath);
+        try {
+            if (Files.deleteIfExists(backupHash)) {
+                log.info("[RESTORE] Deleted backup hash: {}", backupHash);
+            }
+        } catch (IOException e) {
+            log.warn("[RESTORE] Failed to delete backup hash: {}", backupHash, e);
+        }
     }
 
     private void persistRestoreOutcome(List<RestoreFailure> failures, boolean retryMode, List<String> successPaths) {

@@ -68,6 +68,7 @@ public final class AppConstants {
     // ────────────── Data Sync ──────────────
     public static final java.util.List<String> MEDIA_TYPES = java.util.List.of("audio", "image", "video", "IMP", "SOS");
     public static final int MAX_RETRY = 3;
+    public static final String TMP_EXTENSION = ".tmp";
 
     // ────────────── File List ──────────────
     public static final String DATE_PICKER_FORMAT = "dd/MM/yyyy";
