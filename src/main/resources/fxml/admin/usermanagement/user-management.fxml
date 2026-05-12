@@ -17,7 +17,7 @@
             <TextField fx:id="txtSearch" promptText="%user.search" styleClass="input"/>
             <ComboBox fx:id="cbRole" promptText="%filter.allRoles"/>
             <ComboBox fx:id="cbStatus" promptText="%filter.allStatus"/>
-            <Button text="%common.reset" onAction="#onReset" styleClass="btn-secondary"/>
+            <Button text="%filter.reset" onAction="#onReset" styleClass="btn-secondary"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Button text="%user.add" onAction="#onAdd" styleClass="btn-primary"/>
         </HBox>

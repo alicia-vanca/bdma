@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class SyncProgressTracker {
+public class DeviceMiniStatus {
 
     @Setter
     private Runnable onProgressChanged;

@@ -10,6 +10,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
+import com.app.common.events.LanguageChangedEvent;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.utils.StageUtil;
@@ -32,10 +33,6 @@ public class DialogHelper {
     // Track all open dialog scenes and their controllers for theme updates
     private static final List<Scene> openDialogScenes = new CopyOnWriteArrayList<>();
     private static final List<Object> openDialogControllers = new CopyOnWriteArrayList<>();
-
-    public static Stage createDialogStage(String fxml, String title) {
-        return createDialog(fxml, title, Modality.WINDOW_MODAL).stage();
-    }
 
     public static <T> Dialog<T> createDialog(String fxml, String title) {
         return createDialog(fxml, title, Modality.WINDOW_MODAL);
@@ -113,6 +110,30 @@ public class DialogHelper {
                 // Controller doesn't have onThemeChanged method, skip
             } catch (Exception e) {
                 log.warn("Failed to call onThemeChanged on {}", controller.getClass().getSimpleName(), e);
+            }
+        }
+    }
+
+    /**
+     * Listens for language change events and updates all open dialogs.
+     * Calls onLanguageChanged() on controllers that implement it.
+     *
+     * @param event the language change event containing the new language tag
+     */
+    @EventListener
+    public void onLanguageChanged(LanguageChangedEvent event) {
+        // Copy list to avoid ConcurrentModificationException
+        List<Object> controllers = new ArrayList<>(openDialogControllers);
+
+        // Call onLanguageChanged on controllers that have the method
+        for (Object controller : controllers) {
+            try {
+                var method = controller.getClass().getMethod("onLanguageChanged", LanguageChangedEvent.class);
+                method.invoke(controller, event);
+            } catch (NoSuchMethodException e) {
+                // Controller doesn't have onLanguageChanged method, skip
+            } catch (Exception e) {
+                log.warn("Failed to call onLanguageChanged on {}", controller.getClass().getSimpleName(), e);
             }
         }
     }

@@ -9,13 +9,15 @@ import java.io.File;
  * - saveDir: captured once when sync starts, unaffected by mid-sync changes
  * - autoDelete: captured once when sync starts, unaffected by mid-sync changes
  * - deviceName: captured once when sync starts for display purposes
+ * - hardwareId: device hardware ID for queue tracking
  */
 public record SyncContext(
         String username,
         boolean isAdmin,
         File saveDir,
         boolean autoDelete,
-        String deviceName) {
+        String deviceName,
+        String hardwareId) {
     public boolean canSync(String fileUserName) {
         if (isAdmin)
             return true;

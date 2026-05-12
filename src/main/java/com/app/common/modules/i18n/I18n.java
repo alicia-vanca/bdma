@@ -1,12 +1,14 @@
 package com.app.common.modules.i18n;
 
 import com.app.common.definitions.AppConstants;
+import com.app.common.events.LanguageChangedEvent;
 import com.app.common.helpers.SpringContextHolder;
 import com.app.common.services.AppConfigService;
 
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.text.MessageFormat;
 import java.util.Locale;
@@ -59,6 +61,18 @@ public class I18n {
         AppConfigService appConfigService = resolveConfigService();
         if (appConfigService != null) {
             appConfigService.saveConfigValue(KEY_LANGUAGE, locale.toLanguageTag());
+        }
+
+        // Publish language change event
+        publishLanguageChangedEvent(locale.toLanguageTag());
+    }
+
+    private static void publishLanguageChangedEvent(String languageTag) {
+        try {
+            ApplicationEventPublisher publisher = SpringContextHolder.getContext();
+            publisher.publishEvent(new LanguageChangedEvent(I18n.class, languageTag));
+        } catch (Exception e) {
+            log.debug("Could not publish LanguageChangedEvent", e);
         }
     }
 

@@ -19,7 +19,8 @@ import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
-import com.app.common.services.SyncProgressTracker;
+import com.app.common.modules.queuemanager.services.QueueManagerService;
+import com.app.common.services.DeviceMiniStatus;
 
 /**
  * Worker thread responsible for backing up files from dataDir to backupDir.
@@ -33,13 +34,18 @@ import com.app.common.services.SyncProgressTracker;
 public class DataBackupWorker implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(DataBackupWorker.class);
+    private static final String MSG_STORAGE_UNAVAILABLE = "device.backup.error.storage_unavailable";
+    private static final String MSG_STORAGE_FULL = "device.backup.error.storage_full";
+    private static final String MSG_FILE_NOT_FOUND = "device.backup.error.file_not_found";
 
     private final DataBackupQueue dataBackupQueue;
     private final FolderManagerService folderManager;
     private final DataBackupService dataBackupService;
     private final ApplicationEventPublisher publisher;
-    private final SyncProgressTracker syncProgressTracker;
+    private final DeviceMiniStatus deviceMiniStatus;
+    private final QueueManagerService queueManagerService;
     private volatile boolean backupRecoveryDeferred;
+    private volatile StorageIssueReason deferredReason;
     private volatile boolean shutdownRequested;
     private final Object recoveryLock = new Object();
 
@@ -47,12 +53,14 @@ public class DataBackupWorker implements Runnable {
             FolderManagerService folderManager,
             DataBackupService dataBackupService,
             ApplicationEventPublisher publisher,
-            SyncProgressTracker syncProgressTracker) {
+            DeviceMiniStatus deviceMiniStatus,
+            QueueManagerService queueManagerService) {
         this.dataBackupQueue = dataBackupQueue;
         this.folderManager = folderManager;
         this.dataBackupService = dataBackupService;
         this.publisher = publisher;
-        this.syncProgressTracker = syncProgressTracker;
+        this.deviceMiniStatus = deviceMiniStatus;
+        this.queueManagerService = queueManagerService;
     }
 
     @Override
@@ -72,7 +80,10 @@ public class DataBackupWorker implements Runnable {
                     break;
                 }
 
-                if (!shouldSkipDueToDeferred(nonDriveLetterSyncedPath)) {
+                if (shouldSkipDueToDeferred(nonDriveLetterSyncedPath)) {
+                    String deferredMessage = getDeferredMessage();
+                    queueManagerService.markBackupFileDeferred(nonDriveLetterSyncedPath, deferredMessage);
+                } else {
                     processBackup(nonDriveLetterSyncedPath);
                 }
 
@@ -98,12 +109,24 @@ public class DataBackupWorker implements Runnable {
     private boolean shouldSkipDueToDeferred(String nonDriveLetterSyncedPath) {
         if (backupRecoveryDeferred) {
             if (log.isDebugEnabled()) {
-                log.debug("Backup is deferred by user choice. Skip current cycle: {}",
+                log.debug("Backup is deferred. Skip current cycle: {}",
                         nonDriveLetterSyncedPath);
             }
             return true;
         }
         return false;
+    }
+
+    /**
+     * Get deferred message based on the reason.
+     */
+    private String getDeferredMessage() {
+        if (deferredReason == StorageIssueReason.LOW_SPACE) {
+            return MSG_STORAGE_FULL;
+        } else if (deferredReason == StorageIssueReason.DRIVE_UNAVAILABLE) {
+            return MSG_STORAGE_UNAVAILABLE;
+        }
+        return MSG_STORAGE_UNAVAILABLE;
     }
 
     /**
@@ -135,9 +158,11 @@ public class DataBackupWorker implements Runnable {
                     FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE);
             publisher.publishEvent(
                     new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
-            waitForBackupDirRecovery();
+            waitForBackupDirRecovery(StorageIssueReason.DRIVE_UNAVAILABLE);
             if (backupRecoveryDeferred) {
                 log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                queueManagerService.markBackupFileDeferred(nonDriveLetterSyncedPath,
+                        MSG_STORAGE_UNAVAILABLE);
                 return false;
             }
         }
@@ -156,14 +181,18 @@ public class DataBackupWorker implements Runnable {
                         FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize);
                 publisher.publishEvent(
                         new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize));
-                waitForBackupDirRecovery();
+                waitForBackupDirRecovery(StorageIssueReason.LOW_SPACE);
                 if (backupRecoveryDeferred) {
                     log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
+                    queueManagerService.markBackupFileDeferred(nonDriveLetterSyncedPath,
+                            MSG_STORAGE_FULL);
                     return false;
                 }
             }
             return true;
         } catch (FileNotFoundOnAnyDriveException e) {
+            queueManagerService.markBackupFileFailed(nonDriveLetterSyncedPath,
+                    MSG_FILE_NOT_FOUND);
             log.info("Synced file not found during space check, skipping: {}", nonDriveLetterSyncedPath);
             return false;
         } catch (Exception e) {
@@ -177,13 +206,18 @@ public class DataBackupWorker implements Runnable {
      */
     private void performBackup(String nonDriveLetterSyncedPath) {
         try {
+            queueManagerService.markBackupFileProcessing(nonDriveLetterSyncedPath);
+
             String absoluteBackupPath = folderManager.backupFromSave(nonDriveLetterSyncedPath);
             String nonDriveLetterBackedUpPath = FileUtil.stripDriveLetter(absoluteBackupPath);
 
             dataBackupService.markBackup(nonDriveLetterSyncedPath, nonDriveLetterBackedUpPath);
 
+            queueManagerService.markBackupFileCompleted(nonDriveLetterSyncedPath);
             publisher.publishEvent(new FileBackupCompletedEvent(nonDriveLetterSyncedPath));
         } catch (FileNotFoundOnAnyDriveException e) {
+            queueManagerService.markBackupFileFailed(nonDriveLetterSyncedPath,
+                    MSG_FILE_NOT_FOUND);
             log.info("Synced file not found, skipping this cycle: {}", nonDriveLetterSyncedPath);
         } catch (IOException e) {
             // This can occur if backup dir becomes inaccessible mid-backup
@@ -196,6 +230,7 @@ public class DataBackupWorker implements Runnable {
 
             log.error("IO exception during backup for: {}", nonDriveLetterSyncedPath, e);
         } catch (Exception e) {
+            queueManagerService.markBackupFileFailed(nonDriveLetterSyncedPath, e.getMessage());
             log.error("Backup operation failed for: {}", nonDriveLetterSyncedPath, e);
         }
     }
@@ -205,10 +240,12 @@ public class DataBackupWorker implements Runnable {
         if (event != null && event.getTarget() == FolderType.BACKUP) {
             synchronized (recoveryLock) {
                 backupRecoveryDeferred = true;
+                deferredReason = event.getReason();
                 recoveryLock.notifyAll();
             }
             if (log.isDebugEnabled()) {
-                log.debug("Backup recovery deferred by user. target={}", event.getTarget());
+                log.debug("Backup recovery deferred by user. target={} reason={}", event.getTarget(),
+                        event.getReason());
             }
         }
     }
@@ -218,8 +255,10 @@ public class DataBackupWorker implements Runnable {
         if (event != null && event.getTarget() == FolderType.BACKUP) {
             synchronized (recoveryLock) {
                 backupRecoveryDeferred = false;
+                deferredReason = null;
                 recoveryLock.notifyAll();
             }
+            dataBackupService.recoverPendingBackups();
         }
     }
 
@@ -228,7 +267,8 @@ public class DataBackupWorker implements Runnable {
      * running out of space.
      * Blocks until StorageRestoredEvent or StorageRecoveryDeferredEvent is fired.
      */
-    private void waitForBackupDirRecovery() {
+    private void waitForBackupDirRecovery(StorageIssueReason reason) {
+        deferredReason = reason;
         synchronized (recoveryLock) {
             backupRecoveryDeferred = false;
 
@@ -269,7 +309,7 @@ public class DataBackupWorker implements Runnable {
      * Check if any device has active sync.
      */
     private boolean isSyncActive() {
-        return syncProgressTracker.isAnySyncActive();
+        return deviceMiniStatus.isAnySyncActive();
     }
 
     /**
