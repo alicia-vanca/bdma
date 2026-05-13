@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <StackPane fx:id="root"
@@ -8,117 +7,75 @@
            styleClass="root">
     <BorderPane>
         <top>
+            <!-- Padding → CSS: .header-shell { -fx-padding: 8 23; } -->
             <VBox styleClass="header-shell" spacing="6">
-                <padding>
-                    <Insets top="8" right="23" bottom="8" left="23"/>
-                </padding>
                 <HBox alignment="CENTER_LEFT" spacing="15" styleClass="top-bar">
                     <Label text="BDMA" styleClass="header-title"/>
                     <Region HBox.hgrow="ALWAYS"/>
                     <HBox spacing="12" alignment="CENTER_RIGHT" styleClass="top-right-actions">
                         <Label fx:id="labelGreeting" styleClass="greeting-label"/>
-                        <Button fx:id="btnSettings"
-                                text="⚙"
-                                onAction="#openSettingsPopup"
-                                styleClass="icon-btn"/>
-                        <Button fx:id="btnLogout"
-                                text="%top.logout"
-                                onAction="#logout"
-                                styleClass="btn-logout"/>
+                        <Button fx:id="btnSettings" text="⚙"
+                                onAction="#openSettingsPopup" styleClass="icon-btn"/>
+                        <Button fx:id="btnLogout" text="%top.logout"
+                                onAction="#logout" styleClass="btn-logout"/>
                     </HBox>
                 </HBox>
                 <HBox spacing="15" styleClass="tabs-row">
-                    <Button text="%menu.dashboard"
-                            fx:id="btnDashboard"
-                            onAction="#goDashboard"
-                            styleClass="menu-tab-btn"/>
-                    <Button text="%menu.user"
-                            fx:id="btnUser"
-                            onAction="#goUser"
-                            styleClass="menu-tab-btn"/>
+                    <Button fx:id="btnDashboard" text="%menu.dashboard"
+                            onAction="#goDashboard" styleClass="menu-tab-btn"/>
+                    <Button fx:id="btnUser"      text="%menu.user"
+                            onAction="#goUser"    styleClass="menu-tab-btn"/>
                 </HBox>
             </VBox>
         </top>
         <center>
             <StackPane>
-                <BorderPane>
-                    <center>
-                        <StackPane fx:id="contentArea" styleClass="content-shell" VBox.vgrow="ALWAYS"/>
-                    </center>
-                </BorderPane>
-                <VBox fx:id="noticeContainer"
-                      spacing="11"
-                      alignment="BOTTOM_CENTER"
-                      fillWidth="false"
-                      mouseTransparent="true">
-                    <StackPane.margin>
-                        <Insets right="0" bottom="30" left="0"/>
-                    </StackPane.margin>
-                </VBox>
+                <StackPane fx:id="contentArea" styleClass="content-shell" VBox.vgrow="ALWAYS"/>
+                <!-- Notice overlay: bottom margin → CSS .notice-container -->
+                <VBox fx:id="noticeContainer" spacing="11"
+                      alignment="BOTTOM_CENTER" fillWidth="false"
+                      mouseTransparent="true" styleClass="notice-container"/>
             </StackPane>
         </center>
         <bottom>
-            <VBox fx:id="statusBar" styleClass="status-bar" spacing="0">
-                <!-- Warning strip: shown when storage is critical -->
-                <HBox fx:id="warningStrip"
-                      alignment="CENTER_LEFT"
-                      spacing="12"
-                      styleClass="status-warning-strip"
-                      managed="false"
-                      visible="false">
-                    <padding>
-                        <Insets top="4" right="16" bottom="4" left="16"/>
-                    </padding>
+            <VBox styleClass="status-bar">
+                <!-- Warning strip -->
+                <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="12"
+                      styleClass="status-warning-strip" managed="false" visible="false">
                     <Label text="⚠" styleClass="status-warning-icon"/>
-                    <Label fx:id="lblStatusWarning"
-                           wrapText="false"
-                           styleClass="status-warning-label"
-                           HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="lblStatusWarning" wrapText="false"
+                           styleClass="status-warning-label" HBox.hgrow="ALWAYS"/>
                 </HBox>
-                <!-- Storage panels row -->
+                <!-- Padding → CSS: .status-storage-row { -fx-padding: 4 16; } -->
                 <HBox alignment="CENTER_LEFT" spacing="0" styleClass="status-storage-row">
-                    <padding>
-                        <Insets top="4" right="16" bottom="4" left="16"/>
-                    </padding>
-                    <!-- Data storage panel -->
-                    <VBox spacing="4" HBox.hgrow="ALWAYS" styleClass="storage-panel">
+                    <VBox spacing="4" HBox.hgrow="ALWAYS">
                         <HBox alignment="CENTER_LEFT">
                             <Label fx:id="lblDataStorageTitle" styleClass="storage-title"/>
                             <Region HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
+                            <Label fx:id="lblDataStorageUsage"   styleClass="storage-detail"/>
                             <Label fx:id="lblDataStoragePercent" styleClass="storage-percent"/>
                         </HBox>
-                        <ProgressBar fx:id="pbDataStorage"
-                                     progress="0"
+                        <ProgressBar fx:id="pbDataStorage" progress="0"
                                      styleClass="storage-progress"
                                      maxWidth="1.7976931348623157E308"/>
-
                     </VBox>
-                    <Separator orientation="VERTICAL" styleClass="storage-separator">
-                        <HBox.margin>
-                            <Insets left="16" right="16"/>
-                        </HBox.margin>
-                    </Separator>
-                    <!-- Backup storage panel -->
-                    <VBox spacing="8" HBox.hgrow="ALWAYS" styleClass="storage-panel">
+                    <!-- Margin → CSS: .storage-separator { -fx-padding: 0 16; } -->
+                    <Separator orientation="VERTICAL" styleClass="storage-separator"/>
+                    <VBox spacing="4" HBox.hgrow="ALWAYS">
                         <HBox alignment="CENTER_LEFT">
                             <Label fx:id="lblBackupStorageTitle" styleClass="storage-title"/>
                             <Region HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
+                            <Label fx:id="lblBackupStorageUsage"   styleClass="storage-detail"/>
                             <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"/>
                         </HBox>
-                        <ProgressBar fx:id="pbBackupStorage"
-                                     progress="0"
+                        <ProgressBar fx:id="pbBackupStorage" progress="0"
                                      styleClass="storage-progress"
                                      maxWidth="1.7976931348623157E308"/>
                     </VBox>
                 </HBox>
-                <!-- Drive conflict warning -->
-                <HBox managed="false" visible="false"
-                      fx:id="driveConflictRow">
-                    <padding>
-                        <Insets top="0" right="20" bottom="5" left="20"/>
-                    </padding>
+                <!-- Drive conflict: padding → CSS .drive-conflict-row -->
+                <HBox fx:id="driveConflictRow" managed="false" visible="false"
+                      styleClass="drive-conflict-row">
                     <Label fx:id="lblDriveConflictWarning" wrapText="true"
                            styleClass="settings-warning"/>
                 </HBox>

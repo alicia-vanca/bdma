@@ -2,71 +2,31 @@
 
 /* STATUS BAR */
 .status-label {
-    -fx-text-fill: -text-color;
-    -fx-font-size: 18px;
+  -fx-text-fill: -text-color;
+  -fx-font-size: 13px; /* giảm từ 18px — dùng font-size chung với filter-bar */
 }
 
-/* TABLE */
-.table-view {
-    -fx-background-color: -table-bg;
-    -fx-border-color: -border-color;
-    -fx-table-cell-border-color: -border-color;
-    -fx-table-header-border-color: -border-color;
-}
+/* TABLE — giữ nguyên từ user-management.css, không duplicate */
+/* Các rule .table-view, .table-row-cell đã cover bởi theme-dark/light.css */
+/* Chỉ giữ những gì file-list-panel cần override riêng */
 
-.table-view .column-header,
-.table-view .filler,
-.table-view .column-header-background {
-    -fx-background-color: -table-bg;
-    -fx-border-color: -border-color;
+.table-view .table-cell {
+  -fx-alignment: CENTER-LEFT;
+  -fx-border-color: transparent -border-color transparent transparent;
+  -fx-padding: 0 12; /* giảm từ 18 → 12 để bớt dead zone */
 }
 
 .table-view .column-header-background,
 .table-view .filler,
 .table-view .column-header {
-    -fx-pref-height: 40;
-    -fx-min-height: 40;
-}
-
-.table-view .table-cell {
-    -fx-alignment: CENTER-LEFT;
-    -fx-border-color: transparent -border-color transparent transparent;
-    -fx-padding: 0 18;
-}
-
-.table-view .column-header {
-    -fx-border-color: transparent -border-color -border-color transparent;
+  -fx-pref-height: 36; /* giảm từ 40 */
+  -fx-min-height: 36;
 }
 
 .table-view .column-header .label {
-    -fx-font-size: 14px;
+  -fx-font-size: 13px;
 }
 
-.table-row-cell {
-    -fx-background-color: -table-bg;
-}
+/* page-size ComboBox arrow — đã gom vào admin.css, bỏ duplicate ở đây */
 
-.table-row-cell:odd {
-    -fx-background-color: -table-odd;
-}
-
-.table-row-cell:hover {
-    -fx-background-color: -table-hover;
-}
-
-.table-row-cell:selected {
-    -fx-background-color: -table-selected;
-}
-
-.combo-box.page-size-combo .arrow-button {
-    -fx-padding: 0 15 0 0;
-    -fx-pref-width: 23;
-}
-
-/* DatePicker height adjustment */
-.date-picker {
-    -fx-pref-height: 51;
-    -fx-max-height: 51;
-    -fx-pref-width: 165;
-    -fx-max-width: 165;
-}
+/* DatePicker — đã gom vào admin.css .filter-bar .date-picker, bỏ hardcode ở đây */

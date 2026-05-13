@@ -1,78 +1,73 @@
+/* .content, .device-panel padding → admin.css .device-panel / .file-list-pane */
+
 .content {
-    -fx-background-color: -card-bg;
-    -fx-border-color: -border-color;
-    -fx-border-width: 1;
-    -fx-border-radius: 8;
-    -fx-background-radius: 8;
+  -fx-background-color: -card-bg;
+  -fx-border-color: -border-color;
+  -fx-border-width: 1;
+  -fx-border-radius: 8;
+  -fx-background-radius: 8;
+  /* padding → CSS .device-panel và .file-list-pane riêng từng vùng */
 }
 
-.device-panel {
-    -fx-border-color: -border-color;
-    -fx-border-width: 0 1 0 0;
-}
-
+/* panel-title padding → giảm dead zone */
 .panel-title {
-    -fx-font-weight: bold;
-    -fx-font-size: 18px;
-    -fx-padding: 0 0 12 0;
+  -fx-font-weight: bold;
+  -fx-font-size: 14px; /* giảm từ 18px */
+  -fx-padding: 0 0 8 0; /* giảm từ 12 */
 }
 
 #deviceListView {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
 }
 
 #deviceListView .list-cell {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-border-width: 2px;
-    -fx-border-radius: 4px;
-    -fx-border-style: solid;
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
+  -fx-border-width: 2px;
+  -fx-border-radius: 4px;
+  -fx-border-style: solid;
 }
 
 #deviceListView .list-cell:odd {
-    -fx-background-color: derive(-card-bg, -5%);
+  -fx-background-color: derive(-card-bg, -5%);
 }
-
 #deviceListView .list-cell:hover {
-    -fx-background-color: derive(-card-bg, -10%);
+  -fx-background-color: derive(-card-bg, -10%);
 }
-
 #deviceListView .list-cell:selected {
-    -fx-border-color: -primary;
+  -fx-border-color: -primary;
 }
 
 #deviceListView .list-cell:empty,
 #deviceListView .list-cell:empty:odd {
-    -fx-background-color: transparent;
+  -fx-background-color: transparent;
 }
 
+/* device-cell-row padding → giảm dead zone */
 .device-cell-row {
-    -fx-padding: 9 6 9 6;
-}
+  -fx-padding: 6 4;
+} /* giảm từ 9 6 9 6 */
 
+/* Font sizes giảm để compact hơn */
 .device-cell-name {
-    -fx-font-weight: bold;
-    -fx-font-size: 20px;
-}
-
+  -fx-font-weight: bold;
+  -fx-font-size: 14px;
+} /* từ 20px */
 .device-cell-connected {
-    -fx-font-size: 17px;
-}
-
+  -fx-font-size: 12px;
+} /* từ 17px */
 .device-cell-offline {
-    -fx-font-size: 17px;
+  -fx-font-size: 12px;
 }
-
 .device-cell-unvalidated {
-    -fx-font-size: 17px;
+  -fx-font-size: 12px;
 }
 
 .edit-icon-svg {
-    -fx-fill: #888;
-    -fx-cursor: hand;
+  -fx-fill: #888;
+  -fx-cursor: hand;
 }
-
 .edit-icon-svg:hover {
-    -fx-fill: #000;
+  -fx-fill: #000;
 }

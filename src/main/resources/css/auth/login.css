@@ -1,58 +1,52 @@
 .root {
-    -fx-background-color: -app-bg;
+  -fx-background-color: -app-bg;
 }
 
+/* Replaces inline <Insets top="15" right="60" bottom="60" left="60"/> */
 .login-card {
-    -fx-background-color: -card-bg;
-    -fx-max-width: 750;
+  -fx-background-color: -card-bg;
+  -fx-max-width: 750;
+  -fx-padding: 15 60 60 60;
 }
 
-/* TEXT */
 .title {
-    -fx-text-fill: -text-color;
+  -fx-text-fill: -text-color;
 }
 
-/* INPUT */
 .input {
-    -fx-background-color: -input-bg;
-    -fx-border-color: -border-color;
+  -fx-background-color: -input-bg;
+  -fx-border-color: -border-color;
 }
-
 .input:focused {
-    -fx-background-color: -input-focus-bg;
-    -fx-border-color: -primary;
+  -fx-background-color: -input-focus-bg;
+  -fx-border-color: -primary;
 }
 
-/* BUTTON */
 .login-btn {
-    -fx-background-color: -primary;
-    -fx-text-fill: white;
-    -fx-background-radius: 6;
+  -fx-background-color: -primary;
+  -fx-text-fill: white;
+  -fx-background-radius: 6;
 }
-
 .login-btn:hover {
-    -fx-background-color: -primary-hover;
+  -fx-background-color: -primary-hover;
 }
 
-/* ERROR */
 .message-error {
-    -fx-text-fill: -danger;
+  -fx-text-fill: -danger;
 }
 
-/* PEEK BUTTON */
+/* peek-btn: padding replaces inline StackPane.alignment trick */
 .peek-btn {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-cursor: hand;
-    -fx-padding: 8;
-    -fx-alignment: center-right;
-    -fx-opacity: 0.6;
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
+  -fx-cursor: hand;
+  -fx-padding: 0 8 0 0;
+  -fx-alignment: CENTER_RIGHT;
+  -fx-opacity: 0.6;
 }
-
 .peek-btn:hover {
-    -fx-opacity: 0.8;
+  -fx-opacity: 0.8;
 }
-
 .peek-btn:pressed {
-    -fx-opacity: 1.0;
+  -fx-opacity: 1;
 }

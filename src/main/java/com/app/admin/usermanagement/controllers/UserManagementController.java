@@ -30,7 +30,6 @@ import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -74,9 +73,11 @@ public class UserManagementController {
     @FXML
     private Button btnNext;
     @FXML
-    private Label lblPageInfo;
-    @FXML
     private ComboBox<Integer> cbPageSize;
+    @FXML
+    private TextField txtPageNumber;
+    @FXML
+    private Label lblPageTotal;
 
     private final UserService userService;
     private final ViewLoader viewLoader;
@@ -123,6 +124,7 @@ public class UserManagementController {
         setupFilterListeners();
         setupTableColumns();
         setupPageSizeComboBox();
+        setupPageNumberInput();
         addActionColumn();
         table.setPlaceholder(new Label(I18n.get("user.empty")));
         loadData();
@@ -316,11 +318,11 @@ public class UserManagementController {
 
             private final Button btnEdit = new Button(I18n.get("common.edit"));
             private final Button btnToggleActive = new Button();
-            private final HBox actions = new HBox(15, btnEdit, btnToggleActive);
+            private final HBox actions = new HBox(btnEdit, btnToggleActive);
 
             {
                 btnEdit.getStyleClass().add("btn-edit");
-                actions.setAlignment(Pos.CENTER_LEFT);
+                actions.getStyleClass().add("action-cell-box");
 
                 btnEdit.setOnAction(e -> openForm(getTableView().getItems().get(getIndex())));
                 btnToggleActive.setOnAction(e -> onToggleActiveClicked(getTableView().getItems().get(getIndex())));
@@ -419,7 +421,8 @@ public class UserManagementController {
     private void updatePagerControls(int pageCount) {
         btnPrev.setDisable(currentPageIndex <= 0);
         btnNext.setDisable(currentPageIndex >= pageCount - 1);
-        lblPageInfo.setText(I18n.get("common.page") + " " + (currentPageIndex + 1) + " / " + pageCount);
+        lblPageTotal.setText("/ " + pageCount);
+        txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
     }
 
     private int getPageCount() {
@@ -538,5 +541,30 @@ public class UserManagementController {
 
     private void showError(String text) {
         appNoticeService.showError(text);
+    }
+
+    private void setupPageNumberInput() {
+        txtPageNumber.setOnAction(e -> jumpToPage());
+        txtPageNumber.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            boolean focused = isFocused;
+            if (!focused) {
+                jumpToPage();
+            }
+        });
+    }
+
+    private void jumpToPage() {
+        try {
+            int page = Integer.parseInt(txtPageNumber.getText().trim());
+            int target = Math.clamp(page, 1, getPageCount()) - 1;
+            if (target != currentPageIndex) {
+                currentPageIndex = target;
+                setupPagination();
+            } else {
+                txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+            }
+        } catch (NumberFormatException ignored) {
+            txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+        }
     }
 }

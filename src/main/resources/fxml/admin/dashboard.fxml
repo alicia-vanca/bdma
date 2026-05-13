@@ -1,21 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.geometry.Insets?>
-<HBox xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.app.admin.layout.controllers.DashboardController"
-      styleClass="content">
-    <VBox styleClass="device-panel" minWidth="230" maxWidth="230">
-        <padding>
-            <Insets top="0" right="12" bottom="0" left="0"/>
-        </padding>
+<!-- device-panel width → CSS .device-panel / .file-list-pane -->
+<HBox
+        xmlns:fx="http://javafx.com/fxml/1"
+        fx:controller="com.app.admin.layout.controllers.DashboardController"
+        styleClass="content">
+    <VBox styleClass="device-panel">
         <Label text="%dashboard.devices" styleClass="panel-title"/>
         <ListView fx:id="deviceListView" VBox.vgrow="ALWAYS"/>
     </VBox>
     <Separator orientation="VERTICAL"/>
-    <VBox spacing="23" HBox.hgrow="ALWAYS" alignment="TOP_LEFT">
-        <padding>
-            <Insets top="0" right="0" bottom="0" left="18"/>
-        </padding>
+    <VBox spacing="16" HBox.hgrow="ALWAYS" alignment="TOP_LEFT" styleClass="file-list-pane">
         <Label text="%menu.dashboard" styleClass="title"/>
         <StackPane fx:id="fileListContainer" VBox.vgrow="ALWAYS"/>
     </VBox>

@@ -38,6 +38,7 @@ import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
 import javafx.util.StringConverter;
 import lombok.Setter;
 
@@ -81,9 +82,11 @@ public class FileListController {
     @FXML
     private Button btnNext;
     @FXML
-    private Label lblPageInfo;
-    @FXML
     private ComboBox<Integer> cbPageSize;
+    @FXML
+    private TextField txtPageNumber;
+    @FXML
+    private Label lblPageTotal;
 
     private final FileService fileService;
     private final UserService userService;
@@ -138,6 +141,7 @@ public class FileListController {
         }
         loadTypes();
         setupPageSizeComboBox();
+        setupPageNumberInput();
         restoreFilterState();
         initializing = true;
 
@@ -348,7 +352,33 @@ public class FileListController {
     private void updatePagerControls(int pageCount) {
         btnPrev.setDisable(currentPageIndex <= 0);
         btnNext.setDisable(currentPageIndex >= pageCount - 1);
-        lblPageInfo.setText(I18n.get("common.page") + " " + (currentPageIndex + 1) + " / " + pageCount);
+        lblPageTotal.setText("/ " + pageCount);
+        txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+    }
+
+    private void setupPageNumberInput() {
+        txtPageNumber.setOnAction(e -> jumpToPage());
+        txtPageNumber.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            boolean focused = isFocused;
+            if (!focused) {
+                jumpToPage();
+            }
+        });
+    }
+
+    private void jumpToPage() {
+        try {
+            int page = Integer.parseInt(txtPageNumber.getText().trim());
+            int target = Math.clamp(page, 1, getPageCount()) - 1;
+            if (target != currentPageIndex) {
+                currentPageIndex = target;
+                setupPagination();
+            } else {
+                txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+            }
+        } catch (NumberFormatException ignored) {
+            txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+        }
     }
 
     private int getPageCount() {

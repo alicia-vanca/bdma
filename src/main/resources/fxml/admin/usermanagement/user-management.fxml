@@ -1,48 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <StackPane fx:id="root"
-      xmlns="http://javafx.com/javafx/21"
-      xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.app.admin.usermanagement.controllers.UserManagementController"
-    stylesheets="@/css/admin.css,@/css/admin/usermanagement/user-management.css"
-      styleClass="content">
-    <padding>
-        <Insets top="0" right="0" bottom="0" left="0"/>
-    </padding>
-    <VBox spacing="23">
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.admin.usermanagement.controllers.UserManagementController"
+           styleClass="content">
+    <VBox spacing="12">
         <Label text="%user.title" styleClass="title"/>
-        <HBox spacing="10" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34" styleClass="filter-bar">
-            <TextField fx:id="txtSearch" promptText="%user.search" styleClass="input"/>
-            <ComboBox fx:id="cbRole" promptText="%filter.allRoles"/>
+        <HBox spacing="8" alignment="CENTER_LEFT" styleClass="filter-bar">
+            <TextField fx:id="txtSearch" promptText="%user.search"
+                       styleClass="input" HBox.hgrow="ALWAYS"/>
+            <ComboBox fx:id="cbRole"   promptText="%filter.allRoles"/>
             <ComboBox fx:id="cbStatus" promptText="%filter.allStatus"/>
-            <Button text="%common.reset" onAction="#onReset" styleClass="btn-secondary"/>
+            <Button text="%common.reset"  onAction="#onReset" styleClass="btn-secondary"/>
             <Region HBox.hgrow="ALWAYS"/>
-            <Button text="%user.add" onAction="#onAdd" styleClass="btn-primary"/>
+            <Button text="%user.add"      onAction="#onAdd"   styleClass="btn-primary"/>
         </HBox>
         <TableView fx:id="table" VBox.vgrow="ALWAYS" fixedCellSize="40">
             <columnResizePolicy>
                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
             </columnResizePolicy>
             <columns>
-                <TableColumn fx:id="colSTT" text="%common.stt" minWidth="10" maxWidth="90" sortable="false"/>
+                <TableColumn fx:id="colSTT"      text="%common.stt"    minWidth="10" maxWidth="90" sortable="false"/>
                 <TableColumn fx:id="colUsername" text="%user.username" prefWidth="30"/>
-                <TableColumn fx:id="colRole" text="%user.role" prefWidth="20"/>
-                <TableColumn fx:id="colStatus" text="%user.status" prefWidth="15" sortable="false"/>
-                <TableColumn fx:id="colAction" text="%common.action" prefWidth="40" sortable="false"/>
+                <TableColumn fx:id="colRole"     text="%user.role"     prefWidth="20"/>
+                <TableColumn fx:id="colStatus"   text="%user.status"   prefWidth="15" sortable="false"/>
+                <TableColumn fx:id="colAction"   text="%common.action" prefWidth="40" sortable="false"/>
             </columns>
         </TableView>
-        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="pagination-bar">
+        <!-- Pagination: prev | [page input] / total | next -->
+        <HBox alignment="CENTER_LEFT" spacing="8" styleClass="pagination-bar">
             <Label text="%common.show"/>
-            <ComboBox fx:id="cbPageSize" prefWidth="70" styleClass="page-size-combo"/>
+            <ComboBox fx:id="cbPageSize" styleClass="page-size-combo"/>
             <Label text="%common.per.page"/>
             <Region HBox.hgrow="ALWAYS"/>
-            <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage"
-                    styleClass="btn-secondary"/>
-            <Label fx:id="lblPageInfo" text="%common.page"/>
-            <Button fx:id="btnNext" text="%common.next" onAction="#onNextPage"
-                    styleClass="btn-secondary"/>
+            <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary"/>
+            <TextField fx:id="txtPageNumber" styleClass="page-number-input" promptText="1"/>
+            <Label fx:id="lblPageTotal" styleClass="page-total-label"/>
+            <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary"/>
         </HBox>
     </VBox>
 </StackPane>

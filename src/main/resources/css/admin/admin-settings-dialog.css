@@ -1,117 +1,108 @@
 .form {
-    -fx-background-color: -card-bg;
+  -fx-background-color: -card-bg;
 }
 
+/* split layout */
 .settings-split-layout {
-    -fx-hgap: 16;
+  -fx-hgap: 16;
 }
 
+/* Replaces inline padding="0 10 0 0" trên left VBox */
 .settings-split-left {
-    -fx-min-width: 0;
-    -fx-padding: 0 10 0 0;
+  -fx-min-width: 0;
+  -fx-padding: 0 10 0 0;
 }
 
+/* Replaces inline padding="0 0 0 16" + border trên right VBox */
 .settings-split-right {
-    -fx-min-width: 0;
-    -fx-padding: 0 0 0 16;
-    -fx-border-width: 0 0 0 1;
-    -fx-border-color: -border-color;
-}
-
-.settings-split-separator {
-    -fx-border-width: 0.5;
-    -fx-border-color: -border-color;
+  -fx-min-width: 0;
+  -fx-padding: 0 0 0 16;
+  -fx-border-width: 0 0 0 1;
+  -fx-border-color: -border-color;
 }
 
 .settings-dialog-scroll {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-fit-to-width: true;
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
 }
-
-.settings-dialog-scroll>.viewport {
-    -fx-background-color: transparent;
+.settings-dialog-scroll > .viewport {
+  -fx-background-color: transparent;
 }
-
-.settings-dialog-scroll>.corner {
-    -fx-background-color: transparent;
+.settings-dialog-scroll > .corner {
+  -fx-background-color: transparent;
 }
 
 .settings-card {
-    -fx-padding: 8;
+  -fx-padding: 8;
 }
-
-.settings-inline-row {
-    -fx-fill-height: true;
-}
-
-.settings-inline-label {
-    -fx-min-width: 100;
-    -fx-pref-width: 100;
-}
-
-.settings-button-row-fixed {
-    -fx-min-width: 200;
-    -fx-pref-width: 200;
-    -fx-max-width: 200;
-}
-
-.settings-dialog-container .settings-segment-btn {
-    -fx-min-width: 100;
-    -fx-pref-width: 100;
-    -fx-max-width: 100;
-    -fx-padding: 4 10;
-}
-
-.settings-dialog-container .settings-action-btn {
-    -fx-padding: 4 10;
-}
-
 .settings-inner-separator {
-    -fx-padding: 4 0;
+  -fx-padding: 4 0;
+}
+.settings-inline-row {
+  -fx-fill-height: true;
+}
+.settings-form-row {
+  -fx-alignment: CENTER_LEFT;
 }
 
-.settings-form-row {
-    -fx-alignment: CENTER_LEFT;
+/* Replaces minWidth/prefWidth="100" hardcode trên từng label trong FXML */
+.settings-inline-label {
+  -fx-min-width: 100;
+  -fx-pref-width: 100;
+}
+
+/* Replaces minWidth/prefWidth/maxWidth="200" hardcode trong FXML */
+.settings-button-row-fixed {
+  -fx-min-width: 200;
+  -fx-pref-width: 200;
+  -fx-max-width: 200;
+}
+
+/* Replaces per-button padding="4 10" hardcode trong FXML */
+.settings-dialog-container .settings-segment-btn {
+  -fx-min-width: 100;
+  -fx-pref-width: 100;
+  -fx-max-width: 100;
+  -fx-padding: 4 10;
+}
+.settings-dialog-container .settings-action-btn {
+  -fx-padding: 4 10;
+}
+
+/* Replaces pref-height/min-height="34" + padding="8" trên input trong FXML */
+.settings-dialog-container .input {
+  -fx-pref-height: 34;
+  -fx-min-height: 34;
+  -fx-padding: 8;
+}
+.settings-dialog-container .btn-secondary,
+.settings-dialog-container .btn-primary {
+  -fx-pref-height: 33;
+  -fx-padding: 0 16;
+}
+.settings-dialog-container .combo-box {
+  -fx-pref-height: 34;
+  -fx-min-height: 34;
+}
+
+/* Replaces prefHeight="10" trên popup-spacer trong dialog */
+.settings-dialog-container .popup-spacer {
+  -fx-pref-height: 10;
+}
+.settings-dialog-container .popup-header-spacer {
+  -fx-pref-height: 5;
 }
 
 .settings-warning {
-    -fx-font-size: 14px;
+  -fx-font-size: 14px;
 }
-
 .settings-note.status-success {
-    -fx-text-fill: #2ecc71;
+  -fx-text-fill: #2ecc71;
 }
-
 .settings-note.status-error {
-    -fx-text-fill: #e74c3c;
-}
-
-.settings-dialog-container .input {
-    -fx-pref-height: 34;
-    -fx-min-height: 34;
-    -fx-padding: 8;
-}
-
-.settings-dialog-container .btn-secondary,
-.settings-dialog-container .btn-primary {
-    -fx-pref-height: 33;
-    -fx-padding: 0 16;
-}
-
-.settings-dialog-container .combo-box {
-    -fx-pref-height: 34;
-    -fx-min-height: 34;
+  -fx-text-fill: #e74c3c;
 }
 
 .settings-dialog-container {
-    -fx-font-size: 13px;
-}
-
-.settings-dialog-container .popup-spacer {
-    -fx-pref-height: 10;
-}
-
-.settings-dialog-container .popup-header-spacer {
-    -fx-pref-height: 5;
+  -fx-font-size: 13px;
 }
