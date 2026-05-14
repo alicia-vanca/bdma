@@ -1,83 +1,76 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
-<StackPane fx:id="root"
-           xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.app.admin.layout.controllers.AdminLayoutController"
-           styleClass="root">
-    <BorderPane>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<StackPane fx:id="root" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.admin.layout.controllers.AdminLayoutController" styleClass="root">
+    <BorderPane minWidth="800">
         <top>
-            <!-- Padding → CSS: .header-shell { -fx-padding: 8 23; } -->
             <VBox styleClass="header-shell" spacing="6">
                 <HBox alignment="CENTER_LEFT" spacing="15" styleClass="top-bar">
                     <Label text="BDMA" styleClass="header-title"/>
+                    <HBox spacing="15" styleClass="tabs-row">
+                        <Button fx:id="btnDashboard" text="%menu.dashboard" onAction="#goDashboard"
+                                styleClass="menu-tab-btn"/>
+                        <Button fx:id="btnUser" text="%menu.user" onAction="#goUser" styleClass="menu-tab-btn"/>
+                    </HBox>
                     <Region HBox.hgrow="ALWAYS"/>
                     <HBox spacing="12" alignment="CENTER_RIGHT" styleClass="top-right-actions">
                         <Label fx:id="labelGreeting" styleClass="greeting-label"/>
-                        <Button fx:id="btnSettings" text="⚙"
-                                onAction="#openSettingsPopup" styleClass="icon-btn"/>
-                        <Button fx:id="btnLogout" text="%top.logout"
-                                onAction="#logout" styleClass="btn-logout"/>
+                        <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup" styleClass="icon-btn"/>
+                        <Button fx:id="btnLogout" text="%top.logout" onAction="#logout" styleClass="btn-logout"/>
                     </HBox>
-                </HBox>
-                <HBox spacing="15" styleClass="tabs-row">
-                    <Button fx:id="btnDashboard" text="%menu.dashboard"
-                            onAction="#goDashboard" styleClass="menu-tab-btn"/>
-                    <Button fx:id="btnUser"      text="%menu.user"
-                            onAction="#goUser"    styleClass="menu-tab-btn"/>
                 </HBox>
             </VBox>
         </top>
         <center>
             <StackPane>
                 <StackPane fx:id="contentArea" styleClass="content-shell" VBox.vgrow="ALWAYS"/>
-                <!-- Notice overlay: bottom margin → CSS .notice-container -->
-                <VBox fx:id="noticeContainer" spacing="11"
-                      alignment="BOTTOM_CENTER" fillWidth="false"
+                <VBox fx:id="noticeContainer" spacing="11" alignment="BOTTOM_CENTER" fillWidth="false"
                       mouseTransparent="true" styleClass="notice-container"/>
             </StackPane>
         </center>
         <bottom>
             <VBox styleClass="status-bar">
-                <!-- Warning strip -->
-                <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="12"
+                <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="8"
                       styleClass="status-warning-strip" managed="false" visible="false">
                     <Label text="⚠" styleClass="status-warning-icon"/>
-                    <Label fx:id="lblStatusWarning" wrapText="false"
-                           styleClass="status-warning-label" HBox.hgrow="ALWAYS"/>
+                    <HBox fx:id="warningTextRow" HBox.hgrow="ALWAYS" minWidth="0"
+                          styleClass="status-warning-text-row">
+                        <Label fx:id="lblStatusWarning" wrapText="false" minWidth="0"
+                               styleClass="status-warning-label" managed="false" visible="false" HBox.hgrow="NEVER"/>
+                        <Label fx:id="lblWarningSeparator" text=" | " wrapText="false" minWidth="0"
+                               styleClass="status-warning-label" managed="false" visible="false" HBox.hgrow="NEVER"/>
+                        <Label fx:id="lblDriveConflictWarning" wrapText="false" minWidth="0"
+                               styleClass="status-warning-label" managed="false" visible="false" HBox.hgrow="NEVER"/>
+                    </HBox>
                 </HBox>
-                <!-- Padding → CSS: .status-storage-row { -fx-padding: 4 16; } -->
                 <HBox alignment="CENTER_LEFT" spacing="0" styleClass="status-storage-row">
-                    <VBox spacing="4" HBox.hgrow="ALWAYS">
-                        <HBox alignment="CENTER_LEFT">
+                    <VBox spacing="4" HBox.hgrow="ALWAYS" minWidth="0">
+                        <HBox alignment="CENTER_LEFT" spacing="6">
                             <Label fx:id="lblDataStorageTitle" styleClass="storage-title"/>
-                            <Region HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="lblDataStorageUsage"   styleClass="storage-detail"/>
+                            <ProgressBar fx:id="pbDataStorage" progress="0" styleClass="storage-progress"
+                                         HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
+                            <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
                             <Label fx:id="lblDataStoragePercent" styleClass="storage-percent"/>
                         </HBox>
-                        <ProgressBar fx:id="pbDataStorage" progress="0"
-                                     styleClass="storage-progress"
-                                     maxWidth="1.7976931348623157E308"/>
                     </VBox>
-                    <!-- Margin → CSS: .storage-separator { -fx-padding: 0 16; } -->
                     <Separator orientation="VERTICAL" styleClass="storage-separator"/>
-                    <VBox spacing="4" HBox.hgrow="ALWAYS">
-                        <HBox alignment="CENTER_LEFT">
+                    <VBox spacing="4" HBox.hgrow="ALWAYS" minWidth="0">
+                        <HBox alignment="CENTER_LEFT" spacing="6">
                             <Label fx:id="lblBackupStorageTitle" styleClass="storage-title"/>
-                            <Region HBox.hgrow="ALWAYS"/>
-                            <Label fx:id="lblBackupStorageUsage"   styleClass="storage-detail"/>
+                            <ProgressBar fx:id="pbBackupStorage" progress="0" styleClass="storage-progress"
+                                         HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
+                            <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
                             <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"/>
                         </HBox>
-                        <ProgressBar fx:id="pbBackupStorage" progress="0"
-                                     styleClass="storage-progress"
-                                     maxWidth="1.7976931348623157E308"/>
                     </VBox>
-                </HBox>
-                <!-- Drive conflict: padding → CSS .drive-conflict-row -->
-                <HBox fx:id="driveConflictRow" managed="false" visible="false"
-                      styleClass="drive-conflict-row">
-                    <Label fx:id="lblDriveConflictWarning" wrapText="true"
-                           styleClass="settings-warning"/>
                 </HBox>
             </VBox>
         </bottom>

@@ -57,6 +57,7 @@ import com.app.user.userdetail.controllers.UserInfoController;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -68,6 +69,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 @Component
@@ -98,6 +100,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private static final String I18N_SETTING_STORAGE_ERROR = "setting.storage.error";
     private static final String I18N_SETTING_STORAGE_LOW_SPACE = "setting.storage.low_space";
     private static final String I18N_SETTING_STORAGE_DRIVE_MISSING = "setting.storage.drive_missing";
+
+    private static final String STYLE_CLASS_WARNING = "-fx-text-fill: -warning-color;";
 
     private final AppUpdateController appUpdateController;
     private final UserSettingService userSettingService;
@@ -143,7 +147,7 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private Label lblDriveConflictWarning;
     @FXML
-    private HBox driveConflictRow;
+    private Label lblWarningSeparator;
     @FXML
     private Label lblDataStorageTitle;
     @FXML
@@ -217,8 +221,6 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @Override
     protected List<Button> getMenuButtons() {
-        // Dashboard is visible to all roles, so always include it in the active-state
-        // list.
         return List.of(btnDashboard, btnUser);
     }
 
@@ -229,8 +231,6 @@ public class AdminLayoutController extends BaseLayoutController {
         appUpdateController.setOnCheckEnd(() -> btnSettings.setDisable(false));
         appUpdateController.setOnStatusChange(msg -> log.info("Update status: {}", msg));
 
-        // Set greeting early because this template is shared by both admin and
-        // non-admin users.
         labelGreeting.setText(I18n.get("top.hello", session.getUser().getUsername()));
 
         appNoticeService.bindNoticeContainer(noticeContainer);
@@ -288,7 +288,6 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     private void goUser() {
-        // Reuse the same tab entry point and only change loaded content by role.
         setActiveButton(getMenuButtons(), btnUser);
         if (session.isAdmin()) {
             setContent(loadView(ViewPaths.USER_LIST));
@@ -323,8 +322,6 @@ public class AdminLayoutController extends BaseLayoutController {
         deviceMiniStatus.clearAll();
         queueManagerService.clearAll();
 
-        // Reset tracked device state for the current session. The next login will
-        // start from a fresh device scan.
         backupRunner.resetForLogout();
         syncRunner.resetForLogout();
 
@@ -343,13 +340,18 @@ public class AdminLayoutController extends BaseLayoutController {
                 I18n.get("settings.title"));
         dialog.controller().setOnLanguageChangedAction(this::reloadUI);
         Stage stage = dialog.stage();
-        stage.setResizable(false);
+        stage.setResizable(true);
+        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+        stage.setMaxHeight(screen.getHeight() * 0.80);
+        stage.setMaxWidth(screen.getWidth() * 0.50);
+        stage.setMinWidth(480);
+        stage.setMinHeight(400);
+        stage.setWidth(Math.min(620, screen.getWidth() * 0.45));
+        stage.setHeight(Math.min(680, screen.getHeight() * 0.75));
         stage.showAndWait();
     }
 
     private void openMyProfile() {
-        // Request typed controller result to keep navigation casting checked and
-        // explicit.
         var result = loadViewWithController(ViewPaths.USER_INFO, UserInfoController.class);
         if (result == null) {
             log.error("Failed to load user-info view");
@@ -357,7 +359,6 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         UserInfoController controller = result.controller();
-        // Hide Back only for regular users — admins navigate back via the tab row.
         controller.setShowBack(session.isAdmin());
         controller.setUser(session.getUser());
 
@@ -587,15 +588,17 @@ public class AdminLayoutController extends BaseLayoutController {
             boolean sameParent = isSameParentFolder(dataDir, backupDir);
 
             lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
-            driveConflictRow.setVisible(sameParent);
-            driveConflictRow.setManaged(sameParent);
+            lblDriveConflictWarning.setStyle(STYLE_CLASS_WARNING);
+            lblDriveConflictWarning.setVisible(sameParent);
+            lblDriveConflictWarning.setManaged(sameParent);
 
-            int dataState = updateStorageBar(STATUS_SYNC_DRIVE, pbDataStorage, lblDataStorageTitle,
-                    lblDataStoragePercent, lblDataStorageUsage, dataDir);
-            int backupState = updateStorageBar(STATUS_BACKUP_DRIVE, pbBackupStorage, lblBackupStorageTitle,
-                    lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
+            int dataState = updateStorageBar(STATUS_SYNC_DRIVE, pbDataStorage,
+                    lblDataStorageTitle, lblDataStoragePercent, lblDataStorageUsage, dataDir);
+            int backupState = updateStorageBar(STATUS_BACKUP_DRIVE, pbBackupStorage,
+                    lblBackupStorageTitle, lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
 
             updateStorageWarning(dataState, backupState);
+            updateWarningStripVisibility();
         });
     }
 
@@ -747,13 +750,17 @@ public class AdminLayoutController extends BaseLayoutController {
 
     private void showStatusWarning(String message) {
         lblStatusWarning.setText(message);
-        warningStrip.setVisible(true);
-        warningStrip.setManaged(true);
+        lblStatusWarning.setVisible(true);
+        lblStatusWarning.setManaged(true);
+        lblStatusWarning.setStyle(STYLE_CLASS_WARNING);
+        updateWarningStripVisibility();
     }
 
     private void clearStatusWarning() {
-        warningStrip.setVisible(false);
-        warningStrip.setManaged(false);
+        lblStatusWarning.setVisible(false);
+        lblStatusWarning.setManaged(false);
+        lblStatusWarning.setStyle("");
+        updateWarningStripVisibility();
     }
 
     private static String formatBytes(long bytes) {
@@ -1165,5 +1172,19 @@ public class AdminLayoutController extends BaseLayoutController {
             }
             refreshStorageStatus();
         });
+    }
+
+    private void updateWarningStripVisibility() {
+        boolean showStorage = lblStatusWarning.isVisible();
+        boolean showConflict = lblDriveConflictWarning.isVisible();
+        boolean showBoth = showStorage && showConflict;
+
+        lblWarningSeparator.setVisible(showBoth);
+        lblWarningSeparator.setManaged(showBoth);
+        lblWarningSeparator.setStyle(STYLE_CLASS_WARNING);
+
+        boolean show = showStorage || showConflict;
+        warningStrip.setVisible(show);
+        warningStrip.setManaged(show);
     }
 }

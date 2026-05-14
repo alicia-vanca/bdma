@@ -78,6 +78,12 @@ public class UserManagementController {
     private TextField txtPageNumber;
     @FXML
     private Label lblPageTotal;
+    @FXML
+    private HBox pageButtonsBox;
+    @FXML
+    private Button btnFirst;
+    @FXML
+    private Button btnLast;
 
     private final UserService userService;
     private final ViewLoader viewLoader;
@@ -419,10 +425,73 @@ public class UserManagementController {
     }
 
     private void updatePagerControls(int pageCount) {
+        btnFirst.setDisable(currentPageIndex <= 0);
         btnPrev.setDisable(currentPageIndex <= 0);
         btnNext.setDisable(currentPageIndex >= pageCount - 1);
+        btnLast.setDisable(currentPageIndex >= pageCount - 1);
         lblPageTotal.setText("/ " + pageCount);
         txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+        buildPageButtons(pageCount);
+    }
+
+    @FXML
+    private void onFirstPage() {
+        if (currentPageIndex > 0) {
+            currentPageIndex = 0;
+            setupPagination();
+        }
+    }
+
+    @FXML
+    private void onLastPage() {
+        int last = getPageCount() - 1;
+        if (currentPageIndex < last) {
+            currentPageIndex = last;
+            setupPagination();
+        }
+    }
+
+    private void buildPageButtons(int pageCount) {
+        pageButtonsBox.getChildren().clear();
+
+        List<Integer> pages = getPageRange(pageCount);
+        for (int page : pages) {
+            Button btn = new Button(String.valueOf(page + 1));
+            btn.getStyleClass().add("btn-secondary");
+            if (page == currentPageIndex) {
+                btn.getStyleClass().add("btn-page-active");
+            }
+            int target = page;
+            btn.setOnAction(e -> {
+                currentPageIndex = target;
+                setupPagination();
+            });
+            pageButtonsBox.getChildren().add(btn);
+        }
+    }
+
+    private List<Integer> getPageRange(int pageCount) {
+        if (pageCount <= 7) {
+            List<Integer> pages = new ArrayList<>();
+            for (int i = 0; i < pageCount; i++) pages.add(i);
+            return pages;
+        }
+
+        int start = currentPageIndex - 3;
+        int end = currentPageIndex + 3;
+
+        if (start < 0) {
+            start = 0;
+            end = 6;
+        }
+        if (end >= pageCount) {
+            end = pageCount - 1;
+            start = end - 6;
+        }
+
+        List<Integer> pages = new ArrayList<>();
+        for (int i = start; i <= end; i++) pages.add(i);
+        return pages;
     }
 
     private int getPageCount() {

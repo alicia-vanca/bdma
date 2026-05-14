@@ -1,114 +1,110 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
-<!-- prefWidth/prefHeight removed; set by stage in controller -->
-<!-- All inline Insets removed; padding in CSS -->
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
 <StackPane
         xmlns:fx="http://javafx.com/fxml/1"
         fx:controller="com.app.admin.settingsdialog.controllers.AdminSettingsDialogController"
         styleClass="form,dialog-container,settings-dialog-container">
-    <VBox fx:id="panel" spacing="10" alignment="CENTER">
-        <Region styleClass="popup-spacer"/>
-        <Label fx:id="lblTitle" styleClass="settings-title"/>
-        <Region styleClass="popup-header-spacer"/>
+    <VBox fx:id="panel" styleClass="settings-dialog-body">
         <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
                     styleClass="settings-dialog-scroll" VBox.vgrow="ALWAYS">
             <content>
-                <VBox spacing="14" fillWidth="true">
-                    <!-- Language + Theme + Actions: split layout -->
-                    <GridPane styleClass="settings-split-layout">
+                <VBox spacing="0" fillWidth="true">
+                    <GridPane styleClass="settings-top-grid">
                         <columnConstraints>
-                            <ColumnConstraints percentWidth="50" hgrow="ALWAYS"/>
-                            <ColumnConstraints percentWidth="50" hgrow="ALWAYS"/>
+                            <ColumnConstraints hgrow="ALWAYS"/>
+                            <ColumnConstraints hgrow="ALWAYS"/>
                         </columnConstraints>
-                        <!-- Left: language + theme segments -->
-                        <VBox spacing="12" styleClass="settings-split-left" GridPane.columnIndex="0">
-                            <HBox alignment="CENTER_LEFT" styleClass="settings-inline-row">
-                                <Label fx:id="lblLanguage"
-                                       styleClass="settings-section-label settings-inline-label"/>
-                                <Region HBox.hgrow="ALWAYS"/>
-                                <HBox spacing="8" styleClass="settings-segment-row settings-button-row-fixed">
-                                    <Button fx:id="btnEnglish"    styleClass="settings-segment-btn"/>
-                                    <Button fx:id="btnVietnamese" styleClass="settings-segment-btn"/>
-                                </HBox>
-                            </HBox>
-                            <HBox alignment="CENTER_LEFT" styleClass="settings-inline-row">
-                                <Label fx:id="lblTheme"
-                                       styleClass="settings-section-label settings-inline-label"/>
-                                <Region HBox.hgrow="ALWAYS"/>
-                                <HBox spacing="8" styleClass="settings-segment-row settings-button-row-fixed">
-                                    <Button fx:id="btnLightTheme" styleClass="settings-segment-btn"/>
-                                    <Button fx:id="btnDarkTheme"  styleClass="settings-segment-btn"/>
-                                </HBox>
-                            </HBox>
-                        </VBox>
-                        <!-- Right: info + update actions -->
-                        <!-- padding → CSS .settings-split-right { -fx-padding: 0 0 0 16; } -->
-                        <VBox spacing="12" styleClass="settings-actions-column settings-split-right"
-                              GridPane.columnIndex="1" GridPane.valignment="TOP">
-                            <Button fx:id="btnInfo"   maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
-                            <Button fx:id="btnUpdate" maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
+                        <GridPane styleClass="settings-split-left" GridPane.columnIndex="0"
+                                  hgap="10" vgap="10" maxWidth="1.7976931348623157E308"
+                                  GridPane.hgrow="ALWAYS">
+                            <columnConstraints>
+                                <ColumnConstraints percentWidth="30" hgrow="ALWAYS"/>
+                                <ColumnConstraints percentWidth="35" hgrow="ALWAYS"/>
+                                <ColumnConstraints percentWidth="35" hgrow="ALWAYS"/>
+                            </columnConstraints>
+
+                            <Label fx:id="lblLanguage" styleClass="settings-section-label"
+                                   GridPane.rowIndex="0" GridPane.columnIndex="0" GridPane.valignment="CENTER"/>
+                            <Button fx:id="btnEnglish" styleClass="settings-segment-btn"
+                                    maxWidth="1.7976931348623157E308" GridPane.rowIndex="0" GridPane.columnIndex="1"
+                                    GridPane.hgrow="ALWAYS"/>
+                            <Button fx:id="btnVietnamese" styleClass="settings-segment-btn"
+                                    maxWidth="1.7976931348623157E308" GridPane.rowIndex="0" GridPane.columnIndex="2"
+                                    GridPane.hgrow="ALWAYS"/>
+
+                            <Label fx:id="lblTheme" styleClass="settings-section-label"
+                                   GridPane.rowIndex="1" GridPane.columnIndex="0" GridPane.valignment="CENTER"/>
+                            <Button fx:id="btnLightTheme" styleClass="settings-segment-btn"
+                                    maxWidth="1.7976931348623157E308" GridPane.rowIndex="1" GridPane.columnIndex="1"
+                                    GridPane.hgrow="ALWAYS"/>
+                            <Button fx:id="btnDarkTheme" styleClass="settings-segment-btn"
+                                    maxWidth="1.7976931348623157E308" GridPane.rowIndex="1" GridPane.columnIndex="2"
+                                    GridPane.hgrow="ALWAYS"/>
+                        </GridPane>
+                        <VBox spacing="8" styleClass="settings-split-right" GridPane.columnIndex="1"
+                              GridPane.valignment="CENTER">
+                            <Button fx:id="btnInfo" maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
+                            <Button fx:id="btnUpdate" maxWidth="1.7976931348623157E308"
+                                    styleClass="settings-action-btn"/>
                         </VBox>
                     </GridPane>
-                    <Separator styleClass="settings-inner-separator"/>
-                    <!-- Storage folders -->
-                    <VBox spacing="8" styleClass="settings-card">
-                        <Label fx:id="lblSaveFolderTitle" styleClass="settings-section-label"/>
-                        <HBox spacing="8" alignment="CENTER_LEFT" styleClass="settings-form-row">
-                            <TextField fx:id="txtSavePath" editable="false"
-                                       styleClass="input" HBox.hgrow="ALWAYS"/>
-                            <Button fx:id="btnChooseSaveFolder"
-                                    onAction="#onSelectSaveFolder" styleClass="btn-secondary"/>
-                        </HBox>
-                        <Label fx:id="lblSaveFolderNote" wrapText="true" styleClass="settings-note"/>
-                        <Label fx:id="lblBackupFolderTitle" styleClass="settings-section-label"/>
-                        <HBox spacing="8" alignment="CENTER_LEFT" styleClass="settings-form-row">
-                            <TextField fx:id="txtBackupPath" editable="false"
-                                       styleClass="input" HBox.hgrow="ALWAYS"/>
-                            <Button fx:id="btnChooseBackupFolder"
-                                    onAction="#onSelectBackupFolder" styleClass="btn-secondary"/>
-                        </HBox>
-                        <Label fx:id="lblDriveConflictWarning" wrapText="true"
-                               styleClass="settings-warning" managed="false" visible="false"/>
-                    </VBox>
-                    <Separator styleClass="settings-inner-separator"/>
-                    <!-- Restore -->
-                    <VBox spacing="8" styleClass="settings-card">
-                        <Button fx:id="btnRestore" onAction="#onRestore"
-                                maxWidth="1.7976931348623157E308" styleClass="btn-secondary"/>
-                        <HBox fx:id="storageActionBox" spacing="8" alignment="CENTER_LEFT"
-                              managed="false" visible="false">
-                            <Label fx:id="lblStorageProgress" wrapText="true"
-                                   styleClass="settings-note" HBox.hgrow="ALWAYS"/>
-                            <Button fx:id="btnRetryFailedRestore"
-                                    onAction="#onRetryFailedRestore"
-                                    managed="false" visible="false"
+                    <Separator styleClass="settings-sep"/>
+                    <VBox spacing="6" styleClass="settings-card">
+                        <HBox spacing="8" alignment="CENTER_LEFT">
+                            <Label fx:id="lblSaveFolderTitle" styleClass="settings-field-label"/>
+                            <TextField fx:id="txtSavePath" editable="false" styleClass="input" HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="btnChooseSaveFolder" onAction="#onSelectSaveFolder"
                                     styleClass="btn-secondary"/>
                         </HBox>
+                        <HBox spacing="8" alignment="CENTER_LEFT">
+                            <Label fx:id="lblBackupFolderTitle" styleClass="settings-field-label"/>
+                            <TextField fx:id="txtBackupPath" editable="false" styleClass="input" HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="btnChooseBackupFolder" onAction="#onSelectBackupFolder"
+                                    styleClass="btn-secondary"/>
+                        </HBox>
+                        <Label fx:id="lblSaveFolderNote" wrapText="true" styleClass="settings-note"/>
+                        <Label fx:id="lblDriveConflictWarning" wrapText="true" styleClass="settings-warning"
+                               managed="false" visible="false"/>
                     </VBox>
-                    <Separator styleClass="settings-inner-separator"/>
-                    <!-- Auto-delete -->
-                    <VBox spacing="8" styleClass="settings-card">
-                        <Label fx:id="lblAutoDeleteTitle" styleClass="settings-section-label"/>
-                        <Label fx:id="lblAutoDeleteDescription" wrapText="true"/>
-                        <CheckBox fx:id="chkAutoDelete" onAction="#onToggleAutoDelete"/>
-                        <Label fx:id="lblAutoDeleteNote" wrapText="true" styleClass="settings-note"/>
+                    <Separator styleClass="settings-sep"/>
+                    <VBox spacing="6" styleClass="settings-card">
+                        <HBox spacing="8" alignment="CENTER_LEFT">
+                            <Button fx:id="btnRestore" onAction="#onRestore" styleClass="btn-secondary"/>
+                            <Label fx:id="lblStorageProgress" wrapText="true" styleClass="settings-note"
+                                   HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="btnRetryFailedRestore" onAction="#onRetryFailedRestore"
+                                    managed="false" visible="false" styleClass="btn-secondary"/>
+                        </HBox>
+                        <HBox fx:id="storageActionBox" managed="false" visible="false"/>
                     </VBox>
-                    <Separator styleClass="settings-inner-separator"/>
-                    <!-- Start with Windows -->
-                    <VBox spacing="8" styleClass="settings-card">
-                        <Label fx:id="lblStartWithWindowsTitle" styleClass="settings-section-label"/>
-                        <Label fx:id="lblStartWithWindowsDescription" wrapText="true"/>
-                        <CheckBox fx:id="chkStartWithWindows" onAction="#onToggleStartWithWindows"/>
+                    <Separator styleClass="settings-sep"/>
+                    <VBox spacing="4" styleClass="settings-card">
+                        <HBox alignment="CENTER_LEFT" spacing="10">
+                            <CheckBox fx:id="chkAutoDelete" onAction="#onToggleAutoDelete"/>
+                        </HBox>
+                        <Label fx:id="lblAutoDeleteDescription" wrapText="true" styleClass="settings-note"/>
+                    </VBox>
+                    <Separator styleClass="settings-sep"/>
+                    <VBox spacing="4" styleClass="settings-card">
+                        <HBox alignment="CENTER_LEFT" spacing="10">
+                            <CheckBox fx:id="chkStartWithWindows" onAction="#onToggleStartWithWindows"/>
+                        </HBox>
+                        <Label fx:id="lblStartWithWindowsDescription" wrapText="true" styleClass="settings-note"/>
                     </VBox>
                 </VBox>
             </content>
         </ScrollPane>
-        <Region styleClass="popup-spacer"/>
     </VBox>
-    <!-- Notice overlay: bottom padding → CSS .notice-container-dialog -->
-    <VBox fx:id="noticeContainer" spacing="8" alignment="BOTTOM_CENTER"
-          fillWidth="false" mouseTransparent="true"
-          styleClass="notice-container-dialog"
-          StackPane.alignment="BOTTOM_CENTER"/>
+    <VBox fx:id="noticeContainer" spacing="8" alignment="BOTTOM_CENTER" fillWidth="false" mouseTransparent="true"
+          styleClass="notice-container-dialog" StackPane.alignment="BOTTOM_CENTER"/>
 </StackPane>

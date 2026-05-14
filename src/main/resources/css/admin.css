@@ -1,41 +1,42 @@
-/* =====================================================================
-   admin.css — Shell-level styles shared across all admin modules.
-   ===================================================================== */
-
 .root {
   -fx-background-color: -card-bg;
 }
+
 .content-shell {
   -fx-background-color: -card-bg;
   -fx-padding: 12;
 }
 
-/* ── HEADER ─────────────────────────────────────────────────────── */
-/* Replaces inline <Insets top="8" right="23" bottom="8" left="23"/> */
 .header-shell {
   -fx-background-color: -sidebar-bg;
   -fx-padding: 8 23;
 }
+
 .top-bar {
   -fx-padding: 0;
 }
+
 .header-title {
   -fx-font-size: 16px;
   -fx-font-weight: bold;
 }
+
 .tabs-row {
   -fx-pref-height: 28;
   -fx-max-height: 28;
   -fx-min-height: 28;
   -fx-padding: 0 0 3 0;
 }
+
 .top-right-actions {
   -fx-alignment: CENTER_RIGHT;
 }
+
 .greeting-label {
   -fx-font-size: 13px;
   -fx-font-weight: 600;
 }
+
 .btn-logout {
   -fx-font-size: 13px;
   -fx-background-color: -danger;
@@ -46,6 +47,7 @@
   -fx-pref-width: 96;
   -fx-cursor: hand;
 }
+
 .btn-logout:hover {
   -fx-opacity: 0.9;
 }
@@ -66,10 +68,10 @@
 }
 
 /* ── NOTICE OVERLAY ─────────────────────────────────────────────── */
-/* Replaces inline <Insets bottom="30"/> on noticeContainer VBox */
 .notice-container {
   -fx-padding: 0 0 30 0;
 }
+
 .notice-container-dialog {
   -fx-padding: 0 0 24 0;
 }
@@ -80,21 +82,28 @@
   -fx-border-color: -border-color;
   -fx-border-width: 1 0 0 0;
 }
-/* Replaces inline <Insets top="4" right="16" bottom="4" left="16"/> */
+
 .status-storage-row {
   -fx-padding: 4 16;
+}
+
+.status-warning-text-row {
+    -fx-min-width: 0;
+    -fx-spacing: 4;
 }
 
 .status-warning-strip {
   -fx-background-color: -warn-strip-bg;
   -fx-border-color: -warn-strip-border;
   -fx-border-width: 0 0 1 0;
-  -fx-padding: 4 16; /* was inline Insets */
+  -fx-padding: 3 16; /* was inline Insets */
 }
+
 .status-warning-icon {
   -fx-text-fill: -warning-color;
   -fx-font-size: 13px;
 }
+
 .status-warning-label {
   -fx-text-fill: -warning-color;
   -fx-font-size: 12px;
@@ -105,10 +114,12 @@
   -fx-font-size: 12px;
   -fx-font-weight: 600;
 }
+
 .storage-percent {
   -fx-font-size: 12px;
   -fx-opacity: 0.65;
 }
+
 .storage-detail {
   -fx-font-size: 11px;
   -fx-font-weight: 700;
@@ -121,30 +132,32 @@
   -fx-background-radius: 4;
   -fx-accent: -primary;
 }
+
 .storage-progress > .bar {
   -fx-background-radius: 4;
   -fx-background-insets: 0;
 }
+
 .storage-progress > .track {
   -fx-background-radius: 4;
   -fx-background-insets: 0;
   -fx-background-color: -storage-track;
 }
+
 .storage-progress.storage-warn {
   -fx-accent: -warning-color;
 }
+
 .storage-progress.storage-critical {
   -fx-accent: -danger;
 }
 
-/* Replaces inline <HBox.margin><Insets left="16" right="16"/></HBox.margin> */
 .storage-separator {
   -fx-background-color: -border-color;
   -fx-pref-width: 1;
   -fx-padding: 0 16;
 }
 
-/* Replaces inline <Insets top="0" right="20" bottom="5" left="20"/> */
 .drive-conflict-row {
   -fx-padding: 0 20 5 20;
 }
@@ -156,21 +169,23 @@
   -fx-min-height: 30;
   -fx-max-height: 30;
 }
+
 .filter-bar .label {
   -fx-font-size: 13px;
 }
+
 .filter-bar .button {
   -fx-font-size: 13px;
   -fx-pref-height: 30;
   -fx-padding: 4 10;
 }
+
 .filter-bar .combo-box {
   -fx-font-size: 13px;
   -fx-pref-height: 30;
   -fx-min-height: 30;
 }
 
-/* Replaces hardcoded pref/maxWidth + pref/maxHeight on DatePicker in FXML */
 .filter-bar .date-picker {
   -fx-font-size: 13px;
   -fx-pref-height: 30;
@@ -178,6 +193,7 @@
   -fx-pref-width: 130;
   -fx-max-width: 130;
 }
+
 .filter-bar .date-picker .text-field {
   -fx-pref-height: 30;
   -fx-min-height: 30;
@@ -185,10 +201,12 @@
   -fx-font-size: 13px;
   -fx-padding: 4 4 4 7;
 }
+
 .filter-bar .date-picker .arrow-button {
   -fx-pref-height: 30;
   -fx-padding: 4 6;
 }
+
 .filter-bar .text-field {
   -fx-font-size: 13px;
   -fx-pref-height: 30;
@@ -196,6 +214,7 @@
   -fx-max-height: 30;
   -fx-padding: 4 8;
 }
+
 .date-arrow {
   -fx-font-size: 13px;
   -fx-text-fill: -text-color;
@@ -203,57 +222,47 @@
 
 /* ── PAGINATION BAR ─────────────────────────────────────────────── */
 .pagination-bar {
-  -fx-font-size: 13px;
-}
-.pagination-bar .label {
-  -fx-font-size: 13px;
-}
-.pagination-bar .button {
-  -fx-font-size: 13px;
-  -fx-pref-height: 28;
-  -fx-min-height: 28;
-  -fx-pref-width: 28;
-  -fx-min-width: 28;
-  -fx-padding: 0;
-}
-.pagination-bar .combo-box {
-  -fx-font-size: 13px;
-  -fx-pref-height: 28;
-  -fx-min-height: 28;
+  -fx-font-size: 9px;
 }
 
-/* Page-size ComboBox */
-.combo-box.page-size-combo {
-  -fx-pref-width: 68;
+.pagination-bar .button {
+  -fx-pref-height: 20;
+  -fx-min-height: 20;
+  -fx-pref-width: 20;
+  -fx-min-width: 20;
+  -fx-padding: 0;
 }
+
+.pagination-bar .combo-box {
+  -fx-pref-height: 20;
+  -fx-min-height: 20;
+}
+
+.combo-box.page-size-combo {
+  -fx-pref-width: 30;
+}
+
 .combo-box.page-size-combo .arrow-button {
   -fx-padding: 0 10 0 0;
   -fx-pref-width: 20;
 }
 
-/* ── PAGE NUMBER INPUT (mới — jump to page) ─────────────────────── */
+/* ── PAGE NUMBER INPUT ─────────────────────── */
 .page-number-input {
-  -fx-pref-width: 44;
-  -fx-pref-height: 28;
-  -fx-min-height: 28;
-  -fx-max-height: 28;
-  -fx-font-size: 13px;
+  -fx-pref-width: 25;
+  -fx-pref-height: 20;
+  -fx-min-height: 20;
+  -fx-max-height: 20;
+  -fx-font-size: 9px;
   -fx-alignment: CENTER;
-  -fx-padding: 2 4;
-  -fx-background-radius: 4;
-  -fx-border-radius: 4;
-}
-.page-total-label {
-  -fx-font-size: 13px;
-  -fx-text-fill: -text-color;
+  -fx-padding: 1 2;
+  -fx-background-radius: 2;
+  -fx-border-radius: 2;
 }
 
-/* Add button near filter bar */
-.filter-bar ~ * .btn-primary,
-.btn-primary.btn-add {
-  -fx-font-size: 13px;
-  -fx-pref-height: 30;
-  -fx-padding: 4 12;
+.page-total-label {
+  -fx-font-size: 9px;
+  -fx-text-fill: -text-color;
 }
 
 /* ── SETTINGS WARNING ───────────────────────────────────────────── */
@@ -269,23 +278,25 @@
   -fx-min-width: 210;
   -fx-max-width: 210;
 }
+
 .context-menu {
   -fx-pref-width: 210;
   -fx-min-width: 210;
 }
+
 .context-menu .menu-item {
   -fx-pref-width: 210;
   -fx-text-fill: -text-color;
 }
 
 /* ── DASHBOARD LAYOUT ───────────────────────────────────────────── */
-/* device-panel: thay thế inline minWidth/maxWidth hardcode trong FXML */
 .device-panel {
-  -fx-pref-width: 220;
-  -fx-min-width: 180;
-  -fx-max-width: 260;
+  -fx-pref-width: -1;
+  -fx-min-width: 0;
+  -fx-max-width: -1;
   -fx-padding: 0 10 0 0;
 }
+
 .file-list-pane {
   -fx-padding: 0 0 0 16;
 }

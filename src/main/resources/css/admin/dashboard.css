@@ -1,19 +1,15 @@
-/* .content, .device-panel padding → admin.css .device-panel / .file-list-pane */
-
 .content {
   -fx-background-color: -card-bg;
   -fx-border-color: -border-color;
   -fx-border-width: 1;
   -fx-border-radius: 8;
   -fx-background-radius: 8;
-  /* padding → CSS .device-panel và .file-list-pane riêng từng vùng */
 }
 
-/* panel-title padding → giảm dead zone */
 .panel-title {
   -fx-font-weight: bold;
-  -fx-font-size: 14px; /* giảm từ 18px */
-  -fx-padding: 0 0 8 0; /* giảm từ 12 */
+  -fx-font-size: 14px;
+  -fx-padding: 0 0 8 0;
 }
 
 #deviceListView {
@@ -32,9 +28,11 @@
 #deviceListView .list-cell:odd {
   -fx-background-color: derive(-card-bg, -5%);
 }
+
 #deviceListView .list-cell:hover {
   -fx-background-color: derive(-card-bg, -10%);
 }
+
 #deviceListView .list-cell:selected {
   -fx-border-color: -primary;
 }
@@ -44,22 +42,23 @@
   -fx-background-color: transparent;
 }
 
-/* device-cell-row padding → giảm dead zone */
 .device-cell-row {
   -fx-padding: 6 4;
-} /* giảm từ 9 6 9 6 */
+}
 
-/* Font sizes giảm để compact hơn */
 .device-cell-name {
   -fx-font-weight: bold;
   -fx-font-size: 14px;
-} /* từ 20px */
+}
+
 .device-cell-connected {
   -fx-font-size: 12px;
-} /* từ 17px */
+}
+
 .device-cell-offline {
   -fx-font-size: 12px;
 }
+
 .device-cell-unvalidated {
   -fx-font-size: 12px;
 }
@@ -68,6 +67,7 @@
   -fx-fill: #888;
   -fx-cursor: hand;
 }
+
 .edit-icon-svg:hover {
   -fx-fill: #000;
 }

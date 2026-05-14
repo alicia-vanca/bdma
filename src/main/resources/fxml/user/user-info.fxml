@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
-<!-- padding → CSS .content { -fx-padding: 10; } từ base.css -->
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
 <VBox spacing="16"
       xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.user.userdetail.controllers.UserInfoController"
@@ -13,14 +16,13 @@
             <ColumnConstraints hgrow="ALWAYS"/>
         </columnConstraints>
         <Label text="%user.username.label" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
-        <Label fx:id="lblUsername"         GridPane.rowIndex="0" GridPane.columnIndex="1"/>
-        <Label text="%user.role.label"     GridPane.rowIndex="1" GridPane.columnIndex="0"/>
-        <Label fx:id="lblRole"             GridPane.rowIndex="1" GridPane.columnIndex="1"/>
-        <Label text="%user.status.label"   GridPane.rowIndex="2" GridPane.columnIndex="0"/>
-        <Label fx:id="lblStatus"           GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+        <Label fx:id="lblUsername" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+        <Label text="%user.role.label" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+        <Label fx:id="lblRole" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+        <Label text="%user.status.label" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+        <Label fx:id="lblStatus" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
     </GridPane>
     <HBox fx:id="hboxBack" managed="false" visible="false">
-        <Button fx:id="btnBack" text="%common.back"
-                onAction="#onBack" styleClass="btn-secondary"/>
+        <Button fx:id="btnBack" text="%common.back" onAction="#onBack" styleClass="btn-secondary"/>
     </HBox>
 </VBox>

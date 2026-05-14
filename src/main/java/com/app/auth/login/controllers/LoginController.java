@@ -26,7 +26,9 @@ import com.app.common.repositories.RecentUsernameRepository;
 import com.app.common.services.UserService;
 import com.app.common.services.UserSettingService;
 
+import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.geometry.Bounds;
 import javafx.geometry.Side;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
@@ -163,16 +165,13 @@ public class LoginController {
      */
     private void setupUsernameDropdown() {
         ContextMenu contextMenu = new ContextMenu();
-        contextMenu.setStyle("-fx-min-width: 450px;");
 
-        // Hide menu when user starts typing
         username.textProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null && !newVal.isEmpty()) {
                 contextMenu.hide();
             }
         });
 
-        // Show menu when clicking on empty field
         username.setOnMouseClicked(e -> {
             List<String> recents = recentUsernameRepository.findRecent();
             contextMenu.getItems().clear();
@@ -180,7 +179,6 @@ public class LoginController {
             if (!recents.isEmpty()) {
                 for (String recent : recents) {
                     MenuItem item = new MenuItem(recent);
-                    item.setStyle("-fx-padding: 12px 24px;");
                     item.setOnAction(action -> {
                         username.setText(recent);
                         contextMenu.hide();
@@ -188,10 +186,13 @@ public class LoginController {
                     contextMenu.getItems().add(item);
                 }
 
-                javafx.application.Platform.runLater(() -> {
-                    double width = username.getWidth();
-                    contextMenu.setPrefWidth(width > 0 ? width : 300);
-                    contextMenu.show(username, Side.BOTTOM, 0, 0);
+                Platform.runLater(() -> {
+                    Bounds bounds = username.localToScreen(username.getBoundsInLocal());
+                    double width = bounds.getWidth();
+                    contextMenu.setMinWidth(width);
+                    contextMenu.setMaxWidth(width);
+                    contextMenu.setPrefWidth(width);
+                    contextMenu.show(username, Side.BOTTOM, -1, 0);
                 });
             }
         });

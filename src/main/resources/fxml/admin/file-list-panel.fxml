@@ -1,16 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
 <!-- DatePicker size → CSS .filter-bar .date-picker -->
-<VBox
-        xmlns:fx="http://javafx.com/fxml/1"
-        fx:controller="com.app.admin.layout.controllers.FileListController"
-        spacing="12" VBox.vgrow="ALWAYS">
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.DatePicker?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.app.admin.layout.controllers.FileListController"
+      style="-fx-font-size: 18px;" spacing="12" VBox.vgrow="ALWAYS">
     <HBox spacing="8" alignment="CENTER_LEFT" styleClass="filter-bar">
         <HBox spacing="4" alignment="CENTER_LEFT">
             <DatePicker fx:id="dateFromPicker" promptText="%filter.dateFrom"/>
             <Label text="→" styleClass="date-arrow"/>
-            <DatePicker fx:id="dateToPicker"   promptText="%filter.dateTo"/>
+            <DatePicker fx:id="dateToPicker" promptText="%filter.dateTo"/>
         </HBox>
         <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers"/>
         <ComboBox fx:id="typeFilterCombo"/>
@@ -21,13 +28,13 @@
             <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
         </columnResizePolicy>
         <columns>
-            <TableColumn fx:id="colName"   text="%file.name"   prefWidth="36"/>
-            <TableColumn fx:id="colDevice" text="%file.device" prefWidth="9"/>
-            <TableColumn fx:id="colUser"   text="%file.user"   prefWidth="9"/>
-            <TableColumn fx:id="colSize"   text="%file.size"   prefWidth="9"/>
-            <TableColumn fx:id="colStatus" text="%file.status" prefWidth="10"/>
-            <TableColumn fx:id="colType"   text="%file.type"   prefWidth="9"/>
-            <TableColumn fx:id="colDate"   text="%file.date"   prefWidth="16"/>
+            <TableColumn fx:id="colName" text="%file.name" minWidth="80" prefWidth="270"/>
+            <TableColumn fx:id="colDevice" text="%file.device" minWidth="60" prefWidth="110"/>
+            <TableColumn fx:id="colUser" text="%file.user" minWidth="60" prefWidth="110"/>
+            <TableColumn fx:id="colSize" text="%file.size" minWidth="60" prefWidth="120"/>
+            <TableColumn fx:id="colStatus" text="%file.status" minWidth="60" prefWidth="130"/>
+            <TableColumn fx:id="colType" text="%file.type" minWidth="50" prefWidth="120"/>
+            <TableColumn fx:id="colDate" text="%file.date" minWidth="80" prefWidth="140"/>
         </columns>
         <placeholder>
             <Label text="%file.noData"/>
@@ -38,9 +45,12 @@
         <ComboBox fx:id="cbPageSize" styleClass="page-size-combo"/>
         <Label text="%common.per.page"/>
         <Region HBox.hgrow="ALWAYS"/>
+        <Button fx:id="btnFirst" text="«" onAction="#onFirstPage" styleClass="btn-secondary"/>
         <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary"/>
+        <HBox fx:id="pageButtonsBox" spacing="4" alignment="CENTER"/>
+        <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary"/>
+        <Button fx:id="btnLast" text="»" onAction="#onLastPage" styleClass="btn-secondary"/>
         <TextField fx:id="txtPageNumber" styleClass="page-number-input" promptText="1"/>
         <Label fx:id="lblPageTotal" styleClass="page-total-label"/>
-        <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary"/>
     </HBox>
 </VBox>

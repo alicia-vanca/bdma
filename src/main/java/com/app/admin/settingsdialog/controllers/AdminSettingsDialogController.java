@@ -81,8 +81,6 @@ public class AdminSettingsDialogController {
     @FXML
     private VBox panel;
     @FXML
-    private Label lblTitle;
-    @FXML
     private Label lblLanguage;
     @FXML
     private Button btnEnglish;
@@ -113,15 +111,9 @@ public class AdminSettingsDialogController {
     @FXML
     private Label lblSaveFolderNote;
     @FXML
-    private Label lblAutoDeleteTitle;
-    @FXML
     private Label lblAutoDeleteDescription;
     @FXML
     private CheckBox chkAutoDelete;
-    @FXML
-    private Label lblAutoDeleteNote;
-    @FXML
-    private Label lblStartWithWindowsTitle;
     @FXML
     private Label lblStartWithWindowsDescription;
     @FXML
@@ -180,7 +172,6 @@ public class AdminSettingsDialogController {
     }
 
     private void refreshLocalizedText() {
-        lblTitle.setText("⚙ " + I18n.get("settings.title"));
         lblLanguage.setText("🌐 " + I18n.get("settings.language"));
         lblTheme.setText("🎨 " + I18n.get("settings.theme"));
 
@@ -197,12 +188,9 @@ public class AdminSettingsDialogController {
 
         lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
 
-        lblAutoDeleteTitle.setText(I18n.get("setting.databackup.autodelete.title"));
         lblAutoDeleteDescription.setText(I18n.get("setting.databackup.autodelete.desc"));
         chkAutoDelete.setText(I18n.get("setting.databackup.autodelete.checkbox"));
-        lblAutoDeleteNote.setText(I18n.get("setting.databackup.autodelete.note"));
 
-        lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.title"));
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         chkStartWithWindows.setText(I18n.get("setting.startWithWindows.checkbox"));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
@@ -618,6 +606,9 @@ public class AdminSettingsDialogController {
 
     @EventListener
     public void onStorageRestored(StorageRestoredEvent event) {
+        if (txtSavePath == null || txtBackupPath == null) {
+            return;
+        }
         Platform.runLater(() -> {
             adminSettingsService.getFolderPath(FolderType.SYNC).ifPresent(txtSavePath::setText);
             adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);

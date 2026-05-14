@@ -6,7 +6,6 @@
 .account-readonly-value {
   -fx-text-fill: -text-color;
   -fx-font-weight: 600;
-  /* padding → align với input height để GridPane rows không shift */
   -fx-padding: 8 0;
 }
 
@@ -16,7 +15,6 @@
 }
 
 /* PEEK BUTTON */
-/* padding replaces StackPane.alignment trick — button hugs right edge */
 .peek-btn {
   -fx-background-color: transparent;
   -fx-border-color: transparent;
@@ -24,9 +22,11 @@
   -fx-padding: 0 8 0 0;
   -fx-alignment: CENTER_RIGHT;
 }
+
 .peek-btn:hover {
   -fx-opacity: 0.8;
 }
+
 .peek-btn:pressed {
   -fx-opacity: 1;
 }

@@ -1,32 +1,21 @@
-/* File List Panel Styles */
-
-/* STATUS BAR */
 .status-label {
   -fx-text-fill: -text-color;
-  -fx-font-size: 13px; /* giảm từ 18px — dùng font-size chung với filter-bar */
+  -fx-font-size: 13px;
 }
-
-/* TABLE — giữ nguyên từ user-management.css, không duplicate */
-/* Các rule .table-view, .table-row-cell đã cover bởi theme-dark/light.css */
-/* Chỉ giữ những gì file-list-panel cần override riêng */
 
 .table-view .table-cell {
   -fx-alignment: CENTER-LEFT;
   -fx-border-color: transparent -border-color transparent transparent;
-  -fx-padding: 0 12; /* giảm từ 18 → 12 để bớt dead zone */
+  -fx-padding: 0 12;
 }
 
 .table-view .column-header-background,
 .table-view .filler,
 .table-view .column-header {
-  -fx-pref-height: 36; /* giảm từ 40 */
+  -fx-pref-height: 36;
   -fx-min-height: 36;
 }
 
 .table-view .column-header .label {
   -fx-font-size: 13px;
 }
-
-/* page-size ComboBox arrow — đã gom vào admin.css, bỏ duplicate ở đây */
-
-/* DatePicker — đã gom vào admin.css .filter-bar .date-picker, bỏ hardcode ở đây */

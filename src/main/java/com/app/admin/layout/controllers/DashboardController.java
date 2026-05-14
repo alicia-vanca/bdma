@@ -50,12 +50,16 @@ import javafx.stage.Stage;
 
 @Component
 public class DashboardController extends BaseLayoutController {
-
     @FXML
     private ListView<DeviceSummary> deviceListView;
     @FXML
     private StackPane fileListContainer;
-
+    @FXML
+    private VBox devicePanel;
+    @FXML
+    private VBox fileListPane;
+    @FXML
+    private HBox root;
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final DeviceMiniStatus deviceMiniStatus;
     private final Session session;
@@ -67,11 +71,9 @@ public class DashboardController extends BaseLayoutController {
     @Setter
     private Consumer<DeviceSummary> onRequestSync;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
-            DashboardController::sortName,
-            String.CASE_INSENSITIVE_ORDER)
+                    DashboardController::sortName, String.CASE_INSENSITIVE_ORDER)
             .thenComparing(summary -> summary.getHardwareId() == null ? "" : summary.getHardwareId(),
                     String.CASE_INSENSITIVE_ORDER);
-
     public DashboardController(ViewLoader viewLoader,
             ValidatedDeviceRepository validatedDeviceRepository,
             DeviceMiniStatus deviceMiniStatus,
@@ -320,6 +322,12 @@ public class DashboardController extends BaseLayoutController {
 
     @FXML
     public void initialize() {
+        devicePanel.prefWidthProperty().bind(
+                root.widthProperty().multiply(0.15)
+        );
+        devicePanel.maxWidthProperty().bind(
+                root.widthProperty().multiply(0.15)
+        );
         updateCellFactory();
         deviceListView.setItems(deviceItems);
         if (!deviceStateInitialized) {
