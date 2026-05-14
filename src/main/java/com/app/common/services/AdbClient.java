@@ -178,6 +178,33 @@ public class AdbClient {
     }
 
     private RunResult executeAdbCommand(String serial, Duration timeout, String... args) {
+        return executeAdbCommand(serial, timeout, false, args);
+    }
+
+    /**
+     * Execute ADB command with optional retry on MTP interference.
+     * When camera service triggers MTP mode, external storage becomes inaccessible
+     * via ADB.
+     * This method detects "No such file" errors and stops camera service before
+     * retrying.
+     */
+    private RunResult executeAdbCommand(String serial, Duration timeout, boolean isRetry, String... args) {
+        List<String> command = buildAdbCommand(serial, args);
+        String label = String.join(" ", args);
+        Duration effectiveTimeout = timeout != null ? timeout : ADB_TIMEOUT;
+
+        try {
+            RunResult result = runAdbProcess(command, label, effectiveTimeout);
+            return handleAdbResult(serial, timeout, isRetry, args, label, result);
+        } catch (IOException e) {
+            throw new AppException("ADB IO error: " + label, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AppException("ADB interrupted: " + label, e);
+        }
+    }
+
+    private List<String> buildAdbCommand(String serial, String... args) {
         String adbExecutable = adbRuntimeService.resolveAdbExecutable();
         List<String> command = new ArrayList<>();
         command.add(adbExecutable);
@@ -187,54 +214,75 @@ public class AdbClient {
             command.add(1, "-s");
             command.add(2, serial);
         }
+        return command;
+    }
 
+    private RunResult runAdbProcess(List<String> command, String label, Duration timeout)
+            throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true);
 
-        String label = String.join(" ", args);
-        Duration effectiveTimeout = timeout != null ? timeout : ADB_TIMEOUT;
+        Process process = pb.start();
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        AtomicReference<IOException> streamError = new AtomicReference<>();
 
-        try {
-            Process process = pb.start();
-            ByteArrayOutputStream sink = new ByteArrayOutputStream();
-            AtomicReference<IOException> streamError = new AtomicReference<>();
+        Thread drainer = Thread.ofPlatform().name("adb-drain-" + label).start(() -> {
+            try {
+                process.getInputStream().transferTo(sink);
+            } catch (IOException e) {
+                streamError.set(e);
+            }
+        });
 
-            Thread drainer = Thread.ofPlatform().name("adb-drain-" + label).start(() -> {
-                try {
-                    process.getInputStream().transferTo(sink);
-                } catch (IOException e) {
-                    streamError.set(e);
+        boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            drainer.join(500);
+            throw new AppException("ADB timeout (" + timeout.toSeconds() + "s): " + label);
+        }
+
+        drainer.join(1000);
+        if (streamError.get() != null)
+            throw streamError.get();
+
+        int exitCode = process.exitValue();
+        String output = sink.toString(StandardCharsets.UTF_8).trim();
+        return new RunResult(exitCode, output);
+    }
+
+    private RunResult handleAdbResult(String serial, Duration timeout, boolean isRetry,
+            String[] args, String label, RunResult result) {
+        logAdbResult(label, result);
+
+        if (shouldRetryForMtpInterference(serial, isRetry, result)) {
+            log.warn("[{}] MTP interference detected, stopping camera service and retrying: {}", serial, label);
+            if (stopCameraService(serial)) {
+                setUsbFunctionsNone(serial);
+                if (!waitUntilGraceResolved(serial)) {
+                    throw new DeviceDisconnectedException(
+                            "ADB command skipped after MTP recovery: disconnected " + serial);
                 }
-            });
-
-            boolean finished = process.waitFor(effectiveTimeout.toMillis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                drainer.join(500);
-                throw new AppException("ADB timeout (" + effectiveTimeout.toSeconds() + "s): " + label);
+                return executeAdbCommand(serial, timeout, true, args);
             }
+        }
+        return result;
+    }
 
-            drainer.join(1000);
-            if (streamError.get() != null)
-                throw streamError.get();
+    private boolean shouldRetryForMtpInterference(String serial, boolean isRetry, RunResult result) {
+        return !isRetry
+                && result.exitCode() != 0
+                && serial != null
+                && !serial.isBlank()
+                && result.output().toLowerCase().contains("no such file or directory");
+    }
 
-            int exitCode = process.exitValue();
-            String output = sink.toString(StandardCharsets.UTF_8).trim();
-            if (exitCode != 0 && log.isWarnEnabled()) {
-                log.warn("ADB command failed: {} (exitCode={}){}",
-                        label, exitCode,
-                        output.isEmpty() ? "" : ", output=" + output);
-            } else if (log.isDebugEnabled() && !output.isEmpty()) {
-                // log.debug("ADB command output for {}: {}", label, output);
-            }
-
-            return new RunResult(exitCode, output);
-
-        } catch (IOException e) {
-            throw new AppException("ADB IO error: " + label, e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AppException("ADB interrupted: " + label, e);
+    private void logAdbResult(String label, RunResult result) {
+        if (result.exitCode() != 0 && log.isWarnEnabled()) {
+            log.warn("ADB command failed: {} (exitCode={}){}",
+                    label, result.exitCode(),
+                    result.output().isEmpty() ? "" : ", output=" + result.output());
+        } else if (log.isDebugEnabled() && !result.output().isEmpty()) {
+            // log.debug("ADB command output for {}: {}", label, result.output());
         }
     }
 

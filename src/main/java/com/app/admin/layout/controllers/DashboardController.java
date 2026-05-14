@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+
+import lombok.Setter;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -14,13 +16,15 @@ import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.events.DeviceEvent;
+import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.queuemanager.controllers.QueueDialogController;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.ValidatedDeviceRepository;
-import com.app.common.services.SyncProgressTracker;
+import com.app.common.services.DeviceMiniStatus;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -41,6 +45,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.SVGPath;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 
 @Component
 public class DashboardController extends BaseLayoutController {
@@ -51,13 +57,14 @@ public class DashboardController extends BaseLayoutController {
     private StackPane fileListContainer;
 
     private final ValidatedDeviceRepository validatedDeviceRepository;
-    private final SyncProgressTracker syncProgressTracker;
+    private final DeviceMiniStatus deviceMiniStatus;
     private final Session session;
     private final ObservableList<DeviceSummary> deviceItems = FXCollections.observableArrayList();
 
     private FileListController fileListController;
     private boolean deviceStateInitialized;
     private Consumer<DeviceSummary> onRequestValidate;
+    @Setter
     private Consumer<DeviceSummary> onRequestSync;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
             DashboardController::sortName,
@@ -67,21 +74,17 @@ public class DashboardController extends BaseLayoutController {
 
     public DashboardController(ViewLoader viewLoader,
             ValidatedDeviceRepository validatedDeviceRepository,
-            SyncProgressTracker syncProgressTracker,
+            DeviceMiniStatus deviceMiniStatus,
             Session session) {
         super(viewLoader);
         this.validatedDeviceRepository = validatedDeviceRepository;
-        this.syncProgressTracker = syncProgressTracker;
+        this.deviceMiniStatus = deviceMiniStatus;
         this.session = session;
     }
 
     public void setOnRequestValidate(Consumer<DeviceSummary> callback) {
         this.onRequestValidate = callback;
         updateCellFactory();
-    }
-
-    public void setOnRequestSync(Consumer<DeviceSummary> callback) {
-        this.onRequestSync = callback;
     }
 
     private void updateCellFactory() {
@@ -244,8 +247,8 @@ public class DashboardController extends BaseLayoutController {
     private void applyConnectedStyle(DeviceSummary summary, Circle dot, Label sub) {
         dot.getStyleClass().add("dot-connected");
 
-        SyncProgressTracker.SyncProgress progress = summary.getSyncProgress();
-        SyncProgressTracker.SyncStatus status = progress.status();
+        DeviceMiniStatus.SyncProgress progress = summary.getSyncProgress();
+        DeviceMiniStatus.SyncStatus status = progress.status();
 
         sub.setText(resolveConnectedText(status, progress));
         sub.getStyleClass().add(resolveConnectedStyle(status));
@@ -253,8 +256,8 @@ public class DashboardController extends BaseLayoutController {
 
     // Display sync progress for connected devices: queued, syncing with counts, or
     // idle
-    private String resolveConnectedText(SyncProgressTracker.SyncStatus status,
-            SyncProgressTracker.SyncProgress progress) {
+    private String resolveConnectedText(DeviceMiniStatus.SyncStatus status,
+                                        DeviceMiniStatus.SyncProgress progress) {
 
         return switch (status) {
             case QUEUED -> I18n.get("dashboard.device.queued");
@@ -265,7 +268,7 @@ public class DashboardController extends BaseLayoutController {
         };
     }
 
-    private String resolveConnectedStyle(SyncProgressTracker.SyncStatus status) {
+    private String resolveConnectedStyle(DeviceMiniStatus.SyncStatus status) {
         return switch (status) {
             case QUEUED -> "device-cell-queued";
             case SYNCING -> "device-cell-syncing";
@@ -285,7 +288,7 @@ public class DashboardController extends BaseLayoutController {
         sub.getStyleClass().add("device-cell-unvalidated");
     }
 
-    private String formatProgress(SyncProgressTracker.SyncProgress progress) {
+    private String formatProgress(DeviceMiniStatus.SyncProgress progress) {
         return "(" + progress.total() + " : " + progress.passed() + " ✓  " + progress.failed() + " ✗)";
     }
 
@@ -333,6 +336,44 @@ public class DashboardController extends BaseLayoutController {
         });
     }
 
+    private Stage queueDialogStage = null;
+
+    @FXML
+    private void openQueueDialog() {
+        // Prevent opening multiple queue dialogs
+        if (queueDialogStage != null && queueDialogStage.isShowing()) {
+            queueDialogStage.toFront();
+            queueDialogStage.requestFocus();
+            return;
+        }
+
+        DialogHelper.Dialog<QueueDialogController> dialog = DialogHelper.createDialog(
+                "/fxml/common/queue/queue-dialog.fxml",
+                I18n.get("queue.dialog.title"),
+                Modality.NONE);
+
+        queueDialogStage = dialog.stage();
+
+        // Refresh queue data when dialog is shown
+        queueDialogStage.setOnShown(event -> {
+            if (dialog.controller() != null) {
+                dialog.controller().refreshAllTabs();
+            }
+        });
+
+        // Clear reference when dialog closes
+        queueDialogStage.setOnHidden(event -> queueDialogStage = null);
+
+        queueDialogStage.show();
+    }
+
+    // Close queue dialog if open
+    public void closeQueueDialog() {
+        if (queueDialogStage != null && queueDialogStage.isShowing()) {
+            queueDialogStage.close();
+        }
+    }
+
     // Clear runtime device state only when the user session ends so language or
     // tab reloads can reuse the same in-memory list.
     public void resetState() {
@@ -366,10 +407,11 @@ public class DashboardController extends BaseLayoutController {
         });
     }
 
-    // Handle device disconnection events with proper logic for both validated and unvalidated devices
+    // Handle device disconnection events with proper logic for both validated and
+    // unvalidated devices
     private void handleDisconnectedEvent(DeviceEvent event) {
         String cameraId;
-        
+
         // Try to get cameraId from validation result first
         if (event.validationResult() != null) {
             cameraId = event.validationResult().getCameraId();
@@ -377,7 +419,7 @@ public class DashboardController extends BaseLayoutController {
             // For devices without validation result, find by hardwareId
             cameraId = findCameraIdByHardwareId(event.hardwareId());
         }
-        
+
         if (cameraId != null) {
             handleDisconnected(cameraId);
         }
@@ -389,13 +431,13 @@ public class DashboardController extends BaseLayoutController {
         if (result == null) {
             return;
         }
-        
+
         // Check if device already exists in the list to avoid duplicates
         Optional<DeviceSummary> existing = findByCameraId(result.getCameraId());
         if (existing.isPresent()) {
             return;
         }
-        
+
         addTransientDevice(result);
     }
 
@@ -435,7 +477,7 @@ public class DashboardController extends BaseLayoutController {
                 result.getCameraId(),
                 result.getCameraId(),
                 DeviceSummary.Status.UNVALIDATED,
-                SyncProgressTracker.SyncProgress.idle(),
+                DeviceMiniStatus.SyncProgress.idle(),
                 result));
         sortDeviceItems();
     }
@@ -457,7 +499,7 @@ public class DashboardController extends BaseLayoutController {
         }
 
         summary.setStatus(DeviceSummary.Status.OFFLINE);
-        summary.setSyncProgress(SyncProgressTracker.SyncProgress.idle());
+        summary.setSyncProgress(DeviceMiniStatus.SyncProgress.idle());
         deviceListView.refresh();
     }
 
@@ -475,11 +517,11 @@ public class DashboardController extends BaseLayoutController {
                 .orElse(null);
     }
 
-    private SyncProgressTracker.SyncProgress resolveSyncProgress(DeviceSummary summary) {
+    private DeviceMiniStatus.SyncProgress resolveSyncProgress(DeviceSummary summary) {
         if (summary.getHardwareId() == null) {
-            return SyncProgressTracker.SyncProgress.idle();
+            return DeviceMiniStatus.SyncProgress.idle();
         }
-        return syncProgressTracker.getProgress(summary.getHardwareId());
+        return deviceMiniStatus.getProgress(summary.getHardwareId());
     }
 
     // Re-resolve sync state only for devices represented by persisted records.
@@ -542,7 +584,7 @@ public class DashboardController extends BaseLayoutController {
                 device.getDeviceName(),
                 device.getCameraId(),
                 DeviceSummary.Status.OFFLINE,
-                SyncProgressTracker.SyncProgress.idle(),
+                DeviceMiniStatus.SyncProgress.idle(),
                 null);
         summary.setSyncProgress(resolveSyncProgress(summary));
         return summary;
@@ -590,9 +632,8 @@ public class DashboardController extends BaseLayoutController {
             }
         }
 
-        deviceItems.removeIf(summary ->
-                summary.getStatus() == DeviceSummary.Status.OFFLINE
-                        && !dbCameraIds.contains(summary.getCameraId()));
+        deviceItems.removeIf(summary -> summary.getStatus() == DeviceSummary.Status.OFFLINE
+                && !dbCameraIds.contains(summary.getCameraId()));
 
         sortDeviceItems();
     }

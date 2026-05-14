@@ -2,6 +2,7 @@ package com.app.common.modules.databackup.services;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ public class DataBackupService {
     private final DataBackupQueue dataBackupQueue;
     private final ApplicationEventPublisher publisher;
     private final Session session;
+    private final AtomicBoolean recoveryInProgress = new AtomicBoolean(false);
 
     public DataBackupService(FileRepository fileRepo,
             DataBackupQueue dataBackupQueue,
@@ -52,24 +54,46 @@ public class DataBackupService {
     }
 
     @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.HOURS)
-    public void recoverPendingBackups() {
-        // Skip recovery if user is not logged in
+    public void scheduledRecovery() {
+        // Periodically fire StorageRestoredEvent so the worker retries deferred files
+        // even if no real drive event occurred (e.g. drive was re-plugged silently).
         if (session.getUser() == null) {
             return;
         }
-
-        // Re-open backup attempts once per recovery window so user can be notified
-        // again if backup storage is still unavailable.
         publisher.publishEvent(new StorageRestoredEvent(FolderType.BACKUP));
+    }
 
-        List<String> pending = fileRepo.loadPendingBackup();
-
-        if (pending.isEmpty()) {
-            log.debug("Recovery scan: no pending backup files found.");
+    /**
+     * Queries the database for files that have been synced but not yet backed up
+     * and re-enqueues them. Called on storage restore and by the periodic
+     * scheduler.
+     */
+    public void recoverPendingBackups() {
+        // Prevent overlapping scans when multiple triggers fire close together.
+        if (!recoveryInProgress.compareAndSet(false, true)) {
+            if (log.isDebugEnabled()) {
+                log.debug("Recovery scan already running, skip overlapping trigger.");
+            }
             return;
         }
 
-        log.info("Recovery scan: found {} file(s) pending backup, enqueuing...", pending.size());
-        pending.forEach(dataBackupQueue::add);
+        try {
+            // Skip recovery if user is not logged in
+            if (session.getUser() == null) {
+                return;
+            }
+
+            List<String> pending = fileRepo.loadPendingBackup();
+
+            if (pending.isEmpty()) {
+                log.debug("Recovery scan: no pending backup files found.");
+                return;
+            }
+
+            log.info("Recovery scan: found {} file(s) pending backup, enqueuing...", pending.size());
+            pending.forEach(dataBackupQueue::add);
+        } finally {
+            recoveryInProgress.set(false);
+        }
     }
 }

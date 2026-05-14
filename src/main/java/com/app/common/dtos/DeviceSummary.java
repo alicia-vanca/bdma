@@ -1,6 +1,6 @@
 package com.app.common.dtos;
 
-import com.app.common.services.SyncProgressTracker;
+import com.app.common.services.DeviceMiniStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -19,7 +19,7 @@ public class DeviceSummary {
     private String deviceName;
     private String cameraId;
     private Status status;
-    private SyncProgressTracker.SyncProgress syncProgress;
+    private DeviceMiniStatus.SyncProgress syncProgress;
     private DeviceValidationResult validationResult;
 
     public boolean isConnected() {

@@ -1,23 +1,5 @@
 package com.app.common.helpers;
 
-import com.app.MainApp;
-import com.app.common.utils.StageUtil;
-
-import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.Label;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
-import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -27,7 +9,27 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.app.MainApp;
+import com.app.common.utils.StageUtil;
+
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Label;
+import javafx.scene.control.OverrunStyle;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
 
 public final class AlertHelper {
 
@@ -37,6 +39,10 @@ public final class AlertHelper {
     public record DialogText(String title, String header, String content) {
     }
 
+    // Table column configuration for two-column tables
+    public record TableColumns(String col1Name, String col1Property, String col2Name, String col2Property) {
+    }
+
     private static final String LOGO_PATH = "/image/logo.png";
 
     // UI Layout Constants
@@ -44,10 +50,15 @@ public final class AlertHelper {
     private static final int DIALOG_PADDING = 10;
     private static final int TABLE_COLUMN_WIDTH = 300;
     private static final int TABLE_SCROLL_HEIGHT = 400;
-    private static final int TABLE_ROW_HEIGHT = 32;
-    private static final int TABLE_HEADER_HEIGHT = 28;
-    private static final int DIALOG_PREFERRED_WIDTH = 700;
+    // actual row height after CSS is applied, used for dynamic height calculation
+    private static final double TABLE_ROW_HEIGHT = 36.8; 
+    private static final double TABLE_HEADER_HEIGHT = 46;
+
+    private static final int DIALOG_PREFERRED_WIDTH = 1100;
     private static final int LOGO_SIZE = 48;
+    private static final double SCREEN_SIZE_RATIO = 0.8;
+    private static final double DIALOG_MIN_WIDTH = 360;
+    private static final double DIALOG_HORIZONTAL_PADDING = 150;
 
     private AlertHelper() {
         throw new UnsupportedOperationException("Utility class");
@@ -86,22 +97,36 @@ public final class AlertHelper {
     }
 
     /**
-     * Show a blocking alert dialog with a scrollable table of items.
-     * Use this for displaying lists of failed items or detailed reports.
+     * Show a blocking alert dialog with a scrollable table and custom buttons.
+     * Optional callback runs when the primary action is selected.
      */
-    public static <T> void showAlertWithTable(DialogText dialogText, List<T> items,
-            String col1Name, String col1Property, String col2Name, String col2Property) {
+    public static <T> void showAlertWithTable(DialogText dialogText, List<T> items, TableColumns columns,
+            ButtonType primaryButton, ButtonType secondaryButton, Runnable onPrimarySelected) {
         if (items == null || items.isEmpty()) {
             return;
         }
 
         Platform.runLater(() -> {
             Alert alert = createInformation(dialogText.title(), dialogText.header(), dialogText.content());
-            TableView<T> table = createTable(items, col1Name, col1Property, col2Name, col2Property);
+            alert.setResizable(true);
+
+            if (secondaryButton != null) {
+                setButtons(alert, primaryButton, secondaryButton);
+            } else {
+                setButtons(alert, primaryButton);
+            }
+            TableView<T> table = createTable(items, columns);
             VBox tableContent = createTableContent(dialogText.content(), table);
             alert.getDialogPane().setContent(tableContent);
             alert.getDialogPane().setPrefWidth(DIALOG_PREFERRED_WIDTH);
-            alert.showAndWait();
+
+            var chosen = alert.showAndWait();
+            if (primaryButton != null
+                    && chosen.isPresent()
+                    && chosen.get() == primaryButton
+                    && onPrimarySelected != null) {
+                onPrimarySelected.run();
+            }
         });
     }
 
@@ -112,28 +137,6 @@ public final class AlertHelper {
         alert.setTitle(title);
         alert.setHeaderText(header);
         alert.setContentText(content);
-        return alert;
-    }
-
-    public static Alert createWithScroll(Alert.AlertType type, String title, String header, String content) {
-        Alert alert = new Alert(type);
-        configure(alert);
-        alert.setTitle(title);
-        alert.setHeaderText(header);
-
-        // Dùng ScrollPane thay vì contentText
-        Label lblContent = new Label(content);
-        lblContent.setWrapText(true);
-        lblContent.setMaxWidth(500);
-
-        ScrollPane scrollPane = new ScrollPane(lblContent);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefHeight(200);
-        scrollPane.setMaxHeight(300);
-        scrollPane.setStyle("-fx-background-color: transparent;");
-
-        alert.getDialogPane().setContent(scrollPane);
-
         return alert;
     }
 
@@ -176,6 +179,13 @@ public final class AlertHelper {
 
         alert.getDialogPane().getStyleClass().add("app-alert");
         alert.setGraphic(createLogoGraphic());
+
+        // Keep alerts under a screen-relative max while still allowing content-driven
+        // width.
+        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        double maxWidth = screenBounds.getWidth() * SCREEN_SIZE_RATIO;
+        alert.getDialogPane().setMaxWidth(maxWidth);
+
         alert.setOnShown(event -> {
             Scene scene = alert.getDialogPane().getScene();
             if (scene == null || scene.getWindow() == null) {
@@ -187,6 +197,8 @@ public final class AlertHelper {
 
             if (scene.getWindow() instanceof Stage stage) {
                 StageUtil.applyAppIcon(stage);
+                applyDynamicContentWidth(alert, stage);
+                applyScreenSizeLimit(stage);
             } else if (log.isDebugEnabled()) {
                 log.debug("Skip applying app icon: dialog window is not a Stage ({})",
                         scene.getWindow().getClass().getName());
@@ -194,19 +206,80 @@ public final class AlertHelper {
         });
     }
 
+    // Compute dialog width from the longest content line while keeping no-wrap
+    // labels.
+    private static void applyDynamicContentWidth(Alert alert, Stage stage) {
+        String contentText = alert.getContentText();
+        if (contentText == null || contentText.isBlank()) {
+            return;
+        }
+
+        // Preserve custom content nodes (for example table dialogs).
+        if (alert.getDialogPane().getContent() != null && !(alert.getDialogPane().getContent() instanceof Label)) {
+            return;
+        }
+
+        Label contentLabel = new Label(contentText);
+        contentLabel.setMinWidth(Region.USE_PREF_SIZE);
+        contentLabel.setPrefWidth(Region.USE_COMPUTED_SIZE);
+        contentLabel.setWrapText(false);
+        contentLabel.setTextOverrun(OverrunStyle.CLIP);
+        contentLabel.getStyleClass().add("content");
+
+        alert.getDialogPane().setContent(contentLabel);
+
+        // Ensure CSS metrics are applied before width calculation.
+        alert.getDialogPane().applyCss();
+        alert.getDialogPane().layout();
+
+        double maxWidth = Screen.getPrimary().getVisualBounds().getWidth() * SCREEN_SIZE_RATIO;
+        double measuredContentWidth = contentLabel.prefWidth(-1);
+
+        Region headerLabel = (Region) alert.getDialogPane().lookup(".header-panel .label");
+        double measuredHeaderWidth = headerLabel == null ? 0 : headerLabel.prefWidth(-1);
+
+        Region buttonContainer = (Region) alert.getDialogPane().lookup(".button-bar > .container");
+        double measuredButtonWidth = buttonContainer == null ? 0 : buttonContainer.prefWidth(-1);
+
+        double preferredWidth = Math.max(Math.max(measuredContentWidth, measuredHeaderWidth), measuredButtonWidth)
+                + DIALOG_HORIZONTAL_PADDING;
+        double targetWidth = Math.clamp(preferredWidth, DIALOG_MIN_WIDTH, maxWidth);
+
+        alert.getDialogPane().setMinWidth(Region.USE_PREF_SIZE);
+        alert.getDialogPane().setPrefWidth(targetWidth);
+        alert.getDialogPane().setMaxWidth(maxWidth);
+        stage.setMinWidth(Math.min(targetWidth, maxWidth));
+        stage.sizeToScene();
+    }
+
+    // Limit dialog initial size to 80% of screen dimensions
+    private static void applyScreenSizeLimit(Stage stage) {
+        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        double maxWidth = screenBounds.getWidth() * SCREEN_SIZE_RATIO;
+        double maxHeight = screenBounds.getHeight() * SCREEN_SIZE_RATIO;
+
+        if (stage.getWidth() > maxWidth) {
+            stage.setWidth(maxWidth);
+        }
+        if (stage.getHeight() > maxHeight) {
+            stage.setHeight(maxHeight);
+        }
+    }
+
     // Create table with two columns for displaying item details
-    private static <T> TableView<T> createTable(List<T> items, String col1Name, String col1Property,
-            String col2Name, String col2Property) {
+    private static <T> TableView<T> createTable(List<T> items, TableColumns columns) {
         TableView<T> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
 
-        TableColumn<T, String> col1 = new TableColumn<>(col1Name);
-        col1.setCellValueFactory(new PropertyValueFactory<>(col1Property));
+        TableColumn<T, String> col1 = new TableColumn<>(columns.col1Name());
+        col1.setCellValueFactory(new PropertyValueFactory<>(columns.col1Property()));
         col1.setPrefWidth(TABLE_COLUMN_WIDTH);
+        col1.setStyle("-fx-padding: 5 10;");
 
-        TableColumn<T, String> col2 = new TableColumn<>(col2Name);
-        col2.setCellValueFactory(new PropertyValueFactory<>(col2Property));
+        TableColumn<T, String> col2 = new TableColumn<>(columns.col2Name());
+        col2.setCellValueFactory(new PropertyValueFactory<>(columns.col2Property()));
         col2.setPrefWidth(TABLE_COLUMN_WIDTH);
+        col2.setStyle("-fx-padding: 5 10;");
 
         table.getColumns().add(col1);
         table.getColumns().add(col2);
@@ -225,13 +298,14 @@ public final class AlertHelper {
             headerLabel.setStyle("-fx-font-weight: bold;");
             content.getChildren().add(headerLabel);
         }
-
-        // Calculate dynamic height based on number of rows, capped at max height
+        // Set initial height based on row count, capped at max height
         int rowCount = table.getItems().size();
-        int calculatedHeight = TABLE_HEADER_HEIGHT + (rowCount * TABLE_ROW_HEIGHT) + rowCount; // +1px border per row
-        int tableHeight = Math.min(calculatedHeight, TABLE_SCROLL_HEIGHT);
+        double calculatedHeight = TABLE_HEADER_HEIGHT + (rowCount * TABLE_ROW_HEIGHT);
+        double initialHeight = Math.min(calculatedHeight, TABLE_SCROLL_HEIGHT);
 
-        table.setPrefHeight(tableHeight);
+        table.setPrefHeight(initialHeight);
+        table.setMaxHeight(Double.MAX_VALUE);
+        VBox.setVgrow(table, javafx.scene.layout.Priority.ALWAYS);
 
         content.getChildren().add(table);
         return content;

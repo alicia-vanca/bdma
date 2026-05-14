@@ -14,7 +14,7 @@
         </HBox>
         <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers"/>
         <ComboBox fx:id="typeFilterCombo"/>
-        <Button text="%common.reset" onAction="#clearFilter" styleClass="btn-secondary"/>
+        <Button text="%filter.reset" onAction="#clearFilter" styleClass="btn-secondary"/>
     </HBox>
     <TableView fx:id="fileTable" VBox.vgrow="ALWAYS" fixedCellSize="40">
         <columnResizePolicy>

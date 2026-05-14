@@ -406,7 +406,25 @@ public class FolderManagerService {
         if (targetParent != null) {
             ensureBdmaDirState(targetParent.toString());
         }
-        Files.copy(sourcePath, target, StandardCopyOption.REPLACE_EXISTING);
+
+        // Copy to temporary file first
+        Path tempTarget = Path.of(target.toString() + AppConstants.TMP_EXTENSION);
+        Files.copy(sourcePath, tempTarget, StandardCopyOption.REPLACE_EXISTING);
+
+        // Validate temporary file matches source before renaming
+        long sourceSize = Files.size(sourcePath);
+        long tempSize = Files.size(tempTarget);
+        if (sourceSize != tempSize) {
+            Files.deleteIfExists(tempTarget);
+            throw new IOException("Size mismatch after copy: expected " + sourceSize + " but got " + tempSize);
+        }
+
+        // Rename temporary file to final name
+        Files.move(tempTarget, target, StandardCopyOption.REPLACE_EXISTING);
+
+        // Generate hash files for the final file
+        FolderSecurityService.generateBackupHashFiles(target);
+
         log.info("Backed up to backup dir: {}", relativeFromData);
         return target.toString();
     }
