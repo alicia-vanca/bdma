@@ -38,6 +38,8 @@ import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
 import javafx.util.StringConverter;
 import lombok.Setter;
 
@@ -81,9 +83,17 @@ public class FileListController {
     @FXML
     private Button btnNext;
     @FXML
-    private Label lblPageInfo;
-    @FXML
     private ComboBox<Integer> cbPageSize;
+    @FXML
+    private TextField txtPageNumber;
+    @FXML
+    private Label lblPageTotal;
+    @FXML
+    private HBox pageButtonsBox;
+    @FXML
+    private Button btnFirst;
+    @FXML
+    private Button btnLast;
 
     private final FileService fileService;
     private final UserService userService;
@@ -128,21 +138,18 @@ public class FileListController {
     public void initialize() {
         setupColumns();
         setupDatePickers();
-
         boolean isAdmin = session.isAdmin();
         userFilterCombo.setVisible(isAdmin);
         userFilterCombo.setManaged(isAdmin);
-
         if (isAdmin) {
             loadUsers();
         }
         loadTypes();
         setupPageSizeComboBox();
+        setupPageNumberInput();
         restoreFilterState();
         initializing = true;
-
         setupAutoFilter();
-
         initializing = false;
         this.activeCameraId = filterState.get().getCameraId();
         refresh(buildFilter());
@@ -220,12 +227,19 @@ public class FileListController {
 
     private void setupColumns() {
         colName.setCellValueFactory(c -> new SimpleStringProperty(formatFileName(c.getValue())));
+        colName.setSortable(false);
         colDevice.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().deviceName()));
+        colDevice.setSortable(false);
         colUser.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().username()));
+        colUser.setSortable(false);
         colSize.setCellValueFactory(c -> new SimpleStringProperty(formatSize(c.getValue().fileSize())));
+        colSize.setSortable(false);
         colStatus.setCellValueFactory(c -> new SimpleStringProperty(formatStatus(c.getValue().status())));
+        colStatus.setSortable(false);
         colType.setCellValueFactory(c -> new SimpleStringProperty(formatType(c.getValue().type())));
+        colType.setSortable(false);
         colDate.setCellValueFactory(c -> new SimpleStringProperty(formatDate(c.getValue().createDate())));
+        colDate.setSortable(false);
     }
 
     // Format file name with verification status (non-blocking)
@@ -234,7 +248,7 @@ public class FileListController {
         String syncedPath = fileView.syncedPath();
 
         if (syncedPath == null || syncedPath.isEmpty()) {
-            return "(MISSING) " + fileName;
+            return "(MISSING) " + shortenFileName(fileName);
         }
 
         // Check cache first
@@ -249,10 +263,10 @@ public class FileListController {
 
         // Return based on cached status
         return switch (status) {
-            case CHECKING -> fileName;
-            case MISSING -> "(MISSING) " + fileName;
-            case ERROR -> "(ERROR) " + fileName;
-            case EXISTS -> fileName;
+            case CHECKING -> shortenFileName(fileName);
+            case MISSING -> "(MISSING) " + shortenFileName(fileName);
+            case ERROR -> "(ERROR) " + shortenFileName(fileName);
+            case EXISTS -> shortenFileName(fileName);
         };
     }
 
@@ -346,9 +360,98 @@ public class FileListController {
     }
 
     private void updatePagerControls(int pageCount) {
+        btnFirst.setDisable(currentPageIndex <= 0);
         btnPrev.setDisable(currentPageIndex <= 0);
         btnNext.setDisable(currentPageIndex >= pageCount - 1);
-        lblPageInfo.setText(I18n.get("common.page") + " " + (currentPageIndex + 1) + " / " + pageCount);
+        btnLast.setDisable(currentPageIndex >= pageCount - 1);
+        lblPageTotal.setText("/ " + pageCount);
+        txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+        buildPageButtons(pageCount);
+    }
+
+    @FXML
+    private void onFirstPage() {
+        if (currentPageIndex > 0) {
+            currentPageIndex = 0;
+            setupPagination();
+        }
+    }
+
+    @FXML
+    private void onLastPage() {
+        int last = getPageCount() - 1;
+        if (currentPageIndex < last) {
+            currentPageIndex = last;
+            setupPagination();
+        }
+    }
+
+    private void buildPageButtons(int pageCount) {
+        pageButtonsBox.getChildren().clear();
+
+        List<Integer> pages = getPageRange(pageCount);
+        for (int page : pages) {
+            Button btn = new Button(String.valueOf(page + 1));
+            btn.getStyleClass().add("btn-secondary");
+            if (page == currentPageIndex) {
+                btn.getStyleClass().add("btn-page-active");
+            }
+            int target = page;
+            btn.setOnAction(e -> {
+                currentPageIndex = target;
+                setupPagination();
+            });
+            pageButtonsBox.getChildren().add(btn);
+        }
+    }
+
+    private List<Integer> getPageRange(int pageCount) {
+        if (pageCount <= 7) {
+            List<Integer> pages = new ArrayList<>();
+            for (int i = 0; i < pageCount; i++) pages.add(i);
+            return pages;
+        }
+
+        int start = currentPageIndex - 3;
+        int end = currentPageIndex + 3;
+
+        if (start < 0) {
+            start = 0;
+            end = 6;
+        }
+        if (end >= pageCount) {
+            end = pageCount - 1;
+            start = end - 6;
+        }
+
+        List<Integer> pages = new ArrayList<>();
+        for (int i = start; i <= end; i++) pages.add(i);
+        return pages;
+    }
+
+    private void setupPageNumberInput() {
+        txtPageNumber.setOnAction(e -> jumpToPage());
+        txtPageNumber.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            boolean focused = isFocused;
+            if (!focused) {
+                jumpToPage();
+            }
+        });
+    }
+
+    private void jumpToPage() {
+        try {
+            int page = Integer.parseInt(txtPageNumber.getText().trim());
+            int target = Math.clamp(page, 1, getPageCount()) - 1;
+            if (target != currentPageIndex) {
+                currentPageIndex = target;
+                setupPagination();
+            } else {
+                txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+            }
+        } catch (NumberFormatException ignored) {
+            txtPageNumber.setText(String.valueOf(currentPageIndex + 1));
+        }
     }
 
     private int getPageCount() {
@@ -539,5 +642,23 @@ public class FileListController {
         verificationExecutor.shutdownNow();
         fileVerificationCache.clear();
         log.debug("FileListController cleanup: executor shutdown, cache cleared");
+    }
+
+    private String shortenFileName(String fileName) {
+        if (fileName == null) return "";
+        int dotIndex = fileName.lastIndexOf('.');
+        String ext = dotIndex >= 0 ? fileName.substring(dotIndex) : "";
+        String name = dotIndex >= 0 ? fileName.substring(0, dotIndex) : fileName;
+        String[] parts = name.split("_");
+
+        if (parts.length < 5) {
+            return fileName;
+        }
+        StringBuilder sb = new StringBuilder(parts[0]);
+        for (int i = 3; i < parts.length; i++) {
+            sb.append('_').append(parts[i]);
+        }
+        sb.append(ext);
+        return sb.toString();
     }
 }

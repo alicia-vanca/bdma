@@ -137,13 +137,15 @@ public class MainApp extends Application {
     public static void showLogin() {
         primaryStage.setMaximized(false);
         primaryStage.setResizable(false);
-        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 600, 525);
+        primaryStage.setMinWidth(0);
+        primaryStage.setMinHeight(0);
+        loadAndNavigate(ViewPaths.LOGIN, "BDMA", 480, 420);
     }
 
     public static void showAdmin() {
         primaryStage.setResizable(true);
-        // Change w1200 > w1201 fix a rounding issue that cause buttons misalignment
-        // between scenes
+        primaryStage.setMinWidth(800);
+        primaryStage.setMinHeight(500);
         loadAndNavigate(ViewPaths.ADMIN_LAYOUT, "BDMA", 1201, 800);
         primaryStage.setMaximized(true);
     }

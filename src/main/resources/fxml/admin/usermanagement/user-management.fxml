@@ -1,23 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.geometry.Insets?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
 <StackPane fx:id="root"
-      xmlns="http://javafx.com/javafx/21"
-      xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.app.admin.usermanagement.controllers.UserManagementController"
-    stylesheets="@/css/admin.css,@/css/admin/usermanagement/user-management.css"
-      styleClass="content">
-    <padding>
-        <Insets top="0" right="0" bottom="0" left="0"/>
-    </padding>
-    <VBox spacing="23">
-        <Label text="%user.title" styleClass="title"/>
-        <HBox spacing="10" alignment="CENTER_LEFT" prefHeight="34" minHeight="34" maxHeight="34" styleClass="filter-bar">
-            <TextField fx:id="txtSearch" promptText="%user.search" styleClass="input"/>
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.admin.usermanagement.controllers.UserManagementController"
+           styleClass="content">
+    <VBox spacing="12">
+        <HBox spacing="8" alignment="CENTER_LEFT" styleClass="filter-bar">
+            <TextField fx:id="txtSearch" promptText="%user.search"
+                       styleClass="input" HBox.hgrow="ALWAYS"/>
             <ComboBox fx:id="cbRole" promptText="%filter.allRoles"/>
             <ComboBox fx:id="cbStatus" promptText="%filter.allStatus"/>
-            <Button text="%filter.reset" onAction="#onReset" styleClass="btn-secondary"/>
+            <Button text="%filter.reset"  onAction="#onReset" styleClass="btn-secondary"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Button text="%user.add" onAction="#onAdd" styleClass="btn-primary"/>
         </HBox>
@@ -33,16 +35,18 @@
                 <TableColumn fx:id="colAction" text="%common.action" prefWidth="40" sortable="false"/>
             </columns>
         </TableView>
-        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="pagination-bar">
+        <HBox alignment="CENTER_LEFT" spacing="8" styleClass="pagination-bar">
             <Label text="%common.show"/>
-            <ComboBox fx:id="cbPageSize" prefWidth="70" styleClass="page-size-combo"/>
+            <ComboBox fx:id="cbPageSize" styleClass="page-size-combo"/>
             <Label text="%common.per.page"/>
             <Region HBox.hgrow="ALWAYS"/>
-            <Button fx:id="btnPrev" text="%common.prev" onAction="#onPrevPage"
-                    styleClass="btn-secondary"/>
-            <Label fx:id="lblPageInfo" text="%common.page"/>
-            <Button fx:id="btnNext" text="%common.next" onAction="#onNextPage"
-                    styleClass="btn-secondary"/>
+            <Button fx:id="btnFirst" text="«" onAction="#onFirstPage" styleClass="btn-secondary"/>
+            <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary"/>
+            <HBox fx:id="pageButtonsBox" spacing="4" alignment="CENTER"/>
+            <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary"/>
+            <Button fx:id="btnLast" text="»" onAction="#onLastPage" styleClass="btn-secondary"/>
+            <TextField fx:id="txtPageNumber" styleClass="page-number-input" promptText="1"/>
+            <Label fx:id="lblPageTotal" styleClass="page-total-label"/>
         </HBox>
     </VBox>
 </StackPane>

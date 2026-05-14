@@ -1,35 +1,32 @@
 .form {
-    -fx-background-color: -card-bg;
+  -fx-background-color: -card-bg;
 }
 
-/* TEXT */
-.title {
-    -fx-text-fill: -text-color;
-}
-
+/* READ-ONLY VALUE */
 .account-readonly-value {
-    -fx-text-fill: -text-color;
-    -fx-font-weight: 600;
+  -fx-text-fill: -text-color;
+  -fx-font-weight: 600;
+  -fx-padding: 8 0;
 }
 
 /* ERROR */
 .error {
-    -fx-text-fill: -danger;
+  -fx-text-fill: -danger;
 }
 
 /* PEEK BUTTON */
 .peek-btn {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-cursor: hand;
-    -fx-padding: 8;
-    -fx-alignment: center-right;
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
+  -fx-cursor: hand;
+  -fx-padding: 0 8 0 0;
+  -fx-alignment: CENTER_RIGHT;
 }
 
 .peek-btn:hover {
-    -fx-opacity: 0.8;
+  -fx-opacity: 0.8;
 }
 
 .peek-btn:pressed {
-    -fx-opacity: 1.0;
+  -fx-opacity: 1;
 }

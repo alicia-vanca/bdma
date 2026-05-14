@@ -21,6 +21,5 @@ public class NavigationHelper {
         Scene scene = MainApp.getScene();
         scene.setRoot(root);
         CssLoader.applyAdmin(scene);
-        ThemeManager.apply(scene);
     }
 }

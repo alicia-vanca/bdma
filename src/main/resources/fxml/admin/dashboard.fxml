@@ -1,18 +1,22 @@
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
 <?import javafx.geometry.Insets?>
-<HBox xmlns:fx="http://javafx.com/fxml/1"
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.control.Button?>
+<HBox fx:id="root" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.layout.controllers.DashboardController"
       styleClass="content">
-    <VBox styleClass="device-panel" minWidth="230" maxWidth="230">
-        <padding>
-            <Insets top="0" right="12" bottom="0" left="0"/>
-        </padding>
+    <VBox fx:id="devicePanel" styleClass="device-panel" HBox.hgrow="NEVER">
         <Label text="%dashboard.devices" styleClass="panel-title"/>
         <ListView fx:id="deviceListView" VBox.vgrow="ALWAYS"/>
     </VBox>
     <Separator orientation="VERTICAL"/>
-    <VBox spacing="23" HBox.hgrow="ALWAYS" alignment="TOP_LEFT">
+    <VBox fx:id="fileListPane" spacing="16" HBox.hgrow="ALWAYS" alignment="TOP_LEFT" styleClass="file-list-pane">
         <padding>
             <Insets top="0" right="0" bottom="0" left="18"/>
         </padding>

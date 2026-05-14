@@ -1,58 +1,88 @@
 .root {
-    -fx-background-color: -app-bg;
+  -fx-background-color: -card-bg;
+}
+
+.root > .vbox,
+.login-card-wrapper {
+  -fx-background-color: transparent;
 }
 
 .login-card {
-    -fx-background-color: -card-bg;
-    -fx-max-width: 750;
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-pref-width: 380;
+    -fx-max-width: 420;
+    -fx-padding: 16 40 40 40;
+    -fx-effect: null;
 }
 
-/* TEXT */
 .title {
-    -fx-text-fill: -text-color;
+  -fx-text-fill: -text-color;
+  -fx-font-size: 20px;
+  -fx-font-weight: bold;
+  -fx-padding: 0 0 8 0;
 }
 
-/* INPUT */
-.input {
-    -fx-background-color: -input-bg;
-    -fx-border-color: -border-color;
+.login-card .text-field,
+.login-card .password-field {
+  -fx-pref-height: 38;
+  -fx-min-height: 38;
+  -fx-max-height: 38;
+  -fx-font-size: 13px;
+  -fx-padding: 0 10;
+  -fx-background-color: -input-bg;
+  -fx-border-color: -border-color;
+  -fx-background-radius: 6;
+  -fx-border-radius: 6;
 }
 
-.input:focused {
-    -fx-background-color: -input-focus-bg;
-    -fx-border-color: -primary;
+.login-card .text-field:focused,
+.login-card .password-field:focused {
+  -fx-background-color: -input-focus-bg;
+  -fx-border-color: -primary;
 }
 
-/* BUTTON */
+.login-card .stack-pane {
+  -fx-pref-height: 38;
+  -fx-min-height: 38;
+  -fx-max-height: 38;
+}
+
 .login-btn {
-    -fx-background-color: -primary;
-    -fx-text-fill: white;
-    -fx-background-radius: 6;
+  -fx-background-color: -primary;
+  -fx-text-fill: white;
+  -fx-background-radius: 6;
+  -fx-pref-height: 38;
+  -fx-font-size: 13px;
+  -fx-font-weight: 600;
+  -fx-cursor: hand;
 }
 
 .login-btn:hover {
-    -fx-background-color: -primary-hover;
+  -fx-background-color: -primary-hover;
 }
 
-/* ERROR */
 .message-error {
-    -fx-text-fill: -danger;
+  -fx-text-fill: -danger;
+  -fx-font-size: 12px;
 }
 
-/* PEEK BUTTON */
 .peek-btn {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-cursor: hand;
-    -fx-padding: 8;
-    -fx-alignment: center-right;
-    -fx-opacity: 0.6;
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
+  -fx-cursor: hand;
+  -fx-padding: 0 8 0 0;
+  -fx-alignment: CENTER_RIGHT;
+  -fx-opacity: 0.6;
 }
 
 .peek-btn:hover {
-    -fx-opacity: 0.8;
+  -fx-opacity: 0.8;
 }
 
 .peek-btn:pressed {
-    -fx-opacity: 1.0;
+  -fx-opacity: 1;
 }
