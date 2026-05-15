@@ -33,6 +33,7 @@ public class AppConfigService {
         String key = switch (folderType) {
             case SYNC -> AppConstants.KEY_DATA_DIR;
             case BACKUP -> AppConstants.KEY_BACKUP_DIR;
+            default -> AppConstants.KEY_EXPORT_DIR;
         };
         return repository.findValue(key).orElse(null);
     }
@@ -51,6 +52,7 @@ public class AppConfigService {
         String key = switch (folderType) {
             case SYNC -> AppConstants.KEY_DATA_DIR;
             case BACKUP -> AppConstants.KEY_BACKUP_DIR;
+            default -> AppConstants.KEY_EXPORT_DIR;
         };
         saveConfigValue(key, value);
     }

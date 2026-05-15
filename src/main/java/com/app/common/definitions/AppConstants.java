@@ -31,8 +31,22 @@ public final class AppConstants {
     // ────────────── App configs ──────────────
     public static final String SYNC_FOLDER_NAME = "sync_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
     public static final String BACKUP_FOLDER_NAME = "backup_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
+    public static final String EXPORT_FOLDER_NAME = "export_bdma";
     public static final String KEY_DATA_DIR = "dataSync.dataDir";
     public static final String KEY_BACKUP_DIR = "dataBackup.backupDir";
+    public static final String KEY_EXPORT_DIR = "dataExport.exportDir";
+    // Per-user key stored in user_config; remembers the last directory chosen in
+    // the export picker.
+    public static final String KEY_USER_LAST_EXPORT_DIR = "export.lastDir";
+    // Per-user key stored in user_config; the configured default export directory
+    // shown and set on the settings page.
+    public static final String KEY_USER_EXPORT_DIR = "user.export.dir";
+    // Per-user key stored in user_config; tracks whether the user wants to be
+    // prompted for an export location on every export action.
+    public static final String KEY_USER_ASK_EVERY_TIME_EXPORT = "user.export.askEveryTime";
+    // Per-user key stored in user_config; remembers the last directory opened in
+    // any file/folder picker.
+    public static final String KEY_USER_LAST_OPEN_PATH = "picker.lastOpenPath";
     public static final String KEY_IS_AUTO_DELETE_AFTER_SYNC = "dataSync.isAutoDeleteAfterSync";
     public static final String KEY_IS_START_WITH_WINDOWS = "appConfig.isStartWithWindows";
     public static final String KEY_LANGUAGE = "appConfig.language";

@@ -458,6 +458,7 @@ public class UserManagementController {
         for (int page : pages) {
             Button btn = new Button(String.valueOf(page + 1));
             btn.getStyleClass().add("btn-secondary");
+            btn.getStyleClass().add("btn-pagination");
             if (page == currentPageIndex) {
                 btn.getStyleClass().add("btn-page-active");
             }
@@ -473,7 +474,8 @@ public class UserManagementController {
     private List<Integer> getPageRange(int pageCount) {
         if (pageCount <= 7) {
             List<Integer> pages = new ArrayList<>();
-            for (int i = 0; i < pageCount; i++) pages.add(i);
+            for (int i = 0; i < pageCount; i++)
+                pages.add(i);
             return pages;
         }
 
@@ -490,7 +492,8 @@ public class UserManagementController {
         }
 
         List<Integer> pages = new ArrayList<>();
-        for (int i = start; i <= end; i++) pages.add(i);
+        for (int i = start; i <= end; i++)
+            pages.add(i);
         return pages;
     }
 

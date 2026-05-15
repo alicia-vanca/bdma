@@ -109,6 +109,14 @@ public class AdminSettingsDialogController {
     @FXML
     private Button btnChooseBackupFolder;
     @FXML
+    private Label lblExportFolderTitle;
+    @FXML
+    private TextField txtExportPath;
+    @FXML
+    private Button btnChooseExportFolder;
+    @FXML
+    private CheckBox chkAskEveryTimeExport;
+    @FXML
     private Label lblSaveFolderNote;
     @FXML
     private Label lblAutoDeleteDescription;
@@ -184,6 +192,9 @@ public class AdminSettingsDialogController {
         btnChooseSaveFolder.setText(I18n.get("setting.storage.btn.choose"));
         lblBackupFolderTitle.setText(I18n.get("setting.storage.backup.title"));
         btnChooseBackupFolder.setText(I18n.get("setting.storage.btn.choose"));
+        lblExportFolderTitle.setText(I18n.get("setting.storage.export.title"));
+        btnChooseExportFolder.setText(I18n.get("setting.storage.btn.choose"));
+        chkAskEveryTimeExport.setText(I18n.get("setting.export.mode.ask.checkbox"));
         lblSaveFolderNote.setText(I18n.get("setting.storage.sync.note"));
 
         lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
@@ -225,6 +236,8 @@ public class AdminSettingsDialogController {
     private void loadAdminSettings() {
         adminSettingsService.getFolderPath(FolderType.SYNC).ifPresent(txtSavePath::setText);
         adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
+        adminSettingsService.getFolderPath(FolderType.EXPORT).ifPresent(txtExportPath::setText);
+        chkAskEveryTimeExport.setSelected(adminSettingsService.getAskEveryTimeExport(session.getCurrentUserId()));
         chkAutoDelete.setSelected(adminSettingsService.getAutoDelete());
         chkStartWithWindows.setSelected(adminSettingsService.getStartWithWindows());
         checkAndShowDriveConflict();
@@ -255,7 +268,7 @@ public class AdminSettingsDialogController {
             String saved = adminSettingsService.getLastRestoreProgress();
             if (saved != null && !saved.isBlank()) {
                 String[] parts = saved.split(",");
-                Object[] args = new Object[]{
+                Object[] args = new Object[] {
                         Integer.parseInt(parts[0]),
                         Integer.parseInt(parts[1]),
                         Integer.parseInt(parts[2]),
@@ -282,6 +295,28 @@ public class AdminSettingsDialogController {
     @FXML
     public void onSelectBackupFolder() {
         selectAndPersistFolder(txtBackupPath, FolderType.BACKUP);
+    }
+
+    @FXML
+    public void onSelectExportFolder() {
+        selectAndPersistFolder(txtExportPath, FolderType.EXPORT);
+    }
+
+    @FXML
+    public void onToggleAskEveryTimeExport() {
+        boolean value = chkAskEveryTimeExport.isSelected();
+        try {
+            adminSettingsService.setAskEveryTimeExport(session.getCurrentUserId(), value);
+            if (value) {
+                showNotice(I18n.get("setting.export.mode.ask.on"), true);
+            } else {
+                showNotice(I18n.get("setting.export.mode.ask.off"), true);
+            }
+        } catch (Exception e) {
+            log.error("Failed to save askEveryTimeExport setting", e);
+            chkAskEveryTimeExport.setSelected(!value);
+            showNotice(I18n.get("setting.storage.error"), false);
+        }
     }
 
     @FXML
@@ -412,7 +447,12 @@ public class AdminSettingsDialogController {
             return;
         }
         try {
-            adminSettingsService.saveFolder(type, path);
+            if (type == FolderType.EXPORT) {
+                // Export dir is per-user; skip the global save.
+                adminSettingsService.saveExportFolderForUser(session.getCurrentUserId(), path);
+            } else {
+                adminSettingsService.saveFolder(type, path);
+            }
             driveResolverService.invalidateCache();
             eventPublisher.publishEvent(new StorageRestoredEvent(type));
             showNotice(I18n.get("setting.storage.success"), true);
@@ -481,17 +521,15 @@ public class AdminSettingsDialogController {
 
     private void runStorageRecoveryOperation(Supplier<RestoreService.BackupSyncResult> operation) {
         setStorageControlsDisabled(true);
-        restoreService.setOnProgressInitialized(() ->
-                Platform.runLater(() -> {
-                    storageActionBox.setVisible(true);
-                    storageActionBox.setManaged(true);
-                    btnRetryFailedRestore.setVisible(false);
-                    btnRetryFailedRestore.setManaged(false);
-                    lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
-                            restoreService.getCurrentProgress().buildProgressArgs()));
-                    startProgressUpdater();
-                })
-        );
+        restoreService.setOnProgressInitialized(() -> Platform.runLater(() -> {
+            storageActionBox.setVisible(true);
+            storageActionBox.setManaged(true);
+            btnRetryFailedRestore.setVisible(false);
+            btnRetryFailedRestore.setManaged(false);
+            lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
+                    restoreService.getCurrentProgress().buildProgressArgs()));
+            startProgressUpdater();
+        }));
 
         Thread thread = new Thread(() -> {
             RestoreService.BackupSyncResult syncResult = operation.get();
@@ -564,7 +602,8 @@ public class AdminSettingsDialogController {
         storageActionBox.setManaged(true);
         progressScheduler = Executors.newSingleThreadScheduledExecutor();
         progressScheduler.scheduleAtFixedRate(() -> {
-            if (!restoreService.isRunning()) return;
+            if (!restoreService.isRunning())
+                return;
 
             String message = I18n.get(I18N_SETTING_STORAGE_PROGRESS,
                     restoreService.getCurrentProgress().buildProgressArgs());
@@ -602,16 +641,17 @@ public class AdminSettingsDialogController {
         btnRestore.setDisable(disabled);
         btnChooseSaveFolder.setDisable(disabled);
         btnChooseBackupFolder.setDisable(disabled);
+        btnChooseExportFolder.setDisable(disabled);
     }
 
     @EventListener
     public void onStorageRestored(StorageRestoredEvent event) {
-        if (txtSavePath == null || txtBackupPath == null) {
-            return;
-        }
         Platform.runLater(() -> {
-            adminSettingsService.getFolderPath(FolderType.SYNC).ifPresent(txtSavePath::setText);
-            adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
+            switch (event.getTarget()) {
+                case SYNC -> adminSettingsService.getFolderPath(FolderType.SYNC).ifPresent(txtSavePath::setText);
+                case BACKUP -> adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
+                case EXPORT -> adminSettingsService.getFolderPath(FolderType.EXPORT).ifPresent(txtExportPath::setText);
+            }
             checkAndShowDriveConflict();
         });
     }

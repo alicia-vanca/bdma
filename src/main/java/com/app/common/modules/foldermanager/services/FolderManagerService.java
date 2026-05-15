@@ -224,7 +224,7 @@ public class FolderManagerService {
             throw new IOException("Drive not accessible: " + specificDir.getAbsolutePath());
         }
 
-        ensureBdmaDirState(specificDir.getAbsolutePath());
+        ensureDirAccessible(specificDir.getAbsolutePath());
 
         return action.call();
     }
@@ -250,8 +250,8 @@ public class FolderManagerService {
         String dataPath = currentDataDir.getAbsolutePath();
         String backupPath = currentBackupDir.getAbsolutePath();
 
-        ensureBdmaDirState(dataPath);
-        ensureBdmaDirState(backupPath);
+        ensureDirAccessible(dataPath);
+        ensureDirAccessible(backupPath);
         return action.call();
     }
 
@@ -314,7 +314,7 @@ public class FolderManagerService {
         }
 
         try {
-            ensureBdmaDirState(dataDir.getAbsolutePath());
+            ensureDirAccessible(dataDir.getAbsolutePath());
             log.info("DataDir initialized: {} (protectionEnabled={})",
                     dataDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
@@ -339,7 +339,7 @@ public class FolderManagerService {
         }
 
         try {
-            ensureBdmaDirState(backupDir.getAbsolutePath());
+            ensureDirAccessible(backupDir.getAbsolutePath());
             log.info("BackupDir initialized: {} (protectionEnabled={})",
                     backupDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
@@ -404,7 +404,7 @@ public class FolderManagerService {
 
         // Ensure parent directory for writing (creates missing folders)
         if (targetParent != null) {
-            ensureBdmaDirState(targetParent.toString());
+            ensureDirAccessible(targetParent.toString());
         }
 
         // Copy to temporary file first
@@ -429,7 +429,7 @@ public class FolderManagerService {
         return target.toString();
     }
 
-    private void ensureBdmaDirState(String dirPath) throws IOException {
-        FolderSecurityService.ensureBdmaDataDir(dirPath, storageProtectionEnabled);
+    private void ensureDirAccessible(String dirPath) throws IOException {
+        FolderSecurityService.ensureDirAccessible(dirPath, storageProtectionEnabled);
     }
 }

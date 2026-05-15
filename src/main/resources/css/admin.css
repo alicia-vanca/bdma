@@ -88,15 +88,16 @@
 }
 
 .status-warning-text-row {
-    -fx-min-width: 0;
-    -fx-spacing: 4;
+  -fx-min-width: 0;
+  -fx-spacing: 4;
 }
 
 .status-warning-strip {
   -fx-background-color: -warn-strip-bg;
   -fx-border-color: -warn-strip-border;
   -fx-border-width: 0 0 1 0;
-  -fx-padding: 3 16; /* was inline Insets */
+  -fx-padding: 3 16;
+  /* was inline Insets */
 }
 
 .status-warning-icon {
@@ -133,12 +134,12 @@
   -fx-accent: -primary;
 }
 
-.storage-progress > .bar {
+.storage-progress>.bar {
   -fx-background-radius: 4;
   -fx-background-insets: 0;
 }
 
-.storage-progress > .track {
+.storage-progress>.track {
   -fx-background-radius: 4;
   -fx-background-insets: 0;
   -fx-background-color: -storage-track;
@@ -225,7 +226,7 @@
   -fx-font-size: 9px;
 }
 
-.pagination-bar .button {
+.pagination-bar .btn-pagination {
   -fx-pref-height: 20;
   -fx-min-height: 20;
   -fx-pref-width: 20;

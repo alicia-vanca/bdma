@@ -14,14 +14,12 @@
 
 .settings-split-left {
   -fx-padding: 0 8 0 0;
-  -fx-spacing: 8;
 }
 
 .settings-split-right {
-  -fx-padding: 0 0 0 12;
-  -fx-border-width: 0 0 0 1;
+  -fx-padding: 0 1 0 12;
+  -fx-border-width: 0 0 0 0;
   -fx-border-color: -border-color;
-  -fx-spacing: 6;
 }
 
 .settings-inline-row {
@@ -42,7 +40,14 @@
   -fx-min-width: 100;
   -fx-pref-width: 100;
   -fx-max-width: 100;
-  -fx-padding: 4 6;
+  -fx-padding: 4 10;
+  -fx-border-width: 1;
+}
+
+.settings-dialog-container .settings-segment-btn:hover,
+.settings-dialog-container .settings-segment-btn.active-button {
+  -fx-border-width: 1;
+  -fx-padding: 4 10;
 }
 
 .settings-dialog-container .settings-action-btn {
@@ -110,10 +115,10 @@
   -fx-border-color: transparent;
 }
 
-.settings-dialog-scroll > .viewport {
+.settings-dialog-scroll>.viewport {
   -fx-background-color: transparent;
 }
 
-.settings-dialog-scroll > .corner {
+.settings-dialog-scroll>.corner {
   -fx-background-color: transparent;
 }

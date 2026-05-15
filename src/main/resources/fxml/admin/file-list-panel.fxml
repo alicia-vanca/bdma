@@ -22,12 +22,17 @@
         <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers"/>
         <ComboBox fx:id="typeFilterCombo"/>
         <Button text="%filter.reset" onAction="#clearFilter" styleClass="btn-secondary"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label fx:id="lblSelectedCount" text="%file.selected.count" styleClass="status-label" managed="false" visible="false"/>
+        <Button fx:id="btnDropSelected" text="%file.selected.drop" onAction="#onDropSelected" styleClass="btn-secondary" managed="false" visible="false"/>
+        <Button fx:id="btnExportSelected" text="%file.export.selected" onAction="#onExportSelected" styleClass="btn-primary"/>
     </HBox>
     <TableView fx:id="fileTable" VBox.vgrow="ALWAYS" fixedCellSize="40">
         <columnResizePolicy>
             <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
         </columnResizePolicy>
         <columns>
+            <TableColumn fx:id="colSelect" text="" minWidth="45" maxWidth="45" styleClass="col-select" style="-fx-alignment: CENTER;"/>
             <TableColumn fx:id="colName" text="%file.name" minWidth="80" prefWidth="270"/>
             <TableColumn fx:id="colDevice" text="%file.device" minWidth="60" prefWidth="110"/>
             <TableColumn fx:id="colUser" text="%file.user" minWidth="60" prefWidth="110"/>
@@ -45,11 +50,13 @@
         <ComboBox fx:id="cbPageSize" styleClass="page-size-combo"/>
         <Label text="%common.per.page"/>
         <Region HBox.hgrow="ALWAYS"/>
-        <Button fx:id="btnFirst" text="«" onAction="#onFirstPage" styleClass="btn-secondary"/>
-        <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary"/>
+        <Button fx:id="btnOpenQueueDialog" text="%queue.dialog.title" onAction="#onOpenQueueDialog" styleClass="btn-secondary"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button fx:id="btnFirst" text="«" onAction="#onFirstPage" styleClass="btn-secondary,btn-pagination"/>
+        <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary,btn-pagination"/>
         <HBox fx:id="pageButtonsBox" spacing="4" alignment="CENTER"/>
-        <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary"/>
-        <Button fx:id="btnLast" text="»" onAction="#onLastPage" styleClass="btn-secondary"/>
+        <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary,btn-pagination"/>
+        <Button fx:id="btnLast" text="»" onAction="#onLastPage" styleClass="btn-secondary,btn-pagination"/>
         <TextField fx:id="txtPageNumber" styleClass="page-number-input" promptText="1"/>
         <Label fx:id="lblPageTotal" styleClass="page-total-label"/>
     </HBox>

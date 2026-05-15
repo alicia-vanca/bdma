@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.Label?>
@@ -14,7 +13,7 @@
 <?import javafx.scene.layout.VBox?>
 <StackPane
         xmlns:fx="http://javafx.com/fxml/1"
-        fx:controller="com.app.admin.settingsdialog.controllers.AdminSettingsDialogController"
+        fx:controller="com.app.user.settingsdialog.controllers.UserSettingsDialogController"
         styleClass="form,dialog-container,settings-dialog-container">
     <VBox fx:id="panel" styleClass="settings-dialog-body">
         <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
@@ -54,52 +53,12 @@
                     <Separator styleClass="settings-sep"/>
                     <VBox spacing="6" styleClass="settings-card">
                         <HBox spacing="8" alignment="CENTER_LEFT">
-                            <Label fx:id="lblSaveFolderTitle" styleClass="settings-field-label"/>
-                            <TextField fx:id="txtSavePath" editable="false" styleClass="input" HBox.hgrow="ALWAYS"/>
-                            <Button fx:id="btnChooseSaveFolder" onAction="#onSelectSaveFolder"
-                                    styleClass="btn-secondary"/>
-                        </HBox>
-                        <HBox spacing="8" alignment="CENTER_LEFT">
-                            <Label fx:id="lblBackupFolderTitle" styleClass="settings-field-label"/>
-                            <TextField fx:id="txtBackupPath" editable="false" styleClass="input" HBox.hgrow="ALWAYS"/>
-                            <Button fx:id="btnChooseBackupFolder" onAction="#onSelectBackupFolder"
-                                    styleClass="btn-secondary"/>
-                        </HBox>
-                        <Label fx:id="lblSaveFolderNote" wrapText="true" styleClass="settings-note"/>
-                        <Label fx:id="lblDriveConflictWarning" wrapText="true" styleClass="settings-warning"
-                               managed="false" visible="false"/>
-                        <HBox spacing="8" alignment="CENTER_LEFT">
-                            <Button fx:id="btnRestore" onAction="#onRestore" styleClass="btn-secondary"/>
-                            <Label fx:id="lblStorageProgress" wrapText="true" styleClass="settings-note"
-                                   HBox.hgrow="ALWAYS"/>
-                            <Button fx:id="btnRetryFailedRestore" onAction="#onRetryFailedRestore"
-                                    managed="false" visible="false" styleClass="btn-secondary"/>
-                        </HBox>
-                        <HBox fx:id="storageActionBox" managed="false" visible="false"/>
-                    </VBox>
-                    <Separator styleClass="settings-sep"/>
-                    <VBox spacing="4" styleClass="settings-card">
-                        <HBox spacing="8" alignment="CENTER_LEFT">
                             <Label fx:id="lblExportFolderTitle" styleClass="settings-field-label"/>
                             <TextField fx:id="txtExportPath" editable="false" styleClass="input" HBox.hgrow="ALWAYS"/>
                             <Button fx:id="btnChooseExportFolder" onAction="#onSelectExportFolder"
                                     styleClass="btn-secondary"/>
                         </HBox>
                         <CheckBox fx:id="chkAskEveryTimeExport" onAction="#onToggleAskEveryTimeExport"/>
-                    </VBox>
-                    <Separator styleClass="settings-sep"/>
-                    <VBox spacing="4" styleClass="settings-card">
-                        <HBox alignment="CENTER_LEFT" spacing="10">
-                            <CheckBox fx:id="chkAutoDelete" onAction="#onToggleAutoDelete"/>
-                        </HBox>
-                        <Label fx:id="lblAutoDeleteDescription" wrapText="true" styleClass="settings-note"/>
-                    </VBox>
-                    <Separator styleClass="settings-sep"/>
-                    <VBox spacing="4" styleClass="settings-card">
-                        <HBox alignment="CENTER_LEFT" spacing="10">
-                            <CheckBox fx:id="chkStartWithWindows" onAction="#onToggleStartWithWindows"/>
-                        </HBox>
-                        <Label fx:id="lblStartWithWindowsDescription" wrapText="true" styleClass="settings-note"/>
                     </VBox>
                 </VBox>
             </content>

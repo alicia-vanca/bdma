@@ -2,7 +2,8 @@
 /* Chỉ giữ layout-specific overrides */
 
 .user-info-grid {
-  -fx-padding: 4 0; /* subtle top/bottom breathing room */
+  -fx-padding: 4 0;
+  /* subtle top/bottom breathing room */
 }
 
 /* Key labels (cột trái) */

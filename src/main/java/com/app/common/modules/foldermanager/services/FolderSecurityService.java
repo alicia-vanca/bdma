@@ -49,34 +49,31 @@ public class FolderSecurityService {
     // ── Public API ───────────────────────────────────────────────────────────
 
     /**
-     * Ensure directory path exists inside a protected bdma folder.
+     * Ensure directory path exists and is accessible.
      *
-     * Steps:
-     * 1) Lock bdma folder with delete-deny (D)
-     * 2) Walk from bdma folder to target and create missing directories
+     * If the path is inside a bdma folder, lock the bdma folder with delete-deny
+     * (D).
+     * Otherwise, simply create the directory structure.
      *
      * @param dirPath absolute path to the directory
-     * @throws IOException if path is not in a protected bdma folder or not a
-     *                     directory path
+     * @throws IOException if path exists but is not a directory, or directory
+     *                     creation fails
      */
-    public static void ensureBdmaDataDir(String dirPath) throws IOException {
-        ensureBdmaDataDir(dirPath, true);
+    public static void ensureDirAccessible(String dirPath) throws IOException {
+        ensureDirAccessible(dirPath, true);
     }
 
     /**
-     * Ensure directory path exists inside a bdma folder and apply protection state.
+     * Ensure directory path exists and is accessible, with optional bdma folder
+     * protection.
      *
      * @param dirPath           absolute path to the directory
-     * @param protectionEnabled true to lock bdma folder, false to unlock it
-     * @throws IOException if path is not in a protected bdma folder or not a
-     *                     directory path
+     * @param protectionEnabled true to lock bdma folder if found, false to unlock
+     *                          it
+     * @throws IOException if path exists but is not a directory, or directory
+     *                     creation fails
      */
-    public static void ensureBdmaDataDir(String dirPath, boolean protectionEnabled) throws IOException {
-        Path bdmaFolder = findDeepestBdmaFolder(dirPath);
-        if (bdmaFolder == null) {
-            throw new IOException("Path is not in a protected bdma folder: " + dirPath);
-        }
-
+    public static void ensureDirAccessible(String dirPath, boolean protectionEnabled) throws IOException {
         Path target = Path.of(dirPath);
         if (Files.exists(target) && !Files.isDirectory(target)) {
             throw new IOException("Path is not a directory: " + dirPath);
@@ -94,14 +91,18 @@ public class FolderSecurityService {
             }
         }
 
-        if (protectionEnabled) {
-            lockSinglePath(bdmaFolder);
-        } else {
-            unlockSinglePath(bdmaFolder);
+        // Apply protection only if path is inside a bdma folder
+        Path bdmaFolder = findDeepestBdmaFolder(dirPath);
+        if (bdmaFolder != null) {
+            if (protectionEnabled) {
+                lockSinglePath(bdmaFolder);
+            } else {
+                unlockSinglePath(bdmaFolder);
+            }
         }
         // Unlock any non-bdma parent folders to avoid unintended access issues, but
         // keep the bdma folder protected
-        if (!target.equals(bdmaFolder)) {
+        if (bdmaFolder == null || !target.equals(bdmaFolder)) {
             unlockSinglePath(target);
         }
     }

@@ -19,8 +19,8 @@ import com.app.common.models.User;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.preloginsettingspopup.helpers.PreLoginSettingsPopupHelper;
 import com.app.common.modules.session.Session;
-import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.repositories.RecentUsernameRepository;
 import com.app.common.services.UserService;
@@ -66,7 +66,7 @@ public class LoginController {
     private final LoginService loginService; // Triggers background sync after login
     private final RecentUsernameRepository recentUsernameRepository;
 
-    private SettingsPopupHelper settingsPopupHelper;
+    private PreLoginSettingsPopupHelper settingsPopupHelper;
     private ImageView passwordIconView;
 
     public LoginController(Session session,
@@ -90,10 +90,10 @@ public class LoginController {
 
         hideError();
 
-        settingsPopupHelper = new SettingsPopupHelper(
+        settingsPopupHelper = new PreLoginSettingsPopupHelper(
                 "login",
                 btnSettings,
-                SettingsPopupHelper.PopupAnchorY.TOP,
+                PreLoginSettingsPopupHelper.PopupAnchorY.TOP,
                 null,
                 this::reloadUI,
                 appUpdateController::onCheckUpdateManual,

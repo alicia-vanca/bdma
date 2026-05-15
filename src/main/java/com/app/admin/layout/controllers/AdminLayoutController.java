@@ -2,30 +2,31 @@ package com.app.admin.layout.controllers;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
+import java.util.Queue;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
+import com.app.admin.layout.services.StorageUnavailableEventHandler;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
-import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.dtos.SyncContext;
 import com.app.common.events.DeviceEvent;
+import com.app.common.events.FailureSummaryRequestedEvent;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
@@ -34,25 +35,23 @@ import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.databackup.DataBackupRunner;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
+import com.app.common.modules.dataexport.services.DataExportService;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
-import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
-import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
-import com.app.common.modules.foldermanager.services.StorageHealthMonitor;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.common.modules.session.Session;
-import com.app.common.modules.settingspopup.helpers.SettingsPopupHelper;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceMiniStatus;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.services.UserSettingService;
 import com.app.common.utils.FileUtil;
+import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
 import com.app.user.userdetail.controllers.UserInfoController;
 
 import javafx.application.Platform;
@@ -68,7 +67,6 @@ import javafx.scene.control.ProgressBar;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.stage.DirectoryChooser;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 
@@ -83,28 +81,13 @@ public class AdminLayoutController extends BaseLayoutController {
     private static final String STATUS_BACKUP_DRIVE = "status.backupDrive";
     private static final String CSS_STORAGE_WARN = "storage-warn";
     private static final String CSS_STORAGE_CRITICAL = "storage-critical";
+    private static final String STYLE_CLASS_WARNING = "-fx-text-fill: -warning-color;";
 
     // I18n keys
     private static final String I18N_DEVICE_SYNC_QUEUED = "device.sync.queued";
     private static final String I18N_STATUS_STORAGE_DRIVE_NOT_FOUND = "status.storage.drive.not_found";
-    private static final String I18N_STORAGE_LOW_SPACE_TITLE = "storage.unavailable.dialog.low_space.title";
-    private static final String I18N_STORAGE_LOW_SPACE_USER_MESSAGE = "storage.unavailable.dialog.low_space.user.message";
-    private static final String I18N_STORAGE_LOW_SPACE_ADMIN_MESSAGE = "storage.unavailable.dialog.low_space.admin.message";
-    private static final String I18N_STORAGE_DRIVE_MISSING_TITLE = "storage.unavailable.dialog.drive_missing.title";
-    private static final String I18N_STORAGE_DRIVE_MISSING_USER_MESSAGE = "storage.unavailable.dialog.drive_missing.user.message";
-    private static final String I18N_STORAGE_DRIVE_MISSING_ADMIN_MESSAGE = "storage.unavailable.dialog.drive_missing.admin.message";
-    private static final String I18N_SETTING_STORAGE_BTN_CHOOSE = "setting.storage.btn.choose";
-    private static final String I18N_STORAGE_ACTION_LATER = "storage.unavailable.action.later";
-    private static final String I18N_SETTING_STORAGE_CHOOSER_TITLE = "setting.storage.chooser.title";
-    private static final String I18N_SETTING_STORAGE_SUCCESS = "setting.storage.success";
-    private static final String I18N_SETTING_STORAGE_ERROR = "setting.storage.error";
-    private static final String I18N_SETTING_STORAGE_LOW_SPACE = "setting.storage.low_space";
-    private static final String I18N_SETTING_STORAGE_DRIVE_MISSING = "setting.storage.drive_missing";
-
-    private static final String STYLE_CLASS_WARNING = "-fx-text-fill: -warning-color;";
 
     private final AppUpdateController appUpdateController;
-    private final UserSettingService userSettingService;
     private final Session session;
     private final DeviceValidationService deviceValidationService;
     private final AppNoticeService appNoticeService;
@@ -114,11 +97,11 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DeviceMiniStatus deviceMiniStatus;
     private final QueueManagerService queueManagerService;
     private final FolderManagerService folderManagerService;
-    private final ApplicationEventPublisher publisher;
-    private final StorageHealthMonitor storageHealthMonitor;
     private final RestoreService restoreService;
     private final DataSyncService dataSyncService;
     private final AdminSettingsDialogService adminSettingsService;
+    private final StorageUnavailableEventHandler storageUnavailableEventHandler;
+    private final DataExportService dataExportService;
 
     @FXML
     private StackPane contentArea;
@@ -157,26 +140,11 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private Label lblBackupStoragePercent;
 
-    private SettingsPopupHelper settingsPopupHelper;
     private DashboardController currentDashboardController;
     private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
     private final Map<String, String> pendingStorageSyncs = new HashMap<>();
-    private boolean syncLowSpaceDialogVisible;
-    private boolean backupLowSpaceDialogVisible;
-    private boolean syncUnavailableDialogVisible;
-    private boolean backupUnavailableDialogVisible;
-    private volatile StorageIssueReason syncStorageBlocked;
-    private CountDownLatch syncDialogLatch;
-    private CountDownLatch backupDialogLatch;
-
-    @SuppressWarnings("unused")
-    // backupStorageBlocked is currently only set in StorageHealthMonitor and not
-    // read, but this is intentional to keep track of backup storage state for
-    // future use when we may need it.
-    private volatile StorageIssueReason backupStorageBlocked;
-
-    private record FolderSelectionResult(boolean saved, String rejectionMessage) {
-    }
+    private final Queue<FailureSummaryRequestedEvent> pendingFailureSummaries = new ArrayDeque<>();
+    private boolean failureSummaryVisible;
 
     public AdminLayoutController(ViewLoader viewLoader,
             AppUpdateController appUpdateController,
@@ -190,14 +158,13 @@ public class AdminLayoutController extends BaseLayoutController {
             DataSyncRunner syncRunner,
             DataBackupRunner backupRunner,
             FolderManagerService folderManagerService,
-            ApplicationEventPublisher publisher,
-            StorageHealthMonitor storageHealthMonitor,
             RestoreService restoreService,
             DataSyncService dataSyncService,
-            AdminSettingsDialogService adminSettingsService) {
+            AdminSettingsDialogService adminSettingsService,
+            StorageUnavailableEventHandler storageUnavailableEventHandler,
+            DataExportService dataExportService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
-        this.userSettingService = userSettingService;
         this.session = session;
         this.deviceValidationService = deviceValidationService;
         this.appNoticeService = appNoticeService;
@@ -207,11 +174,11 @@ public class AdminLayoutController extends BaseLayoutController {
         this.deviceMiniStatus = deviceMiniStatus;
         this.queueManagerService = queueManagerService;
         this.folderManagerService = folderManagerService;
-        this.publisher = publisher;
-        this.storageHealthMonitor = storageHealthMonitor;
         this.restoreService = restoreService;
         this.dataSyncService = dataSyncService;
         this.adminSettingsService = adminSettingsService;
+        this.storageUnavailableEventHandler = storageUnavailableEventHandler;
+        this.dataExportService = dataExportService;
     }
 
     @Override
@@ -234,18 +201,6 @@ public class AdminLayoutController extends BaseLayoutController {
         labelGreeting.setText(I18n.get("top.hello", session.getUser().getUsername()));
 
         appNoticeService.bindNoticeContainer(noticeContainer);
-
-        if (!session.isAdmin()) {
-            settingsPopupHelper = new SettingsPopupHelper(
-                    "user-layout",
-                    btnSettings,
-                    SettingsPopupHelper.PopupAnchorY.BOTTOM,
-                    userSettingService,
-                    this::reloadUI,
-                    appUpdateController::onCheckUpdateManual,
-                    this::onUserInfo);
-            settingsPopupHelper.initialize();
-        }
 
         deviceMiniStatus.setOnProgressChanged(this::refreshDashboardIfActive);
 
@@ -288,6 +243,10 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     private void goUser() {
+        if (currentDashboardController != null) {
+            currentDashboardController.resetFileSelectionState();
+        }
+        // Reuse the same tab entry point and only change loaded content by role.
         setActiveButton(getMenuButtons(), btnUser);
         if (session.isAdmin()) {
             setContent(loadView(ViewPaths.USER_LIST));
@@ -322,8 +281,11 @@ public class AdminLayoutController extends BaseLayoutController {
         deviceMiniStatus.clearAll();
         queueManagerService.clearAll();
 
+        // Reset tracked device state for the current session. The next login will
+        // start from a fresh device scan.
         backupRunner.resetForLogout();
         syncRunner.resetForLogout();
+        dataExportService.resetForLogout();
 
         session.clear();
         MainApp.showLogin();
@@ -331,23 +293,35 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     private void openSettingsPopup() {
-        if (!session.isAdmin() && settingsPopupHelper != null) {
-            settingsPopupHelper.togglePopup();
+        if (!session.isAdmin()) {
+            openUserSettingsDialog();
             return;
         }
+
         DialogHelper.Dialog<AdminSettingsDialogController> dialog = DialogHelper.createDialog(
                 ViewPaths.ADMIN_SETTINGS_DIALOG,
-                I18n.get("settings.title"));
+                "⚙ " + I18n.get("settings.title"));
         dialog.controller().setOnLanguageChangedAction(this::reloadUI);
         Stage stage = dialog.stage();
-        stage.setResizable(true);
+        stage.setResizable(false);
         Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+        stage.setMinWidth(650);
         stage.setMaxHeight(screen.getHeight() * 0.80);
         stage.setMaxWidth(screen.getWidth() * 0.50);
-        stage.setMinWidth(480);
-        stage.setMinHeight(400);
-        stage.setWidth(Math.min(620, screen.getWidth() * 0.45));
-        stage.setHeight(Math.min(680, screen.getHeight() * 0.75));
+        stage.showAndWait();
+    }
+
+    private void openUserSettingsDialog() {
+        DialogHelper.Dialog<UserSettingsDialogController> dialog = DialogHelper.createDialog(
+                ViewPaths.USER_SETTINGS_DIALOG,
+                "⚙ " + I18n.get("settings.title"));
+        dialog.controller().setOnLanguageChangedAction(this::reloadUI);
+        Stage stage = dialog.stage();
+        stage.setResizable(false);
+        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+        stage.setMinWidth(650);
+        stage.setMaxHeight(screen.getHeight() * 0.80);
+        stage.setMaxWidth(screen.getWidth() * 0.50);
         stage.showAndWait();
     }
 
@@ -373,6 +347,48 @@ public class AdminLayoutController extends BaseLayoutController {
     @Override
     public void showNoticeError(String text) {
         appNoticeService.showError(text);
+    }
+
+    /**
+     * Queues failure-summary dialogs so sync/export results are shown one at a
+     * time instead of stacking multiple modal windows.
+     */
+    @EventListener
+    public void onFailureSummaryRequested(FailureSummaryRequestedEvent event) {
+        if (event == null || event.getRows().isEmpty()) {
+            return;
+        }
+        Platform.runLater(() -> {
+            pendingFailureSummaries.add(event);
+            showNextFailureSummaryIfIdle();
+        });
+    }
+
+    private void showNextFailureSummaryIfIdle() {
+        if (failureSummaryVisible) {
+            return;
+        }
+
+        FailureSummaryRequestedEvent event = pendingFailureSummaries.poll();
+        if (event == null) {
+            return;
+        }
+
+        failureSummaryVisible = true;
+        try {
+            AlertHelper.DialogText dialogText = new AlertHelper.DialogText(
+                    event.getTitle(), event.getHeader(), event.getContent());
+            AlertHelper.TableColumns columns = new AlertHelper.TableColumns(
+                    event.getFirstColumnName(), "fileName",
+                    event.getSecondColumnName(), "reason");
+            ButtonType retryButton = new ButtonType(I18n.get("common.retry"), ButtonBar.ButtonData.OK_DONE);
+            ButtonType closeButton = new ButtonType(I18n.get("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
+            AlertHelper.showAlertWithTableNow(dialogText, event.getRows(), columns, retryButton, closeButton,
+                    event.getPrimaryAction());
+        } finally {
+            failureSummaryVisible = false;
+            showNextFailureSummaryIfIdle();
+        }
     }
 
     // Handle device connection/disconnection events from DeviceTracker
@@ -526,7 +542,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     // Auto-sync device without confirmation dialog
     public void registerDeviceForSync(String hardwareId, String deviceName) {
-        if (syncStorageBlocked != null) {
+        if (storageUnavailableEventHandler.isStorageBlocked(FolderType.SYNC)) {
             log.debug("Sync drive is pending recovery, adding device {} to pending list", hardwareId);
             pendingStorageSyncs.put(hardwareId, deviceName);
             return;
@@ -771,282 +787,6 @@ public class AdminLayoutController extends BaseLayoutController {
         return String.format("%d KB", bytes / 1_024);
     }
 
-    private void setDialogVisibleFlag(StorageUnavailableEvent event, boolean visible) {
-        boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
-        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
-
-        if (isLowSpace) {
-            if (isSyncTarget) {
-                syncLowSpaceDialogVisible = visible;
-            } else {
-                backupLowSpaceDialogVisible = visible;
-            }
-        } else {
-            if (isSyncTarget) {
-                syncUnavailableDialogVisible = visible;
-            } else {
-                backupUnavailableDialogVisible = visible;
-            }
-        }
-    }
-
-    private boolean isDialogAlreadyVisible(StorageUnavailableEvent event) {
-        boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
-        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
-
-        if (isLowSpace && isSyncTarget && syncLowSpaceDialogVisible) {
-            logDebug("Sync low-space dialog already visible. Skip duplicate.");
-            return true;
-        }
-        if (isLowSpace && !isSyncTarget && backupLowSpaceDialogVisible) {
-            logDebug("Backup low-space dialog already visible. Skip duplicate.");
-            return true;
-        }
-        if (!isLowSpace && isSyncTarget && syncUnavailableDialogVisible) {
-            logDebug("Sync unavailable dialog already visible. Skip duplicate.");
-            return true;
-        }
-        if (!isLowSpace && !isSyncTarget && backupUnavailableDialogVisible) {
-            logDebug("Backup unavailable dialog already visible. Skip duplicate.");
-            return true;
-        }
-        return false;
-    }
-
-    private boolean shouldQueueDialog(StorageUnavailableEvent event) {
-        boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
-        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
-
-        if (isLowSpace && isSyncTarget && backupLowSpaceDialogVisible) {
-            logDebug("Backup drive low-space dialog is opening. Queueing sync low-space dialog.");
-            return true;
-        }
-        if (isLowSpace && !isSyncTarget && syncLowSpaceDialogVisible) {
-            logDebug("Sync drive low-space dialog is opening. Queueing backup low-space dialog.");
-            return true;
-        }
-        if (!isLowSpace && isSyncTarget && backupUnavailableDialogVisible) {
-            logDebug("Backup drive unavailable dialog is opening. Queueing sync unavailable dialog.");
-            return true;
-        }
-        if (!isLowSpace && !isSyncTarget && syncUnavailableDialogVisible) {
-            logDebug("Sync drive unavailable dialog is opening. Queueing backup unavailable dialog.");
-            return true;
-        }
-        return false;
-    }
-
-    private void queueDialogUntilOtherCloses(StorageUnavailableEvent event) {
-        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
-        CountDownLatch latchToWait = isSyncTarget ? backupDialogLatch : syncDialogLatch;
-
-        new Thread(() -> {
-            try {
-                if (latchToWait != null) {
-                    latchToWait.await();
-                }
-                Platform.runLater(() -> showStorageUnavailableDialog(event));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                setDialogVisibleFlag(event, false);
-            }
-        }, "storage-dialog-queue").start();
-    }
-
-    @EventListener
-    public void onStorageUnavailable(StorageUnavailableEvent event) {
-        if (event == null) {
-            return;
-        }
-        logDebug("StorageUnavailableEvent: target: {}, reason: {}", event.getTarget(), event.getReason());
-
-        if (isDialogAlreadyVisible(event)) {
-            return;
-        }
-
-        boolean shouldQueue = shouldQueueDialog(event);
-
-        // Mark this dialog as visible before showing or queueing
-        setDialogVisibleFlag(event, true);
-
-        if (shouldQueue) {
-            queueDialogUntilOtherCloses(event);
-        } else {
-            // Create latch before opening dialog so queued dialogs can wait on it
-            boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
-            if (isSyncTarget) {
-                syncDialogLatch = new CountDownLatch(1);
-            } else {
-                backupDialogLatch = new CountDownLatch(1);
-            }
-            Platform.runLater(() -> showStorageUnavailableDialog(event));
-        }
-    }
-
-    private void showStorageUnavailableDialog(StorageUnavailableEvent event) {
-        logDebug("Opening storage-unavailable dialog: target={} reason={} requiredBytes={}",
-                event.getTarget(), event.getReason(), event.getRequiredBytes());
-
-        boolean isSyncTarget = event.getTarget() == FolderType.SYNC;
-        CountDownLatch latch = isSyncTarget ? syncDialogLatch : backupDialogLatch;
-
-        try {
-            String targetDrive = "";
-            if (event.getTarget() == FolderType.SYNC) {
-                syncStorageBlocked = event.getReason();
-                targetDrive = I18n.get(STATUS_SYNC_DRIVE);
-            } else if (event.getTarget() == FolderType.BACKUP) {
-                backupStorageBlocked = event.getReason();
-                targetDrive = I18n.get(STATUS_BACKUP_DRIVE);
-            }
-
-            if (!session.isAdmin()) {
-                // Non-admin users see alert and flag is reset after acknowledgment
-                String header = "";
-                String message = "";
-                if (event.getReason() == StorageIssueReason.LOW_SPACE) {
-                    header = I18n.get(I18N_STORAGE_LOW_SPACE_TITLE, targetDrive);
-                    message = I18n.get(I18N_STORAGE_LOW_SPACE_USER_MESSAGE, targetDrive);
-                } else if (event.getReason() == StorageIssueReason.DRIVE_UNAVAILABLE) {
-                    header = I18n.get(I18N_STORAGE_DRIVE_MISSING_TITLE, targetDrive);
-                    message = I18n.get(I18N_STORAGE_DRIVE_MISSING_USER_MESSAGE, targetDrive);
-                }
-
-                Alert alert = AlertHelper.createInformation(header, header, message);
-                alert.showAndWait();
-                publisher.publishEvent(new StorageRecoveryDeferredEvent(event.getTarget(), event.getReason()));
-            } else {
-
-                Alert alert = createStorageUnavailableAlert(event);
-
-                handleStorageDialogLoop(event, alert);
-            }
-        } finally {
-            setDialogVisibleFlag(event, false);
-            if (event.getTarget() == FolderType.SYNC) {
-                syncStorageBlocked = null;
-            } else if (event.getTarget() == FolderType.BACKUP) {
-                backupStorageBlocked = null;
-            }
-            if (latch != null) {
-                latch.countDown();
-            }
-            if (event.getTarget() == FolderType.SYNC) {
-                syncDialogLatch = null;
-            } else {
-                backupDialogLatch = null;
-            }
-            logDebug("Storage unavailable dialog closed. target={}", event.getTarget());
-            refreshStorageStatus();
-        }
-    }
-
-    private Alert createStorageUnavailableAlert(StorageUnavailableEvent event) {
-        String targetDrive = switch (event.getTarget()) {
-            case SYNC -> I18n.get(STATUS_SYNC_DRIVE);
-            case BACKUP -> I18n.get(STATUS_BACKUP_DRIVE);
-        };
-        String header = "";
-        String content = "";
-        if (event.getReason() == StorageIssueReason.LOW_SPACE) {
-            header = I18n.get(I18N_STORAGE_LOW_SPACE_TITLE, targetDrive);
-            content = I18n.get(I18N_STORAGE_LOW_SPACE_ADMIN_MESSAGE, targetDrive);
-        } else if (event.getReason() == StorageIssueReason.DRIVE_UNAVAILABLE) {
-            header = I18n.get(I18N_STORAGE_DRIVE_MISSING_TITLE, targetDrive);
-            content = I18n.get(I18N_STORAGE_DRIVE_MISSING_ADMIN_MESSAGE, targetDrive);
-        }
-        Alert alert = AlertHelper.createConfirmation(header, header, content);
-
-        ButtonType chooseButton = new ButtonType(I18n.get(I18N_SETTING_STORAGE_BTN_CHOOSE),
-                ButtonBar.ButtonData.OK_DONE);
-        ButtonType laterButton = new ButtonType(I18n.get(I18N_STORAGE_ACTION_LATER),
-                ButtonBar.ButtonData.CANCEL_CLOSE);
-        AlertHelper.setButtons(alert, chooseButton, laterButton);
-
-        return alert;
-    }
-
-    private void handleStorageDialogLoop(StorageUnavailableEvent event, Alert alert) {
-        while (true) {
-            Optional<ButtonType> chosen = alert.showAndWait();
-
-            if (chosen.isEmpty()) {
-                logDebug("Storage-unavailable dialog dismissed without selecting folder. target={}", event.getTarget());
-                return;
-            }
-
-            ButtonType selectedButton = chosen.get();
-
-            if (isLaterButtonSelected(selectedButton)) {
-                handleLaterSelection(event);
-                return;
-            }
-
-            if (!isChooseButtonSelected(selectedButton)) {
-                logDebug("Storage-unavailable dialog closed with unexpected action. target={} action={}",
-                        event.getTarget(), selectedButton.getText());
-                return;
-            }
-
-            logDebug("User selected 'Select folder' on storage-unavailable dialog. target={}", event.getTarget());
-
-            if (handleFolderSelection(event)) {
-                return;
-            }
-        }
-    }
-
-    private boolean isLaterButtonSelected(ButtonType selected) {
-        return selected.getButtonData() == ButtonBar.ButtonData.CANCEL_CLOSE;
-    }
-
-    private boolean isChooseButtonSelected(ButtonType selected) {
-        return selected.getButtonData() == ButtonBar.ButtonData.OK_DONE;
-    }
-
-    private void handleLaterSelection(StorageUnavailableEvent event) {
-        logDebug("User selected 'Later' on storage-unavailable dialog. target={} reason={} requiredBytes={}",
-                event.getTarget(), event.getReason(), event.getRequiredBytes());
-
-        publisher.publishEvent(new StorageRecoveryDeferredEvent(event.getTarget(), event.getReason()));
-    }
-
-    private boolean handleFolderSelection(StorageUnavailableEvent event) {
-        FolderSelectionResult result = chooseAndSaveStorageFolder(event);
-
-        if (result.saved()) {
-            logDebug("Storage folder updated successfully from unavailable dialog. target={}", event.getTarget());
-            handleSuccessfulFolderSave(event);
-            return true;
-        }
-
-        if (result.rejectionMessage() != null) {
-            logDebug("Selected storage folder rejected. target={} message={}", event.getTarget(),
-                    result.rejectionMessage());
-
-            String header = "";
-            if (event.getReason() == StorageIssueReason.LOW_SPACE) {
-                header = I18n.get(I18N_STORAGE_LOW_SPACE_TITLE, I18n.get("status.selectedDrive"));
-            } else if (event.getReason() == StorageIssueReason.DRIVE_UNAVAILABLE) {
-                header = I18n.get(I18N_STORAGE_DRIVE_MISSING_TITLE, I18n.get("status.selectedDrive"));
-            }
-            showStorageSelectionError(header, result.rejectionMessage());
-        } else {
-            logDebug("Folder selection canceled by user. target={}", event.getTarget());
-        }
-
-        return false;
-    }
-
-    private void handleSuccessfulFolderSave(StorageUnavailableEvent event) {
-        if (event.getTarget() == FolderType.SYNC) {
-            syncStorageBlocked = null;
-            drainPendingSyncs();
-        } else if (event.getTarget() == FolderType.BACKUP) {
-            backupStorageBlocked = null;
-        }
-    }
-
     private void drainPendingSyncs() {
         if (!pendingStorageSyncs.isEmpty()) {
             // Continue pending devices
@@ -1060,13 +800,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @EventListener
     public void onStorageRestored(StorageRestoredEvent event) {
-        if (event != null) {
-            if (event.getTarget() == FolderType.SYNC) {
-                syncStorageBlocked = null;
-                drainPendingSyncs();
-            } else if (event.getTarget() == FolderType.BACKUP) {
-                backupStorageBlocked = null;
-            }
+        if (event != null && event.getTarget() == FolderType.SYNC) {
+            drainPendingSyncs();
         }
         refreshStorageStatus();
     }
@@ -1075,88 +810,6 @@ public class AdminLayoutController extends BaseLayoutController {
         if (log.isDebugEnabled()) {
             log.debug(message, args);
         }
-    }
-
-    private FolderSelectionResult chooseAndSaveStorageFolder(StorageUnavailableEvent event) {
-        FolderType target = event.getTarget();
-        DirectoryChooser chooser = new DirectoryChooser();
-        chooser.setTitle(I18n.get(I18N_SETTING_STORAGE_CHOOSER_TITLE,
-                target.toLocalizedString()));
-
-        File currentConfiguredPath = readConfiguredRootPath(target);
-        if (currentConfiguredPath != null && currentConfiguredPath.exists()) {
-            chooser.setInitialDirectory(currentConfiguredPath);
-        }
-
-        File selected = chooser.showDialog(MainApp.getPrimaryStage());
-        if (selected == null) {
-            if (log.isDebugEnabled()) {
-                log.debug("Folder chooser canceled. target={}", target);
-            }
-            return new FolderSelectionResult(false, null);
-        }
-
-        if (log.isDebugEnabled()) {
-            log.debug("Folder selected from chooser. target={} path={} requiredBytes={}",
-                    target, selected.getAbsolutePath(), event.getRequiredBytes());
-        }
-
-        String rejection = validateSelectedStorageFolder(target, selected, event.getRequiredBytes());
-        if (rejection != null) {
-            return new FolderSelectionResult(false, rejection);
-        }
-
-        adminSettingsService.saveFolder(target, selected.getAbsolutePath());
-        folderManagerService.init(target);
-        showNoticeSuccess(I18n.get(I18N_SETTING_STORAGE_SUCCESS));
-        storageHealthMonitor.checkNow(target);
-        if (log.isInfoEnabled()) {
-            log.info("Storage folder changed from unavailable dialog. target={} path={}",
-                    target, selected.getAbsolutePath());
-        }
-        return new FolderSelectionResult(true, null);
-    }
-
-    private void showStorageSelectionError(String header, String message) {
-        if (log.isDebugEnabled()) {
-            log.debug("Showing storage selection error dialog: {}", message);
-        }
-        Alert error = AlertHelper.create(Alert.AlertType.ERROR,
-                I18n.get(I18N_SETTING_STORAGE_ERROR),
-                header,
-                message);
-        AlertHelper.setButtons(error, ButtonType.OK);
-        error.showAndWait();
-    }
-
-    private File readConfiguredRootPath(FolderType target) {
-        String path = adminSettingsService.getFolderPath(target).orElse(null);
-        if (path == null || path.isBlank()) {
-            return null;
-        }
-        return new File(path);
-    }
-
-    private String validateSelectedStorageFolder(FolderType target, File selectedRoot, long requiredBytes) {
-        String folderName = target.getPhysicalFolderName();
-        File managedDir = new File(selectedRoot, folderName);
-
-        if (!folderManagerService.isDirAccessible(managedDir)) {
-            return I18n.get(I18N_SETTING_STORAGE_DRIVE_MISSING);
-        }
-
-        if (requiredBytes > 0 && !folderManagerService.hasSufficientSpace(managedDir, requiredBytes)) {
-            return I18n.get(I18N_SETTING_STORAGE_LOW_SPACE);
-        }
-
-        try {
-            folderManagerService.withSpecificDirPrepared(managedDir, () -> Boolean.TRUE);
-        } catch (Exception e) {
-            log.warn("Rejected storage folder selection for {}: {}", target, selectedRoot.getAbsolutePath(), e);
-            return I18n.get(I18N_SETTING_STORAGE_ERROR);
-        }
-
-        return null;
     }
 
     @EventListener
