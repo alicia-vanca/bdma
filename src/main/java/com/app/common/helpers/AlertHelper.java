@@ -51,7 +51,7 @@ public final class AlertHelper {
     private static final int TABLE_COLUMN_WIDTH = 300;
     private static final int TABLE_SCROLL_HEIGHT = 400;
     // actual row height after CSS is applied, used for dynamic height calculation
-    private static final double TABLE_ROW_HEIGHT = 36.8; 
+    private static final double TABLE_ROW_HEIGHT = 36.8;
     private static final double TABLE_HEADER_HEIGHT = 46;
 
     private static final int DIALOG_PREFERRED_WIDTH = 1100;
@@ -106,28 +106,40 @@ public final class AlertHelper {
             return;
         }
 
-        Platform.runLater(() -> {
-            Alert alert = createInformation(dialogText.title(), dialogText.header(), dialogText.content());
-            alert.setResizable(true);
+        Platform.runLater(() -> showAlertWithTableNow(dialogText, items, columns, primaryButton, secondaryButton,
+                onPrimarySelected));
+    }
 
-            if (secondaryButton != null) {
-                setButtons(alert, primaryButton, secondaryButton);
-            } else {
-                setButtons(alert, primaryButton);
-            }
-            TableView<T> table = createTable(items, columns);
-            VBox tableContent = createTableContent(dialogText.content(), table);
-            alert.getDialogPane().setContent(tableContent);
-            alert.getDialogPane().setPrefWidth(DIALOG_PREFERRED_WIDTH);
+    /**
+     * Shows a blocking table alert on the current thread. Call only from the FX
+     * application thread when the caller needs to serialize several dialogs.
+     */
+    public static <T> void showAlertWithTableNow(DialogText dialogText, List<T> items, TableColumns columns,
+            ButtonType primaryButton, ButtonType secondaryButton, Runnable onPrimarySelected) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
 
-            var chosen = alert.showAndWait();
-            if (primaryButton != null
-                    && chosen.isPresent()
-                    && chosen.get() == primaryButton
-                    && onPrimarySelected != null) {
-                onPrimarySelected.run();
-            }
-        });
+        Alert alert = createInformation(dialogText.title(), dialogText.header(), dialogText.content());
+        alert.setResizable(true);
+
+        if (secondaryButton != null) {
+            setButtons(alert, primaryButton, secondaryButton);
+        } else {
+            setButtons(alert, primaryButton);
+        }
+        TableView<T> table = createTable(items, columns);
+        VBox tableContent = createTableContent(dialogText.content(), table);
+        alert.getDialogPane().setContent(tableContent);
+        alert.getDialogPane().setPrefWidth(DIALOG_PREFERRED_WIDTH);
+
+        var chosen = alert.showAndWait();
+        if (primaryButton != null
+                && chosen.isPresent()
+                && chosen.get() == primaryButton
+                && onPrimarySelected != null) {
+            onPrimarySelected.run();
+        }
     }
 
     // Build a preconfigured alert so dialogs stay consistent across modules.

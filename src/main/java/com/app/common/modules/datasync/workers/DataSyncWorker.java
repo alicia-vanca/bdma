@@ -25,8 +25,9 @@ import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.dtos.FileInfo;
 import com.app.common.dtos.SyncContext;
 import com.app.common.events.DeviceEvent;
+import com.app.common.events.FailureSummaryRequestedEvent;
+import com.app.common.events.FailureSummaryRequestedEvent.FailureSummaryRow;
 import com.app.common.exceptions.DeviceDisconnectedException;
-import com.app.common.helpers.AlertHelper;
 import com.app.common.models.FileRecord;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
@@ -45,8 +46,6 @@ import com.app.common.services.DriveLetterMapper;
 import com.app.common.services.MassStorageFileSource;
 import com.app.common.utils.FileUtil;
 
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
 import lombok.Getter;
 
 @Component
@@ -1241,27 +1240,6 @@ public class DataSyncWorker implements Runnable {
     // -------------------------------------------------------------------------
 
     /**
-     * Row model for failed file table display. Will cause error if used with Lombok
-     */
-    public record FailedFileRow(String fileName, String reason) {
-
-        /**
-         * JavaBean-style getter required by JavaFX PropertyValueFactory.
-         */
-        public String getFileName() {
-            return fileName;
-        }
-
-        /**
-         * JavaBean-style getter required by JavaFX PropertyValueFactory.
-         */
-        public String getReason() {
-            return reason;
-        }
-
-    }
-
-    /**
      * Show detailed sync failure summary with device name, counts, and failed file
      * table.
      */
@@ -1272,29 +1250,24 @@ public class DataSyncWorker implements Runnable {
             return;
         }
 
-        // Convert SyncFile list to FailedFileRow for table display
-        List<FailedFileRow> rows = new ArrayList<>();
+        List<FailureSummaryRow> rows = new ArrayList<>();
         for (SyncFile pf : failedList) {
             String fileName = name(pf.remotePath());
             String reason = pf.failureReason() != null ? pf.failureReason() : ERROR_UNKNOWN;
-            rows.add(new FailedFileRow(fileName, I18n.get(reason)));
+            rows.add(new FailureSummaryRow(fileName, I18n.get(reason)));
         }
 
-        // Show detailed failure dialog with scrollable table
         String header = I18n.get(SYNC_SUMMARY_HEADER, deviceName, counters.failed);
         String content = I18n.get(SYNC_SUMMARY_CONTENT, counters.total, counters.passed, counters.failed);
         appNoticeService.showError(header + "\n" + content);
-        AlertHelper.DialogText dialogText = new AlertHelper.DialogText(
+        publisher.publishEvent(new FailureSummaryRequestedEvent(
                 I18n.get(SYNC_SUMMARY_TITLE),
                 header,
-                content);
-        ButtonType retryButton = new ButtonType(I18n.get("common.retry"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType closeButton = new ButtonType(I18n.get("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        AlertHelper.TableColumns columns = new AlertHelper.TableColumns(
-                I18n.get(SYNC_SUMMARY_COLUMN_FILENAME), "fileName",
-                I18n.get(SYNC_SUMMARY_COLUMN_REASON), "reason");
-        AlertHelper.showAlertWithTable(dialogText, rows, columns, retryButton, closeButton,
-                () -> requeueRetry(hardwareId, syncContext));
+                content,
+                I18n.get(SYNC_SUMMARY_COLUMN_FILENAME),
+                I18n.get(SYNC_SUMMARY_COLUMN_REASON),
+                rows,
+                () -> requeueRetry(hardwareId, syncContext)));
     }
 
     /**

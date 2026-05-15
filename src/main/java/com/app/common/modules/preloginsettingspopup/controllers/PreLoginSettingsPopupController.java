@@ -1,4 +1,4 @@
-package com.app.common.modules.settingspopup.controllers;
+package com.app.common.modules.preloginsettingspopup.controllers;
 
 import java.util.List;
 import java.util.Locale;
@@ -23,7 +23,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
-public class SettingsPopupController {
+public class PreLoginSettingsPopupController {
 
     /**
      * Encapsulates UI-side actions triggered by settings changes.
@@ -126,7 +126,7 @@ public class SettingsPopupController {
     private final Actions actions;
     private final ApplicationEventPublisher eventPublisher;
 
-    public SettingsPopupController(
+    public PreLoginSettingsPopupController(
             Session session,
             UserSettingService userSettingService,
             Actions actions,

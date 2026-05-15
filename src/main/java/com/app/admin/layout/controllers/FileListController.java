@@ -3,9 +3,11 @@ package com.app.admin.layout.controllers;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,26 +22,38 @@ import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileListFilterState;
 import com.app.common.dtos.FileView;
+import com.app.common.helpers.DialogHelper;
+import com.app.common.modules.dataexport.services.DataExportService;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.queuemanager.controllers.QueueDialogController;
 import com.app.common.modules.session.Session;
 import com.app.common.services.FileService;
 import com.app.common.services.UserService;
 
 import javafx.application.Platform;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.DateCell;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
+import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
+import javafx.stage.Modality;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
 import javafx.util.StringConverter;
 import lombok.Setter;
 
@@ -65,6 +79,8 @@ public class FileListController {
     @FXML
     private TableView<FileView> fileTable;
     @FXML
+    private TableColumn<FileView, Boolean> colSelect;
+    @FXML
     private TableColumn<FileView, String> colName;
     @FXML
     private TableColumn<FileView, String> colDevice;
@@ -85,6 +101,12 @@ public class FileListController {
     @FXML
     private ComboBox<Integer> cbPageSize;
     @FXML
+    private Button btnExportSelected;
+    @FXML
+    private Label lblSelectedCount;
+    @FXML
+    private Button btnDropSelected;
+    @FXML
     private TextField txtPageNumber;
     @FXML
     private Label lblPageTotal;
@@ -100,6 +122,7 @@ public class FileListController {
     private final Session session;
     private final FolderManagerService folderManagerService;
     private final FileListFilterState filterState;
+    private final DataExportService dataExportService;
 
     private String activeCameraId;
     private boolean initializing = true;
@@ -108,9 +131,16 @@ public class FileListController {
     private int currentPageIndex = 0;
     @Setter
     private Runnable onClearFilter;
+    private Stage queueDialogStage;
 
-    // Async file verification with concurrent thread pool
     private final Map<String, VerificationStatus> fileVerificationCache = new ConcurrentHashMap<>();
+    private final Map<String, FileView> cachedFileViews = new ConcurrentHashMap<>();
+    private final Map<String, SimpleBooleanProperty> selectedFileProperties = new ConcurrentHashMap<>();
+    private final Set<String> selectedFileKeys = ConcurrentHashMap.newKeySet();
+    private final CheckBox selectAllCheckBox = new CheckBox();
+    private boolean refreshingSelectAllState;
+    private String selectionAnchorKey;
+
     private final ExecutorService verificationExecutor = Executors.newFixedThreadPool(
             Math.max(8, Runtime.getRuntime().availableProcessors() * 2),
             r -> {
@@ -126,21 +156,26 @@ public class FileListController {
     public FileListController(FileService fileService, UserService userService,
             Session session,
             FolderManagerService folderManagerService,
-            FileListFilterState filterState) {
+            FileListFilterState filterState,
+            DataExportService dataExportService) {
         this.fileService = fileService;
         this.userService = userService;
         this.session = session;
         this.folderManagerService = folderManagerService;
         this.filterState = filterState;
+        this.dataExportService = dataExportService;
     }
 
     @FXML
     public void initialize() {
         setupColumns();
         setupDatePickers();
+        setupSelectionHeader();
+
         boolean isAdmin = session.isAdmin();
         userFilterCombo.setVisible(isAdmin);
         userFilterCombo.setManaged(isAdmin);
+
         if (isAdmin) {
             loadUsers();
         }
@@ -149,12 +184,13 @@ public class FileListController {
         setupPageNumberInput();
         restoreFilterState();
         initializing = true;
+
         setupAutoFilter();
+
         initializing = false;
         this.activeCameraId = filterState.get().getCameraId();
         refresh(buildFilter());
     }
-
 
     private void restoreFilterState() {
         FileFilter f = filterState.get();
@@ -226,6 +262,12 @@ public class FileListController {
     }
 
     private void setupColumns() {
+        colSelect.setCellValueFactory(cellData -> getSelectionProperty(cellData.getValue()));
+        colSelect.setCellFactory(column -> createSelectionCell());
+        colSelect.setEditable(true);
+        colSelect.setSortable(false);
+        fileTable.setEditable(true);
+
         colName.setCellValueFactory(c -> new SimpleStringProperty(formatFileName(c.getValue())));
         colName.setSortable(false);
         colDevice.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().deviceName()));
@@ -239,7 +281,267 @@ public class FileListController {
         colType.setCellValueFactory(c -> new SimpleStringProperty(formatType(c.getValue().type())));
         colType.setSortable(false);
         colDate.setCellValueFactory(c -> new SimpleStringProperty(formatDate(c.getValue().createDate())));
-        colDate.setSortable(false);
+    }
+
+    private TableCell<FileView, Boolean> createSelectionCell() {
+        return new TableCell<>() {
+            private final CheckBox checkBox = new CheckBox();
+
+            {
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setStyle("-fx-alignment: CENTER;");
+                checkBox.setFocusTraversable(false);
+
+                checkBox.setOnMouseClicked(event -> {
+                    if (event.getButton() != MouseButton.PRIMARY || isEmpty()) {
+                        return;
+                    }
+
+                    FileView fileView = getTableRow() == null ? null : getTableRow().getItem();
+                    if (fileView == null) {
+                        log.debug("Ignoring file selection click because row item is unavailable");
+                        return;
+                    }
+
+                    handleSelectionClick(fileView, event.isShiftDown(), event.isControlDown());
+                    event.consume();
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean selected, boolean empty) {
+                super.updateItem(selected, empty);
+                if (empty) {
+                    setGraphic(null);
+                    return;
+                }
+
+                setGraphic(checkBox);
+                checkBox.setSelected(Boolean.TRUE.equals(selected));
+            }
+        };
+    }
+
+    private void handleSelectionClick(FileView fileView, boolean shiftDown, boolean controlDown) {
+        String targetKey = selectionKey(fileView);
+        if (shiftDown) {
+            applyShiftSelection(targetKey);
+            return;
+        }
+
+        boolean shouldSelect = !selectedFileKeys.contains(targetKey);
+        setFileSelected(targetKey, fileView, shouldSelect);
+        selectionAnchorKey = targetKey;
+        log.debug("File checkbox click: key={}, selected={}, ctrl={}, shift={}, selectedCount={}",
+                targetKey, shouldSelect, controlDown, shiftDown, selectedFileKeys.size());
+        fileTable.refresh();
+    }
+
+    /**
+     * Selects a contiguous range on the current page using the last clicked
+     * checkbox
+     * as an anchor.
+     */
+    private void applyShiftSelection(String targetKey) {
+        List<FileView> pageItems = fileTable.getItems();
+        if (pageItems == null || pageItems.isEmpty()) {
+            log.debug("Ignoring shift selection because the current page is empty");
+            return;
+        }
+
+        int targetIndex = findPageIndexBySelectionKey(targetKey);
+        int anchorIndex = selectionAnchorKey == null ? -1 : findPageIndexBySelectionKey(selectionAnchorKey);
+        if (targetIndex < 0) {
+            log.debug("Ignoring shift selection because target key was not found on page: {}", targetKey);
+            return;
+        }
+        if (anchorIndex < 0) {
+            anchorIndex = targetIndex;
+        }
+
+        boolean shouldSelect = !selectedFileKeys.contains(targetKey);
+        int from = Math.min(anchorIndex, targetIndex);
+        int to = Math.max(anchorIndex, targetIndex);
+        for (int i = from; i <= to; i++) {
+            FileView pageFileView = pageItems.get(i);
+            setFileSelected(selectionKey(pageFileView), pageFileView, shouldSelect);
+        }
+        selectionAnchorKey = targetKey;
+        log.debug(
+                "File checkbox shift selection: anchorIndex={}, targetIndex={}, from={}, to={}, selected={}, selectedCount={}",
+                anchorIndex, targetIndex, from, to, shouldSelect, selectedFileKeys.size());
+        fileTable.refresh();
+    }
+
+    private int findPageIndexBySelectionKey(String key) {
+        List<FileView> pageItems = fileTable.getItems();
+        for (int i = 0; i < pageItems.size(); i++) {
+            if (Objects.equals(selectionKey(pageItems.get(i)), key)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void setFileSelected(String key, FileView fileView, boolean selected) {
+        cachedFileViews.put(key, fileView);
+        getSelectionProperty(fileView).set(selected);
+    }
+
+    private void setupSelectionHeader() {
+        selectAllCheckBox.setFocusTraversable(false);
+        selectAllCheckBox.setOnAction(e -> onSelectAllChanged());
+        colSelect.setGraphic(selectAllCheckBox);
+        updateSelectionSummary();
+    }
+
+    private SimpleBooleanProperty getSelectionProperty(FileView fileView) {
+        String key = selectionKey(fileView);
+        return selectedFileProperties.computeIfAbsent(key, k -> {
+            SimpleBooleanProperty property = new SimpleBooleanProperty(false);
+            property.addListener((obs, wasSelected, isSelected) -> {
+                if (isSelected != null && isSelected) {
+                    selectedFileKeys.add(k);
+                } else {
+                    selectedFileKeys.remove(k);
+                }
+                updateSelectionSummary();
+                updateSelectAllHeaderState();
+            });
+            return property;
+        });
+    }
+
+    private void onSelectAllChanged() {
+        if (refreshingSelectAllState) {
+            return;
+        }
+
+        // Select-all is a bulk action, so the next shift-click should start a new
+        // range.
+        selectionAnchorKey = null;
+
+        // Only select/deselect items visible on the current page.
+        boolean shouldSelect = selectAllCheckBox.isSelected();
+        for (FileView fileView : fileTable.getItems()) {
+            getSelectionProperty(fileView).set(shouldSelect);
+        }
+        log.debug("File checkbox select-all: selected={}, pageSize={}, selectedCount={}",
+                shouldSelect, fileTable.getItems().size(), selectedFileKeys.size());
+
+        updateSelectionSummary();
+        updateSelectAllHeaderState();
+    }
+
+    private void updateSelectAllHeaderState() {
+        refreshingSelectAllState = true;
+        try {
+            List<FileView> pageItems = fileTable.getItems();
+            if (pageItems == null || pageItems.isEmpty()) {
+                selectAllCheckBox.setSelected(false);
+                return;
+            }
+
+            // Header checkbox reflects selection state of the current page only.
+            boolean allSelected = true;
+            for (FileView fileView : pageItems) {
+                if (!selectedFileKeys.contains(selectionKey(fileView))) {
+                    allSelected = false;
+                    break;
+                }
+            }
+            selectAllCheckBox.setSelected(allSelected);
+        } finally {
+            refreshingSelectAllState = false;
+        }
+    }
+
+    private void updateSelectionSummary() {
+        int selectedCount = selectedFileKeys.size();
+        lblSelectedCount.setText(I18n.get("file.selected.count.dynamic", selectedCount));
+        boolean hasSelection = selectedCount > 0;
+        lblSelectedCount.setManaged(hasSelection);
+        lblSelectedCount.setVisible(hasSelection);
+        btnDropSelected.setManaged(hasSelection);
+        btnDropSelected.setVisible(hasSelection);
+        btnDropSelected.setDisable(selectedCount == 0);
+        btnExportSelected.setDisable(selectedCount == 0);
+    }
+
+    @FXML
+    private void onDropSelected() {
+        clearSelectionState();
+        fileTable.refresh();
+    }
+
+    /**
+     * Clear selected state without triggering table refresh.
+     *
+     * Used by logout cleanup to avoid cell re-evaluation during scene teardown.
+     */
+    private void clearSelectionState() {
+        // Create a copy to avoid concurrent modifications while listeners update sets.
+        Set<String> keys = new HashSet<>(selectedFileProperties.keySet());
+        for (String key : keys) {
+            SimpleBooleanProperty property = selectedFileProperties.get(key);
+            if (property != null) {
+                property.set(false);
+            }
+        }
+        selectedFileKeys.clear();
+        selectionAnchorKey = null;
+        updateSelectionSummary();
+        updateSelectAllHeaderState();
+    }
+
+    @FXML
+    private void onExportSelected() {
+        List<FileView> selected = new ArrayList<>();
+        for (String key : selectedFileKeys) {
+            FileView fileView = cachedFileViews.get(key);
+            if (fileView != null) {
+                selected.add(fileView);
+            }
+        }
+
+        if (selected.isEmpty()) {
+            return;
+        }
+
+        dataExportService.exportSelectedFiles(selected);
+    }
+
+    @FXML
+    private void onOpenQueueDialog() {
+        // Keep a single shared queue window while this view is active.
+        if (queueDialogStage != null && queueDialogStage.isShowing()) {
+            queueDialogStage.toFront();
+            queueDialogStage.requestFocus();
+            return;
+        }
+
+        DialogHelper.Dialog<QueueDialogController> dialog = DialogHelper.createDialog(
+                "/fxml/common/queue/queue-dialog.fxml",
+                I18n.get("queue.dialog.title"),
+                Modality.NONE);
+
+        queueDialogStage = dialog.stage();
+        queueDialogStage.setOnShown(event -> {
+            if (dialog.controller() != null) {
+                dialog.controller().refreshAllTabs();
+            }
+        });
+
+        queueDialogStage.setOnHidden(event -> queueDialogStage = null);
+        queueDialogStage.show();
+    }
+
+    // Close queue dialog if open to avoid dangling windows during
+    // logout/navigation.
+    public void closeQueueDialog() {
+        if (queueDialogStage != null && queueDialogStage.isShowing()) {
+            queueDialogStage.close();
+        }
     }
 
     // Format file name with verification status (non-blocking)
@@ -274,7 +576,8 @@ public class FileListController {
     private void startAsyncVerification(String syncedPath, long expectedSize) {
         verificationExecutor.submit(() -> {
             try {
-                PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedPath, expectedSize);
+                PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedPath,
+                        expectedSize);
 
                 VerificationStatus newStatus;
                 if (result.isNotFound()) {
@@ -323,9 +626,16 @@ public class FileListController {
         }
 
         List<FileView> files = fileService.query(filter);
+        cacheLoadedFiles(files);
         filteredFiles = new ArrayList<>(files);
         currentPageIndex = 0;
         setupPagination();
+    }
+
+    private void cacheLoadedFiles(List<FileView> files) {
+        for (FileView fileView : files) {
+            cachedFileViews.put(selectionKey(fileView), fileView);
+        }
     }
 
     private void setupPageSizeComboBox() {
@@ -349,6 +659,8 @@ public class FileListController {
         }
         updateTablePage();
         updatePagerControls(pageCount);
+        updateSelectionSummary();
+        updateSelectAllHeaderState();
         fileTable.refresh();
     }
 
@@ -393,6 +705,7 @@ public class FileListController {
         for (int page : pages) {
             Button btn = new Button(String.valueOf(page + 1));
             btn.getStyleClass().add("btn-secondary");
+            btn.getStyleClass().add("btn-pagination");
             if (page == currentPageIndex) {
                 btn.getStyleClass().add("btn-page-active");
             }
@@ -408,7 +721,8 @@ public class FileListController {
     private List<Integer> getPageRange(int pageCount) {
         if (pageCount <= 7) {
             List<Integer> pages = new ArrayList<>();
-            for (int i = 0; i < pageCount; i++) pages.add(i);
+            for (int i = 0; i < pageCount; i++)
+                pages.add(i);
             return pages;
         }
 
@@ -425,7 +739,8 @@ public class FileListController {
         }
 
         List<Integer> pages = new ArrayList<>();
-        for (int i = start; i <= end; i++) pages.add(i);
+        for (int i = start; i <= end; i++)
+            pages.add(i);
         return pages;
     }
 
@@ -569,7 +884,8 @@ public class FileListController {
     }
 
     public void reloadUserFilter() {
-        if (!session.isAdmin()) return;
+        if (!session.isAdmin())
+            return;
         Platform.runLater(this::loadUsers);
     }
 
@@ -632,20 +948,47 @@ public class FileListController {
         Platform.runLater(() -> refresh(buildFilter()));
     }
 
+    private String selectionKey(FileView fileView) {
+        if (fileView.fileId() != null) {
+            return "id:" + fileView.fileId();
+        }
+        if (fileView.syncedPath() != null && !fileView.syncedPath().isBlank()) {
+            return "path:" + fileView.syncedPath();
+        }
+        if (fileView.name() != null && fileView.createDate() != null) {
+            return "name-date:" + fileView.name() + ":" + fileView.createDate();
+        }
+        if (fileView.name() != null) {
+            return "name:" + fileView.name();
+        }
+        return "unknown:" + System.identityHashCode(fileView);
+    }
+
+    /**
+     * Clear all selected file state when leaving dashboard view.
+     */
+    public void resetSelectionState() {
+        clearSelectionState();
+    }
+
     /**
      * Cleanup resources when controller is no longer needed.
      * Shuts down the verification executor to prevent thread leaks.
      * Called during logout to ensure proper resource cleanup.
      */
     public void cleanup() {
+        closeQueueDialog();
         filterState.clear();
+        resetSelectionState();
+        cachedFileViews.clear();
         verificationExecutor.shutdownNow();
         fileVerificationCache.clear();
         log.debug("FileListController cleanup: executor shutdown, cache cleared");
     }
 
     private String shortenFileName(String fileName) {
-        if (fileName == null) return "";
+        if (fileName == null)
+            return "";
         int dotIndex = fileName.lastIndexOf('.');
         String ext = dotIndex >= 0 ? fileName.substring(dotIndex) : "";
         String name = dotIndex >= 0 ? fileName.substring(0, dotIndex) : fileName;

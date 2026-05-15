@@ -1,5 +1,4 @@
-
-package com.app.common.modules.settingspopup.helpers;
+package com.app.common.modules.preloginsettingspopup.helpers;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -11,8 +10,8 @@ import com.app.MainApp;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.helpers.SpringContextHolder;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.preloginsettingspopup.controllers.PreLoginSettingsPopupController;
 import com.app.common.modules.session.Session;
-import com.app.common.modules.settingspopup.controllers.SettingsPopupController;
 import com.app.common.services.UserSettingService;
 
 import javafx.application.Platform;
@@ -22,11 +21,11 @@ import javafx.scene.control.Button;
 import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 
-// Manage the shared settings popup so login/admin flows reuse the same language,
-// theme, sizing, and reopen behavior.
-public class SettingsPopupHelper {
+// Manage the pre-login settings popup so login can reuse language, theme, sizing,
+// and reopen behavior without depending on authenticated user settings UI.
+public class PreLoginSettingsPopupHelper {
 
-    private static final Logger log = LoggerFactory.getLogger(SettingsPopupHelper.class);
+    private static final Logger log = LoggerFactory.getLogger(PreLoginSettingsPopupHelper.class);
 
     private static final Map<String, PopupState> POPUP_STATES = new HashMap<>();
 
@@ -40,7 +39,7 @@ public class SettingsPopupHelper {
 
     private Popup settingsPopup;
 
-    public SettingsPopupHelper(String stateKey,
+    public PreLoginSettingsPopupHelper(String stateKey,
             Button anchorButton,
             PopupAnchorY popupAnchorY,
             UserSettingService userSettingService, // ← nullable
@@ -151,12 +150,13 @@ public class SettingsPopupHelper {
     // instead of Java code.
     private VBox loadSettingsPanel() {
         try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource(ViewPaths.SETTINGS_POPUP), I18n.getBundle());
-            loader.setController(new SettingsPopupController(
+            FXMLLoader loader = new FXMLLoader(getClass().getResource(ViewPaths.PRE_LOGIN_SETTINGS_POPUP),
+                    I18n.getBundle());
+            loader.setController(new PreLoginSettingsPopupController(
                     SpringContextHolder.getBean(Session.class),
                     userSettingService != null ? userSettingService
                             : SpringContextHolder.getBean(UserSettingService.class),
-                    new SettingsPopupController.Actions(
+                    new PreLoginSettingsPopupController.Actions(
                             reloadUiAction,
                             this::prepareForReloadIfOpen,
                             this::refreshIfOpen,

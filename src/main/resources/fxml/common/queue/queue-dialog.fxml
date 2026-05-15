@@ -8,8 +8,8 @@
       stylesheets="@/css/admin.css,@/css/common/queue/queue-dialog.css"
       spacing="10"
       styleClass="queue-dialog-container"
-      prefWidth="1100"
-      prefHeight="600">
+      prefWidth="800"
+      prefHeight="500">
     <!-- Header -->
     <HBox alignment="CENTER_LEFT" spacing="10">
         <Label fx:id="lblTitle" text="%queue.dialog.title" styleClass="title"/>
@@ -48,6 +48,22 @@
                         <TableColumn fx:id="backupColStatus" text="%queue.column.status" prefWidth="45"/>
                     </columns>
                 </TableView>
+            </VBox>
+        </Tab>
+        <Tab fx:id="tabExport" text="%queue.tab.export" closable="false">
+            <VBox spacing="5">
+                <padding>
+                    <Insets top="10" right="0" bottom="0" left="0"/>
+                </padding>
+                <TreeTableView fx:id="exportTreeTable" VBox.vgrow="ALWAYS">
+                    <columnResizePolicy>
+                        <TreeTableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                    </columnResizePolicy>
+                    <columns>
+                        <TreeTableColumn fx:id="exportColName" text="%queue.column.name" prefWidth="55"/>
+                        <TreeTableColumn fx:id="exportColStatus" text="%queue.column.status" prefWidth="45"/>
+                    </columns>
+                </TreeTableView>
             </VBox>
         </Tab>
     </TabPane>

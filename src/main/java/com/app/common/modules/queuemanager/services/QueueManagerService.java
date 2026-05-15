@@ -1,12 +1,15 @@
 package com.app.common.modules.queuemanager.services;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
 
 import com.app.common.modules.queuemanager.dtos.DeviceQueueItem;
+import com.app.common.modules.queuemanager.dtos.ExportDirectoryQueueItem;
 import com.app.common.modules.queuemanager.dtos.FileQueueItem;
 import com.app.common.modules.queuemanager.trackers.BackupProgressTracker;
+import com.app.common.modules.queuemanager.trackers.ExportProgressTracker;
 import com.app.common.modules.queuemanager.trackers.SyncProgressTracker;
 
 /**
@@ -20,11 +23,14 @@ public class QueueManagerService {
 
     private final SyncProgressTracker syncTracker;
     private final BackupProgressTracker backupTracker;
+    private final ExportProgressTracker exportTracker;
 
     public QueueManagerService(SyncProgressTracker syncTracker,
-            BackupProgressTracker backupTracker) {
+            BackupProgressTracker backupTracker,
+            ExportProgressTracker exportTracker) {
         this.syncTracker = syncTracker;
         this.backupTracker = backupTracker;
+        this.exportTracker = exportTracker;
     }
 
     // ── Sync Operations ──────────────────────────────────────────────────────
@@ -171,6 +177,109 @@ public class QueueManagerService {
         return backupTracker.getFile(filePath);
     }
 
+    // ── Export Operations ────────────────────────────────────────────────────
+
+    /**
+     * Add file to export queue.
+     */
+    public void addFileToExportTracker(String exportPathId, String fileName) {
+        exportTracker.addFile(exportPathId, fileName);
+    }
+
+    /**
+     * Add file to export queue with size metadata used for directory ordering.
+     */
+    public void addFileToExportTracker(String exportPathId, String fileName, Long fileSize) {
+        exportTracker.addFile(exportPathId, fileName, fileSize);
+    }
+
+    /**
+     * Mark export file as processing.
+     */
+    public void markExportFileProcessing(String exportPathId) {
+        exportTracker.markProcessing(exportPathId);
+    }
+
+    /**
+     * Update export file progress.
+     */
+    public void updateExportFileProgress(String exportPathId, int progress) {
+        exportTracker.updateProgress(exportPathId, progress);
+    }
+
+    /**
+     * Mark export file as completed.
+     */
+    public void markExportFileCompleted(String exportPathId) {
+        exportTracker.markCompleted(exportPathId);
+    }
+
+    /**
+     * Replace the displayed export file name after conflict resolution.
+     */
+    public void renameExportFile(String exportPathId, String exportedFileName) {
+        exportTracker.renameFile(exportPathId, exportedFileName);
+    }
+
+    /**
+     * Mark export file as failed.
+     */
+    public void markExportFileFailed(String exportPathId, String errorMessage) {
+        exportTracker.markFailed(exportPathId, errorMessage);
+    }
+
+    /**
+     * Mark export file as deferred — export drive unavailable, waiting for
+     * recovery.
+     */
+    public void markExportFileDeferred(String exportPathId, String reason) {
+        exportTracker.markDeferred(exportPathId, reason);
+    }
+
+    /**
+     * Mark export file as skipped (e.g. user chose to skip a conflict).
+     * The reason is stored as an i18n key and shown in the queue UI.
+     */
+    public void markExportFileSkipped(String exportPathId, String reason) {
+        exportTracker.markSkipped(exportPathId, reason);
+    }
+
+    /**
+     * Move an export file entry when the export directory changes after storage
+     * recovery.
+     */
+    public void moveExportFile(String oldExportPathId, String newExportPathId) {
+        exportTracker.moveFileToExportPath(oldExportPathId, newExportPathId);
+    }
+
+    /**
+     * Mark an export directory as finished with worker-provided aggregate counts.
+     */
+    public void markExportDirectoryFinished(Path exportDir, int total, int passed, int failed, Runnable retryAction) {
+        exportTracker.markDirectoryFinished(exportDir, total, passed, failed, retryAction);
+    }
+
+    /**
+     * Reset a finished export directory before a new run starts for that directory.
+     */
+    public void resetExportDirectoryForNewRun(Path exportDir) {
+        exportTracker.resetDirectoryForNewRun(exportDir);
+    }
+
+    /**
+     * Get all files in export queue.
+     */
+    public List<FileQueueItem> getAllTrackingExportFiles() {
+        return exportTracker.getAllFiles();
+    }
+
+    /**
+     * Get export destination directories with aggregate counts.
+     */
+    public List<ExportDirectoryQueueItem> getAllTrackingExportDirectories() {
+        return exportTracker.getAllDirectories();
+    }
+
     // ── General Operations ───────────────────────────────────────────────────
 
     /**
@@ -179,5 +288,6 @@ public class QueueManagerService {
     public void clearAll() {
         syncTracker.clear();
         backupTracker.clear();
+        exportTracker.clear();
     }
 }

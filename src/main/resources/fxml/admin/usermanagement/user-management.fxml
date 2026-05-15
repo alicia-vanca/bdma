@@ -40,11 +40,11 @@
             <ComboBox fx:id="cbPageSize" styleClass="page-size-combo"/>
             <Label text="%common.per.page"/>
             <Region HBox.hgrow="ALWAYS"/>
-            <Button fx:id="btnFirst" text="«" onAction="#onFirstPage" styleClass="btn-secondary"/>
-            <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary"/>
+            <Button fx:id="btnFirst" text="«" onAction="#onFirstPage" styleClass="btn-secondary,btn-pagination"/>
+            <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary,btn-pagination"/>
             <HBox fx:id="pageButtonsBox" spacing="4" alignment="CENTER"/>
-            <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary"/>
-            <Button fx:id="btnLast" text="»" onAction="#onLastPage" styleClass="btn-secondary"/>
+            <Button fx:id="btnNext" text="›" onAction="#onNextPage" styleClass="btn-secondary,btn-pagination"/>
+            <Button fx:id="btnLast" text="»" onAction="#onLastPage" styleClass="btn-secondary,btn-pagination"/>
             <TextField fx:id="txtPageNumber" styleClass="page-number-input" promptText="1"/>
             <Label fx:id="lblPageTotal" styleClass="page-total-label"/>
         </HBox>

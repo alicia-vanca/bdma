@@ -76,15 +76,17 @@
 .table-view {
     -fx-background-color: -table-bg;
     -fx-border-color: -border-color;
+    -fx-padding: 0;
     -fx-table-cell-border-color: -border-color;
     -fx-table-header-border-color: -border-color;
 }
 
+/* No border on the background/filler containers � the outer table border handles framing */
 .table-view .column-header,
 .table-view .filler,
 .table-view .column-header-background {
     -fx-background-color: -table-bg;
-    -fx-border-color: -border-color;
+    -fx-border-color: transparent;
 }
 
 .table-view .column-header-background,
@@ -124,27 +126,33 @@
 }
 
 .table-row-cell:selected {
-    -fx-background-color: -table-bg;
-    -fx-border-color: -primary;
-    -fx-border-width: 2;
+    -fx-background-color: -primary, -table-bg;
+    -fx-background-insets: 0, 2;
 }
 
 .table-row-cell:selected .table-cell {
     -fx-text-fill: -text-color;
 }
 
+/* Hide right border only on the last column cell so it doesn't overlap the primary selection inset */
+.table-row-cell:selected .last-cell {
+    -fx-border-color: transparent;
+}
+
 /* TREE TABLE */
 .tree-table-view {
     -fx-background-color: -table-bg;
     -fx-border-color: -border-color;
+    -fx-padding: 0;
     -fx-table-cell-border-color: -border-color;
 }
 
+/* No border on the background/filler containers � the outer table border handles framing */
 .tree-table-view .column-header,
 .tree-table-view .filler,
 .tree-table-view .column-header-background {
     -fx-background-color: -table-bg;
-    -fx-border-color: -border-color;
+    -fx-border-color: transparent;
 }
 
 .tree-table-view .column-header-background,
@@ -184,13 +192,17 @@
 }
 
 .tree-table-row-cell:selected {
-    -fx-background-color: -table-bg;
-    -fx-border-color: -primary;
-    -fx-border-width: 2;
+    -fx-background-color: -primary, -table-bg;
+    -fx-background-insets: 0, 2;
 }
 
 .tree-table-row-cell:selected .tree-table-cell {
     -fx-text-fill: -text-color;
+}
+
+/* Hide right border only on the last column cell so it doesn't overlap the primary selection inset */
+.tree-table-row-cell:selected .last-cell {
+    -fx-border-color: transparent;
 }
 
 .tree-table-row-cell .tree-disclosure-node {
@@ -205,20 +217,19 @@
     -fx-background-color: -text-color;
 }
 
-/* BUTTONS */
-.button {
-    -fx-background-color: -primary;
+.btn-action {
+    -fx-padding: 4 12;
+    -fx-alignment: CENTER;
     -fx-text-fill: white;
+    -fx-background-color: -primary;
     -fx-background-radius: 6;
-    -fx-padding: 6 12;
-    -fx-cursor: hand;
 }
 
-.button:hover {
+.btn-action:hover {
     -fx-background-color: -primary-hover;
 }
 
-.button:disabled {
+.btn-action:disabled {
     -fx-opacity: 1;
     -fx-text-fill: #94a3b8;
     -fx-background-color: #e2e8f0;

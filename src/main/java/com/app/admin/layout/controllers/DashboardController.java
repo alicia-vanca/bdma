@@ -7,7 +7,6 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import lombok.Setter;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -16,12 +15,10 @@ import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.events.DeviceEvent;
-import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.queuemanager.controllers.QueueDialogController;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.DeviceMiniStatus;
@@ -45,11 +42,11 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.SVGPath;
-import javafx.stage.Modality;
-import javafx.stage.Stage;
+import lombok.Setter;
 
 @Component
 public class DashboardController extends BaseLayoutController {
+
     @FXML
     private ListView<DeviceSummary> deviceListView;
     @FXML
@@ -71,9 +68,11 @@ public class DashboardController extends BaseLayoutController {
     @Setter
     private Consumer<DeviceSummary> onRequestSync;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
-                    DashboardController::sortName, String.CASE_INSENSITIVE_ORDER)
+            DashboardController::sortName,
+            String.CASE_INSENSITIVE_ORDER)
             .thenComparing(summary -> summary.getHardwareId() == null ? "" : summary.getHardwareId(),
                     String.CASE_INSENSITIVE_ORDER);
+
     public DashboardController(ViewLoader viewLoader,
             ValidatedDeviceRepository validatedDeviceRepository,
             DeviceMiniStatus deviceMiniStatus,
@@ -259,7 +258,7 @@ public class DashboardController extends BaseLayoutController {
     // Display sync progress for connected devices: queued, syncing with counts, or
     // idle
     private String resolveConnectedText(DeviceMiniStatus.SyncStatus status,
-                                        DeviceMiniStatus.SyncProgress progress) {
+            DeviceMiniStatus.SyncProgress progress) {
 
         return switch (status) {
             case QUEUED -> I18n.get("dashboard.device.queued");
@@ -323,11 +322,9 @@ public class DashboardController extends BaseLayoutController {
     @FXML
     public void initialize() {
         devicePanel.prefWidthProperty().bind(
-                root.widthProperty().multiply(0.15)
-        );
+                root.widthProperty().multiply(0.15));
         devicePanel.maxWidthProperty().bind(
-                root.widthProperty().multiply(0.15)
-        );
+                root.widthProperty().multiply(0.15));
         updateCellFactory();
         deviceListView.setItems(deviceItems);
         if (!deviceStateInitialized) {
@@ -339,46 +336,15 @@ public class DashboardController extends BaseLayoutController {
 
         deviceListView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null && fileListController != null) {
-                fileListController.filterByDevice(newVal.getHardwareId());
+                fileListController.filterByDevice(newVal.getCameraId());
             }
         });
-    }
-
-    private Stage queueDialogStage = null;
-
-    @FXML
-    private void openQueueDialog() {
-        // Prevent opening multiple queue dialogs
-        if (queueDialogStage != null && queueDialogStage.isShowing()) {
-            queueDialogStage.toFront();
-            queueDialogStage.requestFocus();
-            return;
-        }
-
-        DialogHelper.Dialog<QueueDialogController> dialog = DialogHelper.createDialog(
-                "/fxml/common/queue/queue-dialog.fxml",
-                I18n.get("queue.dialog.title"),
-                Modality.NONE);
-
-        queueDialogStage = dialog.stage();
-
-        // Refresh queue data when dialog is shown
-        queueDialogStage.setOnShown(event -> {
-            if (dialog.controller() != null) {
-                dialog.controller().refreshAllTabs();
-            }
-        });
-
-        // Clear reference when dialog closes
-        queueDialogStage.setOnHidden(event -> queueDialogStage = null);
-
-        queueDialogStage.show();
     }
 
     // Close queue dialog if open
     public void closeQueueDialog() {
-        if (queueDialogStage != null && queueDialogStage.isShowing()) {
-            queueDialogStage.close();
+        if (fileListController != null) {
+            fileListController.closeQueueDialog();
         }
     }
 
@@ -624,6 +590,15 @@ public class DashboardController extends BaseLayoutController {
             fileListController.onFileBackupCompleted();
         }
         refresh();
+    }
+
+    /**
+     * Clear selected files when user leaves the dashboard view.
+     */
+    public void resetFileSelectionState() {
+        if (fileListController != null) {
+            fileListController.resetSelectionState();
+        }
     }
 
     public void mergeSavedDevices() {

@@ -12,6 +12,7 @@ import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.common.events.LanguageChangedEvent;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.queuemanager.dtos.DeviceQueueItem;
+import com.app.common.modules.queuemanager.dtos.ExportDirectoryQueueItem;
 import com.app.common.modules.queuemanager.dtos.FileQueueItem;
 import com.app.common.modules.queuemanager.enums.ItemStatus;
 import com.app.common.modules.queuemanager.events.QueueStatusChangedEvent;
@@ -28,6 +29,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeTableColumn;
 import javafx.scene.control.TreeTableView;
@@ -45,6 +47,9 @@ public class QueueDialogController {
 
     private static final Logger log = LoggerFactory.getLogger(QueueDialogController.class);
     private static final String I18N_QUEUE_EMPTY = "queue.empty";
+    private static final String I18N_QUEUE_COLUMN_STATUS = "queue.column.status";
+    private static final String STYLE_LAST_CELL = "last-cell";
+    private static final String STYLE_REASON_LABEL = "-fx-text-fill: #c62828; -fx-font-size: 13px;";
 
     // Sync tab components
     @FXML
@@ -64,9 +69,19 @@ public class QueueDialogController {
     @FXML
     private Label lblTitle;
     @FXML
+    private TabPane tabPane;
+    @FXML
     private Tab tabSync;
     @FXML
     private Tab tabBackup;
+    @FXML
+    private TreeTableView<QueueTreeItem> exportTreeTable;
+    @FXML
+    private TreeTableColumn<QueueTreeItem, String> exportColName;
+    @FXML
+    private TreeTableColumn<QueueTreeItem, String> exportColStatus;
+    @FXML
+    private Tab tabExport;
 
     private final QueueManagerService queueManagerService;
     private final AdminLayoutController adminLayoutController;
@@ -80,7 +95,19 @@ public class QueueDialogController {
     public void initialize() {
         setupSyncTab();
         setupBackupTab();
+        setupExportTab();
+        hideBackupTabByDefault();
         refreshAllTabs();
+    }
+
+    /**
+     * Keep the backup queue available to the controller while removing its tab from
+     * the default dialog layout.
+     */
+    private void hideBackupTabByDefault() {
+        if (tabPane != null && tabBackup != null) {
+            tabPane.getTabs().remove(tabBackup);
+        }
     }
 
     // ── Sync Tab Setup ───────────────────────────────────────────────────────
@@ -92,7 +119,7 @@ public class QueueDialogController {
     }
 
     private void configureSyncRowFactory() {
-        syncTreeTable.setRowFactory(tableView -> new SyncDeviceTreeRow());
+        syncTreeTable.setRowFactory(tableView -> new GroupNodeTreeRow());
     }
 
     private void configureSyncColumns() {
@@ -122,7 +149,7 @@ public class QueueDialogController {
             List<FileQueueItem> files = new ArrayList<>(device.getFiles());
 
             TreeItem<QueueTreeItem> deviceNode = new TreeItem<>(new QueueTreeItem(device));
-            deviceNode.setExpanded(true);
+            deviceNode.setExpanded(!isFinishedStatus(device.getStatus()));
 
             for (FileQueueItem file : files) {
                 TreeItem<QueueTreeItem> fileNode = new TreeItem<>(new QueueTreeItem(file));
@@ -148,9 +175,10 @@ public class QueueDialogController {
             private final VBox container = new VBox(1, statusLabel, reasonLabel);
 
             {
+                getStyleClass().add(STYLE_LAST_CELL);
                 statusLabel.setWrapText(false);
                 reasonLabel.setWrapText(false);
-                reasonLabel.setStyle("-fx-text-fill: #c62828; -fx-font-size: 15px;");
+                reasonLabel.setStyle(STYLE_REASON_LABEL);
                 container.setAlignment(Pos.CENTER_LEFT);
                 container.setMaxHeight(40);
                 container.prefWidthProperty().bind(column.widthProperty().subtract(24));
@@ -167,7 +195,10 @@ public class QueueDialogController {
                     return;
                 }
 
-                FileQueueItem rowItem = getTableRow() == null ? null : getTableRow().getItem();
+                FileQueueItem rowItem = null;
+                if (getTableRow() != null) {
+                    rowItem = getTableRow().getItem();
+                }
                 statusLabel.setText(item);
 
                 if (rowItem != null && hasErrorReason(rowItem.getStatus(), rowItem.getErrorMessage())) {
@@ -194,19 +225,56 @@ public class QueueDialogController {
         backupTable.refresh();
     }
 
+    // ── Export Tab Setup ─────────────────────────────────────────────────────
+
+    private void setupExportTab() {
+        exportTreeTable.setRowFactory(tableView -> new GroupNodeTreeRow());
+        exportColName.setCellValueFactory(
+                param -> new SimpleStringProperty(param.getValue().getValue().getName()));
+        exportColStatus.setCellValueFactory(
+                param -> new SimpleStringProperty(formatStatusForDisplay(param.getValue().getValue())));
+        exportColStatus.setCellFactory(ExportStatusTreeCell::new);
+        exportTreeTable.setPlaceholder(new Label(I18n.get(I18N_QUEUE_EMPTY)));
+        TreeItem<QueueTreeItem> root = new TreeItem<>(new QueueTreeItem());
+        root.setExpanded(true);
+        exportTreeTable.setRoot(root);
+        exportTreeTable.setShowRoot(false);
+    }
+
+    private void refreshExportTab() {
+        TreeItem<QueueTreeItem> root = exportTreeTable.getRoot();
+        root.getChildren().clear();
+
+        // Defensive copy to avoid ConcurrentModificationException.
+        List<ExportDirectoryQueueItem> directories = new ArrayList<>(
+                queueManagerService.getAllTrackingExportDirectories());
+
+        for (ExportDirectoryQueueItem directory : directories) {
+            TreeItem<QueueTreeItem> dirNode = new TreeItem<>(new QueueTreeItem(directory));
+            dirNode.setExpanded(!isFinishedStatus(directory.getStatus()));
+            for (FileQueueItem file : new ArrayList<>(directory.getFiles())) {
+                dirNode.getChildren().add(new TreeItem<>(new QueueTreeItem(file)));
+            }
+            root.getChildren().add(dirNode);
+        }
+
+        exportTreeTable.refresh();
+    }
+
     // ── Event Listeners ──────────────────────────────────────────────────────
 
     @EventListener
     public void onQueueStatusChanged(QueueStatusChangedEvent event) {
         Platform.runLater(() -> {
             // Skip if dialog not initialized yet
-            if (syncTreeTable == null || backupTable == null) {
+            if (syncTreeTable == null || backupTable == null || exportTreeTable == null) {
                 return;
             }
 
             switch (event.getQueueType()) {
                 case SYNC -> refreshSyncTab();
                 case BACKUP -> refreshBackupTab();
+                case EXPORT -> refreshExportTab();
             }
         });
     }
@@ -221,7 +289,7 @@ public class QueueDialogController {
         }
         Platform.runLater(() -> {
             // Skip if dialog not initialized yet
-            if (syncTreeTable == null || backupTable == null) {
+            if (syncTreeTable == null || backupTable == null || exportTreeTable == null) {
                 return;
             }
 
@@ -235,6 +303,7 @@ public class QueueDialogController {
     public void refreshAllTabs() {
         refreshSyncTab();
         refreshBackupTab();
+        refreshExportTab();
     }
 
     /**
@@ -251,23 +320,35 @@ public class QueueDialogController {
         if (tabBackup != null) {
             tabBackup.setText(I18n.get("queue.tab.backup"));
         }
+        if (tabExport != null) {
+            tabExport.setText(I18n.get("queue.tab.export"));
+        }
         if (syncColName != null) {
             syncColName.setText(I18n.get("queue.column.name"));
         }
         if (syncColStatus != null) {
-            syncColStatus.setText(I18n.get("queue.column.status"));
+            syncColStatus.setText(I18n.get(I18N_QUEUE_COLUMN_STATUS));
         }
         if (backupColFile != null) {
             backupColFile.setText(I18n.get("queue.column.file"));
         }
         if (backupColStatus != null) {
-            backupColStatus.setText(I18n.get("queue.column.status"));
+            backupColStatus.setText(I18n.get(I18N_QUEUE_COLUMN_STATUS));
+        }
+        if (exportColName != null) {
+            exportColName.setText(I18n.get("queue.column.name"));
+        }
+        if (exportColStatus != null) {
+            exportColStatus.setText(I18n.get(I18N_QUEUE_COLUMN_STATUS));
         }
         if (syncTreeTable != null) {
             syncTreeTable.setPlaceholder(new Label(I18n.get(I18N_QUEUE_EMPTY)));
         }
         if (backupTable != null) {
             backupTable.setPlaceholder(new Label(I18n.get(I18N_QUEUE_EMPTY)));
+        }
+        if (exportTreeTable != null) {
+            exportTreeTable.setPlaceholder(new Label(I18n.get(I18N_QUEUE_EMPTY)));
         }
     }
 
@@ -289,7 +370,7 @@ public class QueueDialogController {
     }
 
     private String formatStatusForDisplay(QueueTreeItem item) {
-        if (item.isDevice()
+        if ((item.isDevice() || item.isExportDir())
                 && (item.getStatus() == ItemStatus.COMPLETED || item.getStatus() == ItemStatus.COMPLETED_WITH_ERRORS)) {
             return I18n.get("device.sync.summary.content", item.getTotal(), item.getPassed(), item.getFailed());
         }
@@ -321,7 +402,13 @@ public class QueueDialogController {
             return false;
         }
         return status == ItemStatus.FAILED || status == ItemStatus.COMPLETED_WITH_ERRORS
-                || status == ItemStatus.DEFERRED;
+                || status == ItemStatus.DEFERRED || status == ItemStatus.SKIPPED;
+    }
+
+    private boolean isFinishedStatus(ItemStatus status) {
+        return status == ItemStatus.COMPLETED || status == ItemStatus.COMPLETED_WITH_ERRORS
+                || status == ItemStatus.FAILED || status == ItemStatus.CANCELLED
+                || status == ItemStatus.SKIPPED;
     }
 
     /**
@@ -341,10 +428,10 @@ public class QueueDialogController {
     }
 
     /**
-     * Custom row to keep disclosure arrow vertically centered for non-leaf device
-     * rows.
+     * Custom row to keep disclosure arrow vertically centered for sync and export
+     * group rows that can expand into file children.
      */
-    private static class SyncDeviceTreeRow extends TreeTableRow<QueueTreeItem> {
+    private static class GroupNodeTreeRow extends TreeTableRow<QueueTreeItem> {
         @Override
         protected void layoutChildren() {
             super.layoutChildren();
@@ -355,9 +442,9 @@ public class QueueDialogController {
             }
 
             QueueTreeItem item = getItem();
-            boolean centerForDevice = item != null && item.isDevice() && getTreeItem() != null
-                    && !getTreeItem().isLeaf();
-            if (!centerForDevice) {
+            boolean centerForGroupNode = item != null && (item.isDevice() || item.isExportDir())
+                    && getTreeItem() != null && !getTreeItem().isLeaf();
+            if (!centerForGroupNode) {
                 disclosureNode.setTranslateY(0);
                 return;
             }
@@ -381,9 +468,10 @@ public class QueueDialogController {
         private final VBox container = new VBox(1, statusWithButton, reasonLabel);
 
         private SyncStatusTreeCell(TreeTableColumn<QueueTreeItem, String> column) {
+            getStyleClass().add(STYLE_LAST_CELL);
             statusLabel.setWrapText(false);
             reasonLabel.setWrapText(false);
-            reasonLabel.setStyle("-fx-text-fill: #c62828; -fx-font-size: 15px;");
+            reasonLabel.setStyle(STYLE_REASON_LABEL);
             statusWithButton.setAlignment(Pos.CENTER_LEFT);
             statusWithButton.prefWidthProperty().bind(container.prefWidthProperty());
             container.setAlignment(Pos.CENTER_LEFT);
@@ -392,6 +480,7 @@ public class QueueDialogController {
             statusLabel.maxWidthProperty().bind(container.prefWidthProperty());
             reasonLabel.maxWidthProperty().bind(container.prefWidthProperty());
             HBox.setHgrow(statusSpacer, Priority.ALWAYS);
+            retryButton.getStyleClass().add("btn-action");
             retryButton.setOnAction(e -> onRetryAction());
         }
 
@@ -428,8 +517,14 @@ public class QueueDialogController {
         }
 
         private QueueTreeItem currentRowItem() {
-            TreeItem<QueueTreeItem> treeItem = getTableRow() == null ? null : getTableRow().getTreeItem();
-            return treeItem == null ? null : treeItem.getValue();
+            TreeItem<QueueTreeItem> treeItem = null;
+            if (getTableRow() != null) {
+                treeItem = getTableRow().getTreeItem();
+            }
+            if (treeItem == null) {
+                return null;
+            }
+            return treeItem.getValue();
         }
 
         private void updateRetryButton(QueueTreeItem rowItem) {
@@ -456,31 +551,128 @@ public class QueueDialogController {
         }
     }
 
+    /**
+     * Tree table cell that renders export status, optional directory retry action,
+     * and optional file-level failure reason.
+     */
+    private class ExportStatusTreeCell extends javafx.scene.control.TreeTableCell<QueueTreeItem, String> {
+        private final Label statusLabel = new Label();
+        private final Label reasonLabel = new Label();
+        private final Button retryButton = new Button(I18n.get("common.retry"));
+        private final Region statusSpacer = new Region();
+        private final HBox statusWithButton = new HBox(10, statusLabel, statusSpacer, retryButton);
+        private final VBox container = new VBox(1, statusWithButton, reasonLabel);
+
+        private ExportStatusTreeCell(TreeTableColumn<QueueTreeItem, String> column) {
+            getStyleClass().add(STYLE_LAST_CELL);
+            statusLabel.setWrapText(false);
+            reasonLabel.setWrapText(false);
+            reasonLabel.setStyle(STYLE_REASON_LABEL);
+            statusWithButton.setAlignment(Pos.CENTER_LEFT);
+            statusWithButton.prefWidthProperty().bind(container.prefWidthProperty());
+            container.setAlignment(Pos.CENTER_LEFT);
+            container.setMaxHeight(40);
+            container.prefWidthProperty().bind(column.widthProperty().subtract(24));
+            statusLabel.maxWidthProperty().bind(container.prefWidthProperty());
+            reasonLabel.maxWidthProperty().bind(container.prefWidthProperty());
+            HBox.setHgrow(statusSpacer, Priority.ALWAYS);
+            retryButton.getStyleClass().add("btn-action");
+            retryButton.setOnAction(e -> onRetryAction());
+        }
+
+        @Override
+        protected void updateItem(String item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty || item == null) {
+                setText(null);
+                setGraphic(null);
+                return;
+            }
+            QueueTreeItem rowItem = currentRowItem();
+            retryButton.setText(I18n.get("common.retry"));
+            statusLabel.setText(item);
+            updateRetryButton(rowItem);
+            updateReasonLabel(rowItem);
+            setText(null);
+            setGraphic(container);
+        }
+
+        private void onRetryAction() {
+            QueueTreeItem rowItem = currentRowItem();
+            if (rowItem != null && rowItem.isExportDir() && rowItem.getRetryAction() != null) {
+                log.debug("Retry button clicked for export dir: {}", rowItem.getName());
+                rowItem.getRetryAction().run();
+            }
+        }
+
+        private QueueTreeItem currentRowItem() {
+            if (getTableRow() == null) {
+                return null;
+            }
+            TreeItem<QueueTreeItem> treeItem = getTableRow().getTreeItem();
+            return treeItem != null ? treeItem.getValue() : null;
+        }
+
+        private void updateRetryButton(QueueTreeItem rowItem) {
+            boolean showRetry = rowItem != null
+                    && rowItem.isExportDir()
+                    && rowItem.getStatus() == ItemStatus.COMPLETED_WITH_ERRORS
+                    && rowItem.getRetryAction() != null;
+            retryButton.setManaged(showRetry);
+            retryButton.setVisible(showRetry);
+        }
+
+        private void updateReasonLabel(QueueTreeItem rowItem) {
+            // Dir nodes group files; they don't carry their own error message.
+            if (rowItem != null && !rowItem.isExportDir() && !rowItem.isDevice()
+                    && hasErrorReason(rowItem.getStatus(), rowItem.getReason())) {
+                reasonLabel.setText(translateIfKey(rowItem.getReason()));
+                reasonLabel.setManaged(true);
+                reasonLabel.setVisible(true);
+                return;
+            }
+            reasonLabel.setText(null);
+            reasonLabel.setManaged(false);
+            reasonLabel.setVisible(false);
+        }
+    }
+
     // ── Helper Classes ───────────────────────────────────────────────────────
 
     /**
-     * Tree item wrapper for device/file display in sync tab.
+     * Tree item wrapper for device/file display in sync/export tabs.
      */
     public static class QueueTreeItem {
         private final DeviceQueueItem device;
         private final FileQueueItem file;
+        private final ExportDirectoryQueueItem exportDirectory;
 
         // Root constructor
         public QueueTreeItem() {
             this.device = null;
             this.file = null;
+            this.exportDirectory = null;
         }
 
         // Device constructor
         public QueueTreeItem(DeviceQueueItem device) {
             this.device = device;
             this.file = null;
+            this.exportDirectory = null;
         }
 
         // File constructor
         public QueueTreeItem(FileQueueItem file) {
             this.device = null;
             this.file = file;
+            this.exportDirectory = null;
+        }
+
+        // Export directory group node constructor
+        public QueueTreeItem(ExportDirectoryQueueItem exportDirectory) {
+            this.device = null;
+            this.file = null;
+            this.exportDirectory = exportDirectory;
         }
 
         public String getName() {
@@ -489,6 +681,9 @@ public class QueueDialogController {
             }
             if (file != null) {
                 return file.getFileName();
+            }
+            if (exportDirectory != null) {
+                return exportDirectory.getDisplayName();
             }
             return "Root";
         }
@@ -499,6 +694,9 @@ public class QueueDialogController {
             }
             if (file != null) {
                 return file.getStatus();
+            }
+            if (exportDirectory != null) {
+                return exportDirectory.getStatus();
             }
             return ItemStatus.QUEUED;
         }
@@ -521,20 +719,53 @@ public class QueueDialogController {
             return device != null;
         }
 
+        public boolean isExportDir() {
+            return exportDirectory != null;
+        }
+
+        public java.nio.file.Path getExportDir() {
+            return exportDirectory != null ? exportDirectory.getExportDir() : null;
+        }
+
+        public Runnable getRetryAction() {
+            return exportDirectory != null ? exportDirectory.getRetryAction() : null;
+        }
+
         public int getTotal() {
-            return device != null ? device.getTotal() : 0;
+            if (device != null) {
+                return device.getTotal();
+            }
+            if (exportDirectory != null) {
+                return exportDirectory.getTotal();
+            }
+            return 0;
         }
 
         public int getPassed() {
-            return device != null ? device.getPassed() : 0;
+            if (device != null) {
+                return device.getPassed();
+            }
+            if (exportDirectory != null) {
+                return exportDirectory.getPassed();
+            }
+            return 0;
         }
 
         public int getFailed() {
-            return device != null ? device.getFailed() : 0;
+            if (device != null) {
+                return device.getFailed();
+            }
+            if (exportDirectory != null) {
+                return exportDirectory.getFailed();
+            }
+            return 0;
         }
 
         public String getHardwareId() {
-            return device != null ? device.getHardwareId() : null;
+            if (device != null) {
+                return device.getHardwareId();
+            }
+            return null;
         }
     }
 }
