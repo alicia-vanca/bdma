@@ -39,6 +39,17 @@
     -fx-background-color: -card-bg;
     -fx-text-fill: #f1f5f9;
     -fx-text-base-color: #f1f5f9;
+
+    /* ── MEDIA CONTROLS ── */
+    -media-controls-bg: rgba(0, 0, 0, 0.60);
+    -media-controls-text: #f1f5f9;
+    -media-controls-hover: rgba(0, 0, 0, 0.75);
+    -media-controls-overlay: rgba(0, 0, 0, 0.60);
+    -media-content-bg: #0f172a;
+
+    -fx-background-color: -app-bg;
+    -fx-text-fill: #f1f5f9;
+    -fx-text-base-color: #f1f5f9;
 }
 
 /* ── GLOBAL NOTICE ──*/

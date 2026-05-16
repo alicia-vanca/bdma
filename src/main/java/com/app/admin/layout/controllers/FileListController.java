@@ -27,6 +27,7 @@ import com.app.common.modules.dataexport.services.DataExportService;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.media.services.MediaViewerService;
 import com.app.common.modules.queuemanager.controllers.QueueDialogController;
 import com.app.common.modules.session.Session;
 import com.app.common.services.FileService;
@@ -37,7 +38,6 @@ import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
-import javafx.geometry.Rectangle2D;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -47,12 +47,12 @@ import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.stage.Modality;
-import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 import lombok.Setter;
@@ -123,6 +123,7 @@ public class FileListController {
     private final FolderManagerService folderManagerService;
     private final FileListFilterState filterState;
     private final DataExportService dataExportService;
+    private final MediaViewerService mediaViewerService;
 
     private String activeCameraId;
     private boolean initializing = true;
@@ -157,18 +158,21 @@ public class FileListController {
             Session session,
             FolderManagerService folderManagerService,
             FileListFilterState filterState,
-            DataExportService dataExportService) {
+            DataExportService dataExportService,
+            MediaViewerService mediaViewerService) {
         this.fileService = fileService;
         this.userService = userService;
         this.session = session;
         this.folderManagerService = folderManagerService;
         this.filterState = filterState;
         this.dataExportService = dataExportService;
+        this.mediaViewerService = mediaViewerService;
     }
 
     @FXML
     public void initialize() {
         setupColumns();
+        setupRowDoubleClick();
         setupDatePickers();
         setupSelectionHeader();
 
@@ -476,7 +480,6 @@ public class FileListController {
 
     /**
      * Clear selected state without triggering table refresh.
-     *
      * Used by logout cleanup to avoid cell re-evaluation during scene teardown.
      */
     private void clearSelectionState() {
@@ -709,9 +712,8 @@ public class FileListController {
             if (page == currentPageIndex) {
                 btn.getStyleClass().add("btn-page-active");
             }
-            int target = page;
             btn.setOnAction(e -> {
-                currentPageIndex = target;
+                currentPageIndex = page;
                 setupPagination();
             });
             pageButtonsBox.getChildren().add(btn);
@@ -945,6 +947,7 @@ public class FileListController {
     }
 
     public void onFileBackupCompleted() {
+        fileVerificationCache.clear();
         Platform.runLater(() -> refresh(buildFilter()));
     }
 
@@ -1003,5 +1006,21 @@ public class FileListController {
         }
         sb.append(ext);
         return sb.toString();
+    }
+
+    private void setupRowDoubleClick() {
+        fileTable.setRowFactory(tv -> {
+            TableRow<FileView> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && !row.isEmpty()) {
+                    FileView clicked = row.getItem();
+                    if (!mediaViewerService.isViewable(clicked.type())) return;
+
+                    Stage owner = (Stage) fileTable.getScene().getWindow();
+                    mediaViewerService.open(filteredFiles, clicked, owner);
+                }
+            });
+            return row;
+        });
     }
 }

@@ -36,6 +36,13 @@
   /* ── STORAGE ── */
   -storage-track: #c8d3e0;
 
+  /* ── MEDIA CONTROLS ── */
+  -media-controls-bg: rgba(255, 255, 255, 0.90);
+  -media-controls-text: #0f172a;
+  -media-controls-hover: rgba(255, 255, 255, 0.95);
+  -media-controls-overlay: rgba(0, 0, 0, 0.60);
+  -media-content-bg: #0f172a;
+
   -fx-background-color: -app-bg;
   -fx-text-fill: #0f172a;
   -fx-text-base-color: #0f172a;

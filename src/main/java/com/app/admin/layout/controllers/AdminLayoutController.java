@@ -44,12 +44,12 @@ import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.media.services.MediaViewerService;
 import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceMiniStatus;
 import com.app.common.services.DeviceValidationService;
-import com.app.common.services.UserSettingService;
 import com.app.common.utils.FileUtil;
 import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
 import com.app.user.userdetail.controllers.UserInfoController;
@@ -102,6 +102,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final AdminSettingsDialogService adminSettingsService;
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
     private final DataExportService dataExportService;
+    private final MediaViewerService mediaViewerService;
 
     @FXML
     private StackPane contentArea;
@@ -148,7 +149,6 @@ public class AdminLayoutController extends BaseLayoutController {
 
     public AdminLayoutController(ViewLoader viewLoader,
             AppUpdateController appUpdateController,
-            UserSettingService userSettingService,
             Session session,
             DeviceValidationService deviceValidationService,
             AppNoticeService appNoticeService,
@@ -162,7 +162,8 @@ public class AdminLayoutController extends BaseLayoutController {
             DataSyncService dataSyncService,
             AdminSettingsDialogService adminSettingsService,
             StorageUnavailableEventHandler storageUnavailableEventHandler,
-            DataExportService dataExportService) {
+            DataExportService dataExportService,
+            MediaViewerService mediaViewerService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.session = session;
@@ -179,6 +180,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.adminSettingsService = adminSettingsService;
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
         this.dataExportService = dataExportService;
+        this.mediaViewerService = mediaViewerService;
     }
 
     @Override
@@ -256,21 +258,8 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @FXML
-    private void onUserInfo() {
-        // Open account settings as a dialog from the header action so users can
-        // inspect identity info and change password without leaving the current page.
-        DialogHelper.Dialog<UserEditFormController> dialog = DialogHelper.createDialog(
-                ViewPaths.USER_ACCOUNT_DIALOG,
-                I18n.get("user.account.title"));
-        dialog.controller().prepareForAccount(session.getUser());
-        dialog.controller().setOnSuccess(() -> showNoticeSuccess(I18n.get("user.account.password.updated.success")));
-        dialog.controller().setOnNoChange(() -> showNoticeSuccess(I18n.get("user.update.nochange")));
-        dialog.stage().setResizable(false);
-        dialog.stage().showAndWait();
-    }
-
-    @FXML
     public void logout() {
+        mediaViewerService.close();
         log.info("User {} is logging out", session.getUser().getUsername());
         if (currentDashboardController != null) {
             currentDashboardController.resetState();

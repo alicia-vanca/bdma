@@ -14,6 +14,7 @@ public final class ViewPaths {
     public static final String USER_SETTINGS_DIALOG = "/fxml/user/user-settings-dialog.fxml";
     public static final String PRE_LOGIN_SETTINGS_POPUP = "/fxml/common/prelogin-settings-popup.fxml";
     public static final String FILE_LIST_PANEL = "/fxml/admin/file-list-panel.fxml";
+    public static final String MEDIA_VIEWER = "/fxml/common/media/media-viewer.fxml";
 
     private ViewPaths() {
     }
