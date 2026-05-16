@@ -93,8 +93,10 @@ public class DataExportWorker {
     // submissions to the same destination file.
     private final Set<String> activeExportPaths = ConcurrentHashMap.newKeySet();
 
-    // Tracks export requests that reached a terminal state in the current lifecycle.
-    // This prevents a repeated export click from re-queuing completed or failed rows
+    // Tracks export requests that reached a terminal state in the current
+    // lifecycle.
+    // This prevents a repeated export click from re-queuing completed or failed
+    // rows
     // before the completion notice closes the lifecycle.
     private final Set<String> processedExportRequests = ConcurrentHashMap.newKeySet();
 
@@ -116,8 +118,11 @@ public class DataExportWorker {
     private final AtomicInteger queuedFileCount = new AtomicInteger(0);
     private final AtomicInteger failedFileCount = new AtomicInteger(0);
 
+    // Missing sources still show size 0 in the UI/free-space check, but sort after
+    // resolvable files so they fail only after valid exports have run.
     private static final Comparator<ExportFileItem> EXPORT_FILE_SIZE_COMPARATOR = Comparator
-            .comparingLong(item -> item.fileView().fileSize() != null ? item.fileView().fileSize() : Long.MAX_VALUE);
+            .comparing(ExportFileItem::sourceMissing)
+            .thenComparingLong(ExportFileItem::sortSize);
 
     DataExportWorker(FolderManagerService folderManagerService,
             QueueManagerService queueManagerService,
@@ -225,13 +230,10 @@ public class DataExportWorker {
         }
 
         List<ExportFileItem> acceptedItems = new ArrayList<>();
-
-        for (FileView fileView : selectedFiles.stream()
-                .sorted(Comparator.comparingLong(f -> f.fileSize() != null ? f.fileSize() : Long.MAX_VALUE))
-                .toList()) {
+        for (FileView fileView : selectedFiles) {
             String exportPathId = buildExportPathId(fileView, normalizedDir);
             if (!processedExportRequests.contains(exportPathId) && activeExportPaths.add(exportPathId)) {
-                acceptedItems.add(new ExportFileItem(fileView, exportPathId));
+                acceptedItems.add(createExportFileItem(fileView, exportPathId));
             }
         }
         acceptedItems.sort(EXPORT_FILE_SIZE_COMPARATOR);
@@ -260,7 +262,7 @@ public class DataExportWorker {
             for (ExportFileItem item : acceptedItems) {
                 directoryQueue.files.add(item);
                 queueManagerService.addFileToExportTracker(item.exportPathId(), resolveFileName(item.fileView()),
-                        item.fileView().fileSize());
+                        item.displaySize(), item.sortSize());
             }
             // Re-sort the pending list after appends so an already processing directory
             // continues with the smallest remaining files first.
@@ -589,7 +591,8 @@ public class DataExportWorker {
         queueManagerService.moveExportFile(oldExportPathId, newExportPathId);
         activeExportPaths.remove(oldExportPathId);
         activeExportPaths.add(newExportPathId);
-        return new ExportFileItem(item.fileView(), newExportPathId);
+        return new ExportFileItem(item.fileView(), newExportPathId, item.sourceMissing(), item.sortSize(),
+                item.displaySize());
     }
 
     /**
@@ -937,6 +940,26 @@ public class DataExportWorker {
         return "unknown-file";
     }
 
+    private ExportFileItem createExportFileItem(FileView fileView, String exportPathId) {
+        boolean sourceMissing = isSourceMissing(fileView);
+        long sortSize = sourceMissing ? Long.MAX_VALUE : fileSizeOrMax(fileView.fileSize());
+        Long displaySize = sourceMissing ? 0L : fileView.fileSize();
+        return new ExportFileItem(fileView, exportPathId, sourceMissing, sortSize, displaySize);
+    }
+
+    /**
+     * Performs a lightweight source lookup for queue ordering. Missing files are
+     * still enqueued so the normal export path records the final failure reason.
+     */
+    private boolean isSourceMissing(FileView fileView) {
+        try {
+            resolveSourcePath(fileView);
+            return false;
+        } catch (IOException ex) {
+            return true;
+        }
+    }
+
     private Path resolveSourcePath(FileView fileView) throws IOException {
         String syncedPath = fileView.syncedPath();
         if (syncedPath == null || syncedPath.isBlank()) {
@@ -949,6 +972,10 @@ public class DataExportWorker {
             return result.getPath();
         }
         throw new IOException(ERROR_SOURCE_NOT_FOUND);
+    }
+
+    private long fileSizeOrMax(Long fileSize) {
+        return fileSize != null ? fileSize : Long.MAX_VALUE;
     }
 
     /**
@@ -980,7 +1007,8 @@ public class DataExportWorker {
 
     // ── Inner types ───────────────────────────────────────────────────────────
 
-    private record ExportFileItem(FileView fileView, String exportPathId) {
+    private record ExportFileItem(FileView fileView, String exportPathId, boolean sourceMissing, long sortSize,
+            Long displaySize) {
     }
 
     private record ExportResult(ItemStatus status, ExportFileItem item, String displayName, String failureReason) {

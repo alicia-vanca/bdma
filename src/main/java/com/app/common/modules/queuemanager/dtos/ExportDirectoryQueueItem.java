@@ -60,8 +60,8 @@ public class ExportDirectoryQueueItem {
     }
 
     public void sortFiles() {
-        files.sort(Comparator.comparingLong(file -> file.getFileSize() != null
-                ? file.getFileSize()
+        files.sort(Comparator.comparingLong(file -> file.getSortSize() != null
+                ? file.getSortSize()
                 : Long.MAX_VALUE));
     }
 

@@ -11,6 +11,7 @@ public class FileQueueItem {
     private final String filePath;
     private final QueueType queueType;
     private final Long fileSize;
+    private final Long sortSize;
     private ItemStatus status;
     private int progress;
     private String errorMessage;
@@ -18,14 +19,19 @@ public class FileQueueItem {
     private String deviceId;
 
     public FileQueueItem(String fileName, String filePath, QueueType queueType) {
-        this(fileName, filePath, queueType, null);
+        this(fileName, filePath, queueType, null, null);
     }
 
     public FileQueueItem(String fileName, String filePath, QueueType queueType, Long fileSize) {
+        this(fileName, filePath, queueType, fileSize, fileSize);
+    }
+
+    public FileQueueItem(String fileName, String filePath, QueueType queueType, Long fileSize, Long sortSize) {
         this.fileName = fileName;
         this.filePath = filePath;
         this.queueType = queueType;
         this.fileSize = fileSize;
+        this.sortSize = sortSize;
         this.status = ItemStatus.QUEUED;
         this.progress = 0;
         this.retryCount = 0;
@@ -49,6 +55,10 @@ public class FileQueueItem {
 
     public Long getFileSize() {
         return fileSize;
+    }
+
+    public Long getSortSize() {
+        return sortSize;
     }
 
     public ItemStatus getStatus() {
