@@ -38,6 +38,8 @@ public class StorageUnavailableEventHandler {
     private static final String STATUS_SYNC_DRIVE = "status.syncDrive";
     private static final String STATUS_BACKUP_DRIVE = "status.backupDrive";
     private static final String STATUS_EXPORT_DRIVE = "status.exportDrive";
+    private static final String DIALOG_REASON_LOW_SPACE = "low-space";
+    private static final String DIALOG_REASON_UNAVAILABLE = "unavailable";
     private static final String I18N_STORAGE_LOW_SPACE_TITLE = "storage.unavailable.dialog.low_space.title";
     private static final String I18N_STORAGE_LOW_SPACE_USER_MESSAGE = "storage.unavailable.dialog.low_space.user.message";
     private static final String I18N_STORAGE_LOW_SPACE_ADMIN_MESSAGE = "storage.unavailable.dialog.low_space.admin.message";
@@ -195,6 +197,14 @@ public class StorageUnavailableEventHandler {
         }
     }
 
+    private String dialogReasonLabel(boolean lowSpace) {
+        return lowSpace ? DIALOG_REASON_LOW_SPACE : DIALOG_REASON_UNAVAILABLE;
+    }
+
+    private boolean isMatchingDialogVisible(FolderType target, boolean lowSpace) {
+        return lowSpace ? isLowSpaceDialogVisible(target) : isUnavailableDialogVisible(target);
+    }
+
     private boolean isDialogAlreadyVisible(StorageUnavailableEvent event) {
         boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
         FolderType target = event.getTarget();
@@ -204,7 +214,7 @@ public class StorageUnavailableEventHandler {
                 : isUnavailableDialogVisible(target);
         if (visible) {
             logDebug("{} {} dialog already visible. Skip duplicate.", target,
-                    isLowSpace ? "low-space" : "unavailable");
+                    dialogReasonLabel(isLowSpace));
             return true;
         }
         return false;
@@ -214,41 +224,33 @@ public class StorageUnavailableEventHandler {
         boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
         FolderType target = event.getTarget();
 
+        Optional<FolderType> visibleTarget = findVisibleDialogTarget(target, isLowSpace);
+        visibleTarget.ifPresent(other -> {
+            String reasonLabel = dialogReasonLabel(isLowSpace);
+            logDebug("{} {} dialog is opening. Queueing {} {} dialog.",
+                    other,
+                    reasonLabel,
+                    target,
+                    reasonLabel);
+        });
+        return visibleTarget.isPresent();
+    }
+
+    private Optional<FolderType> findVisibleDialogTarget(FolderType target, boolean lowSpace) {
         for (FolderType other : FolderType.values()) {
-            if (other == target) {
-                continue;
-            }
-            boolean otherVisible = isLowSpace
-                    ? isLowSpaceDialogVisible(other)
-                    : isUnavailableDialogVisible(other);
-            if (otherVisible) {
-                logDebug("{} {} dialog is opening. Queueing {} {} dialog.",
-                        other,
-                        isLowSpace ? "low-space" : "unavailable",
-                        target,
-                        isLowSpace ? "low-space" : "unavailable");
-                return true;
+            if (other != target && isMatchingDialogVisible(other, lowSpace)) {
+                return Optional.of(other);
             }
         }
-        return false;
+        return Optional.empty();
     }
 
     private void queueDialogUntilOtherCloses(StorageUnavailableEvent event) {
         boolean isLowSpace = event.getReason() == StorageIssueReason.LOW_SPACE;
         FolderType target = event.getTarget();
-        CountDownLatch nextLatchToWait = null;
-        for (FolderType other : FolderType.values()) {
-            if (other == target) {
-                continue;
-            }
-            boolean otherVisible = isLowSpace
-                    ? isLowSpaceDialogVisible(other)
-                    : isUnavailableDialogVisible(other);
-            if (otherVisible) {
-                nextLatchToWait = getDialogLatch(other);
-                break;
-            }
-        }
+        CountDownLatch nextLatchToWait = findVisibleDialogTarget(target, isLowSpace)
+                .map(this::getDialogLatch)
+                .orElse(null);
         final CountDownLatch latchToWait = nextLatchToWait;
 
         new Thread(() -> {
@@ -264,9 +266,13 @@ public class StorageUnavailableEventHandler {
         }, "storage-dialog-queue").start();
     }
 
+    private boolean isSessionActive() {
+        return session.getUser() != null;
+    }
+
     @EventListener
     public void onStorageUnavailable(StorageUnavailableEvent event) {
-        if (event == null) {
+        if (event == null || !isSessionActive()) {
             return;
         }
         logDebug("StorageUnavailableEvent: target: {}, reason: {}", event.getTarget(), event.getReason());
@@ -293,6 +299,12 @@ public class StorageUnavailableEventHandler {
         CountDownLatch latch = getDialogLatch(event.getTarget());
 
         try {
+            if (!isSessionActive()) {
+                logDebug("Storage-unavailable dialog skipped because no user is logged in. target={}",
+                        event.getTarget());
+                return;
+            }
+
             FolderType target = event.getTarget();
             setStorageBlocked(target, event.getReason());
             String targetDrive = resolveTargetLabel(event);
@@ -454,23 +466,7 @@ public class StorageUnavailableEventHandler {
         DirectoryChooser chooser = new DirectoryChooser();
         chooser.setTitle(I18n.get(I18N_SETTING_STORAGE_CHOOSER_TITLE,
                 target.toLocalizedString()));
-
-        // When the event carries the exact failing dir, open the chooser there so the
-        // user navigates from a relevant starting point.
-        File initialDir = null;
-        if (event.getFailingDir() != null && event.getFailingDir().toFile().exists()) {
-            initialDir = event.getFailingDir().toFile();
-        } else if (target == FolderType.EXPORT) {
-            // For export the failing dir is usually unavailable; fall back to Downloads
-            // so the chooser opens in a writable location.
-            File downloads = new File(System.getProperty("user.home"), "Downloads");
-            initialDir = downloads.exists() ? downloads : null;
-        } else {
-            initialDir = readConfiguredRootPath(target);
-        }
-        if (initialDir != null && initialDir.exists()) {
-            chooser.setInitialDirectory(initialDir);
-        }
+        resolveInitialChooserDirectory(event).ifPresent(chooser::setInitialDirectory);
 
         File selected = chooser.showDialog(MainApp.getPrimaryStage());
         if (selected == null) {
@@ -490,6 +486,33 @@ public class StorageUnavailableEventHandler {
             return new FolderSelectionResult(false, rejection);
         }
 
+        saveSelectedStorageFolder(target, selected);
+        appNoticeService.showSuccess(I18n.get(I18N_SETTING_STORAGE_SUCCESS));
+        if (log.isInfoEnabled()) {
+            log.info("Storage folder changed from unavailable dialog. target={} path={}",
+                    target, selected.getAbsolutePath());
+        }
+        return new FolderSelectionResult(true, null);
+    }
+
+    private Optional<File> resolveInitialChooserDirectory(StorageUnavailableEvent event) {
+        FolderType target = event.getTarget();
+        // When the event carries the exact failing dir, open the chooser there so the
+        // user navigates from a relevant starting point.
+        if (event.getFailingDir() != null && event.getFailingDir().toFile().exists()) {
+            return Optional.of(event.getFailingDir().toFile());
+        }
+        if (target == FolderType.EXPORT) {
+            // For export the failing dir is usually unavailable; fall back to Downloads
+            // so the chooser opens in a writable location.
+            File downloads = new File(System.getProperty("user.home"), "Downloads");
+            return downloads.exists() ? Optional.of(downloads) : Optional.empty();
+        }
+        File configuredRoot = readConfiguredRootPath(target);
+        return configuredRoot != null && configuredRoot.exists() ? Optional.of(configuredRoot) : Optional.empty();
+    }
+
+    private void saveSelectedStorageFolder(FolderType target, File selected) {
         if (target == FolderType.EXPORT) {
             // Export uses a per-user last-chosen dir; no managed subfolder or health
             // monitor.
@@ -499,12 +522,6 @@ public class StorageUnavailableEventHandler {
             folderManagerService.init(target);
             storageHealthMonitor.checkNow(target);
         }
-        appNoticeService.showSuccess(I18n.get(I18N_SETTING_STORAGE_SUCCESS));
-        if (log.isInfoEnabled()) {
-            log.info("Storage folder changed from unavailable dialog. target={} path={}",
-                    target, selected.getAbsolutePath());
-        }
-        return new FolderSelectionResult(true, null);
     }
 
     private void showStorageSelectionError(String header, String message) {

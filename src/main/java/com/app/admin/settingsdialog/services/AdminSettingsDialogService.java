@@ -1,20 +1,19 @@
 package com.app.admin.settingsdialog.services;
 
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.util.Optional;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppConfigService;
 import com.app.common.services.UserSettingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Optional;
 
 /**
  * Manages all admin-level application settings: storage folders,
@@ -32,10 +31,10 @@ public class AdminSettingsDialogService {
     private final Session session;
 
     public AdminSettingsDialogService(AppConfigService appConfigService,
-            FolderManagerService folderManagerService,
-            RestoreService restoreService,
-            UserSettingService userSettingService,
-            Session session) {
+                                      FolderManagerService folderManagerService,
+                                      RestoreService restoreService,
+                                      UserSettingService userSettingService,
+                                      Session session) {
         this.appConfigService = appConfigService;
         this.folderManagerService = folderManagerService;
         this.restoreService = restoreService;
@@ -93,35 +92,17 @@ public class AdminSettingsDialogService {
     }
 
     /**
-     * Returns true if the user has an export directory configured (non-blank stored
-     * value). Does not check whether the directory is currently accessible.
-     */
-    public boolean isExportDirConfigured(Long userId) {
-        String stored = userSettingService.getConfigValue(userId, AppConstants.KEY_USER_EXPORT_DIR);
-        return stored != null && !stored.isBlank();
-    }
-
-    /**
-     * Returns true if the user's configured export directory exists and its drive
-     * is currently accessible.
-     */
-    public boolean isExportDirAvailable(Long userId) {
-        String stored = userSettingService.getConfigValue(userId, AppConstants.KEY_USER_EXPORT_DIR);
-        return stored != null && !stored.isBlank() && folderManagerService.isDriveAccessible(new File(stored));
-    }
-
-    /**
      * Returns the last directory the user picked via the export chooser (used as
      * the initial directory when ask-every-time is enabled). Falls back to the
-     * system Downloads folder if not set or the drive is no longer accessible.
+     * system Downloads folder if not set or the path no longer exists.
      */
     public String getLastExportDir(Long userId) {
         String stored = userSettingService.getConfigValue(userId, AppConstants.KEY_USER_LAST_EXPORT_DIR);
-        if (stored != null && !stored.isBlank() && folderManagerService.isDriveAccessible(new File(stored))) {
+        if (stored != null && !stored.isBlank() && Files.exists(Path.of(stored))) {
             return stored;
         }
         if (stored != null && !stored.isBlank()) {
-            log.warn("Last export dir drive unavailable for path [{}], falling back to Downloads", stored);
+            log.warn("Last export dir path no longer exists for path [{}], falling back to Downloads", stored);
         }
         return Path.of(System.getProperty("user.home"), "Downloads").toString();
     }
@@ -173,7 +154,9 @@ public class AdminSettingsDialogService {
 
     // ── Start with Windows ────────────────────────────────────────────────────
 
-    /** Returns the stored preference; falls back to checking the registry. */
+    /**
+     * Returns the stored preference; falls back to checking the registry.
+     */
     public boolean getStartWithWindows() {
         String stored = appConfigService.getConfigValue(AppConstants.KEY_IS_START_WITH_WINDOWS);
         if (stored != null) {

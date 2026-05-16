@@ -19,7 +19,6 @@ import com.app.admin.layout.services.StorageUnavailableEventHandler;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.settingsdialog.services.RestoreService;
-import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.dtos.DeviceSummary;
@@ -275,6 +274,8 @@ public class AdminLayoutController extends BaseLayoutController {
         backupRunner.resetForLogout();
         syncRunner.resetForLogout();
         dataExportService.resetForLogout();
+        pendingFailureSummaries.clear();
+        failureSummaryVisible = false;
 
         session.clear();
         MainApp.showLogin();
@@ -344,16 +345,23 @@ public class AdminLayoutController extends BaseLayoutController {
      */
     @EventListener
     public void onFailureSummaryRequested(FailureSummaryRequestedEvent event) {
-        if (event == null || event.getRows().isEmpty()) {
+        if (event == null || event.getRows().isEmpty() || session.getUser() == null) {
             return;
         }
         Platform.runLater(() -> {
+            if (session.getUser() == null) {
+                return;
+            }
             pendingFailureSummaries.add(event);
             showNextFailureSummaryIfIdle();
         });
     }
 
     private void showNextFailureSummaryIfIdle() {
+        if (session.getUser() == null) {
+            pendingFailureSummaries.clear();
+            return;
+        }
         if (failureSummaryVisible) {
             return;
         }
@@ -376,6 +384,7 @@ public class AdminLayoutController extends BaseLayoutController {
                     event.getPrimaryAction());
         } finally {
             failureSummaryVisible = false;
+            // Continue draining queued summaries after the current modal closes.
             showNextFailureSummaryIfIdle();
         }
     }
