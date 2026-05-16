@@ -69,7 +69,7 @@ public class DataExportService {
         }
 
         if (exportDir == null) {
-            appNoticeService.showError(I18n.get("file.export.notice.cancelled"));
+            log.debug("Export directory selection cancelled");
             return;
         }
 

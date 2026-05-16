@@ -194,6 +194,13 @@ public class QueueManagerService {
     }
 
     /**
+     * Add file to export queue with separate display and sort sizes.
+     */
+    public void addFileToExportTracker(String exportPathId, String fileName, Long fileSize, Long sortSize) {
+        exportTracker.addFile(exportPathId, fileName, fileSize, sortSize);
+    }
+
+    /**
      * Mark export file as processing.
      */
     public void markExportFileProcessing(String exportPathId) {

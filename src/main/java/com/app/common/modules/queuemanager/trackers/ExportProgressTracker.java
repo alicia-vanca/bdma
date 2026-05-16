@@ -39,13 +39,20 @@ public class ExportProgressTracker {
      * Add a file to export queue tracking.
      */
     public void addFile(String exportPathId, String fileName) {
-        addFile(exportPathId, fileName, null);
+        addFile(exportPathId, fileName, null, null);
     }
 
     /**
      * Add a file to export queue tracking with size metadata for stable ordering.
      */
     public void addFile(String exportPathId, String fileName, Long fileSize) {
+        addFile(exportPathId, fileName, fileSize, fileSize);
+    }
+
+    /**
+     * Add a file to export queue tracking with separate display and sort sizes.
+     */
+    public void addFile(String exportPathId, String fileName, Long fileSize, Long sortSize) {
         FileQueueItem existing = exportFiles.get(exportPathId);
         if (existing != null) {
             existing.setStatus(ItemStatus.QUEUED);
@@ -58,7 +65,7 @@ public class ExportProgressTracker {
             return;
         }
 
-        FileQueueItem item = new FileQueueItem(fileName, exportPathId, QueueType.EXPORT, fileSize);
+        FileQueueItem item = new FileQueueItem(fileName, exportPathId, QueueType.EXPORT, fileSize, sortSize);
         exportFiles.put(exportPathId, item);
         directoryFor(exportPathId).addFile(item);
         refreshDirectory(item);
@@ -229,7 +236,7 @@ public class ExportProgressTracker {
             removeEmptyUnfinishedDirectory(oldDirectory);
 
             FileQueueItem item = new FileQueueItem(old.getFileName(), newExportPathId, QueueType.EXPORT,
-                    old.getFileSize());
+                    old.getFileSize(), old.getSortSize());
             exportFiles.put(newExportPathId, item);
             ExportDirectoryQueueItem newDirectory = directoryFor(newExportPathId);
             newDirectory.addFile(item);
