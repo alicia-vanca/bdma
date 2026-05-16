@@ -12,6 +12,7 @@
 <?import javafx.scene.layout.VBox?>
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.layout.controllers.FileListController"
+      stylesheets="@/css/admin/file-list-panel.css"
       style="-fx-font-size: 18px;" spacing="12" VBox.vgrow="ALWAYS">
     <HBox spacing="8" alignment="CENTER_LEFT" styleClass="filter-bar">
         <HBox spacing="4" alignment="CENTER_LEFT">
@@ -32,7 +33,7 @@
             <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
         </columnResizePolicy>
         <columns>
-            <TableColumn fx:id="colSelect" text="" minWidth="45" maxWidth="45" styleClass="col-select" style="-fx-alignment: CENTER;"/>
+            <TableColumn fx:id="colSelect" minWidth="45" maxWidth="45" styleClass="col-select" style="-fx-alignment: CENTER;"/>
             <TableColumn fx:id="colName" text="%file.name" minWidth="80" prefWidth="270"/>
             <TableColumn fx:id="colDevice" text="%file.device" minWidth="60" prefWidth="110"/>
             <TableColumn fx:id="colUser" text="%file.user" minWidth="60" prefWidth="110"/>

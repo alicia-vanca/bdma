@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.Slider?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.media.MediaView?>
+<HBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.app.common.modules.media.controllers.MediaViewerController"
+      styleClass="media-viewer-root"
+      prefWidth="1100" prefHeight="700">
+    <!-- Panel detail -->
+    <VBox styleClass="media-viewer-detail-panel" spacing="10" minWidth="220" maxWidth="220">
+        <Label fx:id="lblDetailTitle" styleClass="media-viewer-detail-title"/>
+        <Separator/>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailNameKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailName" styleClass="media-viewer-detail-value" wrapText="true"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailTypeKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailType" styleClass="media-viewer-detail-value"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailSizeKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailSize" styleClass="media-viewer-detail-value"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailDateKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailDate" styleClass="media-viewer-detail-value"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailDeviceKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailDevice" styleClass="media-viewer-detail-value" wrapText="true"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailUserKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailUser" styleClass="media-viewer-detail-value"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailStatusKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailStatus" styleClass="media-viewer-detail-value"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailDimensionKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailDimension" styleClass="media-viewer-detail-value"/>
+        </VBox>
+        <VBox spacing="4">
+            <Label fx:id="lblDetailGpsKey" styleClass="media-viewer-detail-label"/>
+            <Label fx:id="detailGps" styleClass="media-viewer-detail-value" wrapText="true"/>
+        </VBox>
+    </VBox>
+
+    <Separator orientation="VERTICAL"/>
+    <VBox HBox.hgrow="ALWAYS">
+
+        <HBox styleClass="media-viewer-toolbar" alignment="CENTER_LEFT" spacing="6">
+            <Button fx:id="btnPrev" text="◀" onAction="#onPrev" styleClass="btn-secondary"/>
+            <Button fx:id="btnNext" text="▶" onAction="#onNext" styleClass="btn-secondary"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button fx:id="btnZoomIn" text="＋" onAction="#onZoomIn" styleClass="icon-btn"/>
+            <Button fx:id="btnZoomOut" text="－" onAction="#onZoomOut" styleClass="icon-btn"/>
+            <Button fx:id="btnFit" text="⊡" onAction="#onFit" styleClass="icon-btn"/>
+            <Button fx:id="btnRotateL" text="↺" onAction="#onRotateLeft" styleClass="icon-btn"/>
+            <Button fx:id="btnRotateR" text="↻" onAction="#onRotateRight" styleClass="icon-btn"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Label fx:id="lblCounter" styleClass="media-viewer-counter"/>
+        </HBox>
+
+        <StackPane fx:id="contentPane" VBox.vgrow="ALWAYS" styleClass="media-viewer-content">
+            <ScrollPane fx:id="scrollPane" pannable="true" fitToWidth="false" fitToHeight="false"
+                        styleClass="media-viewer-scroll" visible="false" managed="false">
+                <StackPane fx:id="imageContainer" alignment="CENTER">
+                    <ImageView fx:id="imageView" preserveRatio="true" smooth="true"/>
+                </StackPane>
+            </ScrollPane>
+            <StackPane fx:id="videoPane" VBox.vgrow="ALWAYS" focusTraversable="true" styleClass="media-viewer-content"
+                       visible="false" managed="false">
+                <MediaView fx:id="mediaView" preserveRatio="true"/>
+                <VBox alignment="BOTTOM_CENTER" StackPane.alignment="BOTTOM_CENTER" styleClass="video-controls-overlay">
+                    <Slider fx:id="videoSlider" styleClass="video-slider"/>
+                    <HBox alignment="CENTER_LEFT" spacing="8" styleClass="video-controls-bar">
+                        <Button text="−30s" onAction="#onSeekBack30" styleClass="video-ctrl-btn"/>
+                        <Button text="−5s" onAction="#onSeekBack5" styleClass="video-ctrl-btn"/>
+                        <Button fx:id="btnPlayPause" text="▶" onAction="#onPlayPause" styleClass="video-ctrl-btn"/>
+                        <Button text="+5s" onAction="#onSeekForward5" styleClass="video-ctrl-btn"/>
+                        <Button text="+30s" onAction="#onSeekForward30" styleClass="video-ctrl-btn"/>
+                        <Label fx:id="lblVideoTime" text="00:00 / 00:00" styleClass="media-viewer-meta"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <ComboBox fx:id="cbSpeed" onAction="#onSpeedChanged" styleClass="video-speed-combo"/>
+                        <Label text="🔊" styleClass="media-viewer-meta"/>
+                        <Slider fx:id="volumeSlider" min="0" max="1" value="1" prefWidth="80"
+                                styleClass="video-slider"/>
+                    </HBox>
+                </VBox>
+            </StackPane>
+            <Label fx:id="lblLoading" text="…" styleClass="media-viewer-loading" visible="false" managed="false"/>
+            <Label fx:id="lblError" styleClass="media-viewer-error" visible="false" managed="false"/>
+        </StackPane>
+        <HBox styleClass="media-viewer-statusbar" alignment="CENTER_LEFT" spacing="12">
+            <Label fx:id="lblFileName" styleClass="media-viewer-filename"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Label fx:id="lblDimension" styleClass="media-viewer-meta"/>
+            <Label fx:id="lblFileSize" styleClass="media-viewer-meta"/>
+            <Label fx:id="lblZoom" styleClass="media-viewer-meta"/>
+        </HBox>
+
+    </VBox>
+
+</HBox>
