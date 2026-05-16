@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -50,7 +51,7 @@ import javafx.application.Platform;
  * Single-threaded worker that copies queued export files to the destination
  * directory and handles storage errors. {@link DataExportService} is the public
  * entry point; this class owns the executor, all queue state, and storage
- * recovery signalling.
+ * recovery signaling.
  */
 @Component
 public class DataExportWorker {
@@ -71,6 +72,8 @@ public class DataExportWorker {
     private static final String EXPORT_SUMMARY_COLUMN_FILENAME = "file.export.summary.column.filename";
     private static final String EXPORT_SUMMARY_COLUMN_REASON = "file.export.summary.column.reason";
 
+    private static final String LOG_EXPORT_FAILED = "Export failed for {}";
+
     // Key prefix used to namespace export target paths; parsed by the queue UI to
     // extract the dir label.
     public static final String FILE_KEY_PREFIX = "export:target:";
@@ -88,6 +91,7 @@ public class DataExportWorker {
     // worker thread.
     private final Object recoveryLock = new Object();
     private volatile boolean exportRecoveryDeferred = false;
+    private volatile boolean cancellationRequested;
 
     // Tracks full export paths currently QUEUED or PROCESSING to prevent duplicate
     // submissions to the same destination file.
@@ -164,11 +168,15 @@ public class DataExportWorker {
 
     /**
      * Stops the executor, drops all queued tasks, and clears queue state.
-     * Call {@link #resetExecutor()} afterwards when the worker should remain
+     * Call {@link #resetExecutor()} afterward when the worker should remain
      * usable.
      */
     public void cancelAndCleanup() {
+        cancellationRequested = true;
         executorRef.get().shutdownNow();
+        synchronized (recoveryLock) {
+            recoveryLock.notifyAll();
+        }
         activeExportPaths.clear();
         processedExportRequests.clear();
         synchronized (queueLock) {
@@ -180,6 +188,9 @@ public class DataExportWorker {
         pendingFileCount.set(0);
         queuedFileCount.set(0);
         failedFileCount.set(0);
+        // Keep the visible export queue in sync with the worker lifecycle so stale
+        // directory nodes cannot survive logout and appear after the next login.
+        queueManagerService.clearAll();
         for (Path tmp : activeTmpPaths) {
             try {
                 Files.deleteIfExists(tmp);
@@ -190,9 +201,22 @@ public class DataExportWorker {
         activeTmpPaths.clear();
     }
 
-    /** Replaces the executor so the worker can accept new tasks after a reset. */
+    /**
+     * Replaces the executor so the worker can accept new tasks after a reset.
+     */
     public void resetExecutor() {
+        cancellationRequested = false;
         executorRef.set(newExecutor());
+    }
+
+    private boolean isCancellationRequested() {
+        return cancellationRequested || Thread.currentThread().isInterrupted();
+    }
+
+    private void throwIfCancellationRequested() {
+        if (isCancellationRequested()) {
+            throw new CancellationException("Export worker cancellation requested");
+        }
     }
 
     @PreDestroy
@@ -282,17 +306,27 @@ public class DataExportWorker {
      * picked up before the worker moves to the next directory.
      */
     private void processDirectoryQueues() {
-        while (true) {
-            ExportDirectoryQueue directoryQueue;
+        try {
+            while (!isCancellationRequested()) {
+                ExportDirectoryQueue directoryQueue;
+                synchronized (queueLock) {
+                    directoryQueue = directoryQueues.isEmpty() ? null : directoryQueues.getFirst();
+                    if (directoryQueue == null) {
+                        processorRunning = false;
+                        return;
+                    }
+                }
+
+                processDirectoryQueue(directoryQueue);
+            }
+        } catch (CancellationException ex) {
+            log.debug("Export worker stopped because cancellation was requested");
+        } finally {
             synchronized (queueLock) {
-                directoryQueue = directoryQueues.isEmpty() ? null : directoryQueues.get(0);
-                if (directoryQueue == null) {
+                if (isCancellationRequested()) {
                     processorRunning = false;
-                    return;
                 }
             }
-
-            processDirectoryQueue(directoryQueue);
         }
     }
 
@@ -319,10 +353,10 @@ public class DataExportWorker {
     }
 
     private void processDirectoryQueue(ExportDirectoryQueue directoryQueue) {
-        while (true) {
+        while (!isCancellationRequested()) {
             ExportFileItem item;
             synchronized (queueLock) {
-                item = directoryQueue.files.isEmpty() ? null : directoryQueue.files.remove(0);
+                item = directoryQueue.files.isEmpty() ? null : directoryQueue.files.removeFirst();
                 if (item == null) {
                     finishDirectoryQueue(directoryQueue);
                     return;
@@ -333,16 +367,18 @@ public class DataExportWorker {
             try {
                 result = runFileCopy(item, directoryQueue);
             } finally {
-                ExportDirectoryQueue resultQueue = resolveResultDirectoryQueue(directoryQueue, result);
-                recordDirectoryResult(resultQueue, result);
-                logProcessedExportFile(resultQueue, result);
-                processedExportRequests.add(result.item().exportPathId());
-                if (result.status() == ItemStatus.FAILED) {
-                    failedFileCount.incrementAndGet();
-                }
-                activeExportPaths.remove(result.item().exportPathId());
-                if (pendingFileCount.decrementAndGet() == 0) {
-                    Platform.runLater(this::fireCompletionNotice);
+                if (!isCancellationRequested()) {
+                    ExportDirectoryQueue resultQueue = resolveResultDirectoryQueue(directoryQueue, result);
+                    recordDirectoryResult(resultQueue, result);
+                    logProcessedExportFile(resultQueue, result);
+                    processedExportRequests.add(result.item().exportPathId());
+                    if (result.status() == ItemStatus.FAILED) {
+                        failedFileCount.incrementAndGet();
+                    }
+                    activeExportPaths.remove(result.item().exportPathId());
+                    if (pendingFileCount.decrementAndGet() == 0) {
+                        Platform.runLater(this::fireCompletionNotice);
+                    }
                 }
             }
         }
@@ -359,135 +395,154 @@ public class DataExportWorker {
      * </ul>
      */
     private ExportResult runFileCopy(ExportFileItem item, ExportDirectoryQueue directoryQueue) {
-        String exportPathId = item.exportPathId();
-        FileView fileView = item.fileView();
-        String fileName = resolveFileName(fileView);
-        Path currentExportDir = directoryQueue.exportDir;
+        ExportAttempt attempt = new ExportAttempt(item, directoryQueue.exportDir);
+        String fileName = resolveFileName(item.fileView());
 
         try {
-            queueManagerService.markExportFileProcessing(exportPathId);
+            queueManagerService.markExportFileProcessing(attempt.exportPathId());
 
             while (true) {
-                Path exportDir = currentExportDir;
+                StorageCheckResult storageCheck = validateExportStorage(attempt);
+                if (storageCheck.failureResult() != null) {
+                    return storageCheck.failureResult();
+                }
+                attempt = storageCheck.attempt();
 
-                // Check drive accessibility before any I/O; on failure pause and retry.
-                if (!folderManagerService.isDriveAccessible(exportDir.toFile())) {
-                    RecoveryResult result = pauseAndRecover(item, exportDir,
-                            StorageIssueReason.DRIVE_UNAVAILABLE, ERROR_EXPORT_DRIVE_UNAVAILABLE);
-                    if (!result.recovered()) {
-                        return ExportResult.failure(item, ERROR_EXPORT_DRIVE_UNAVAILABLE);
-                    }
-                    item = result.item();
-                    exportPathId = item.exportPathId();
-                    currentExportDir = result.exportDir();
-                    continue;
+                ExportResult result = tryCopyToCurrentDirectory(attempt);
+                if (result != null) {
+                    return result;
                 }
 
-                // Check free space before writing; on failure pause and retry.
-                long requiredBytes = fileView.fileSize() != null ? fileView.fileSize() : 0;
-                if (!folderManagerService.hasSufficientSpace(exportDir.toFile(), requiredBytes)) {
-                    RecoveryResult result = pauseAndRecover(item, exportDir,
-                            StorageIssueReason.LOW_SPACE, ERROR_EXPORT_DISK_FULL);
-                    if (!result.recovered()) {
-                        return ExportResult.failure(item, ERROR_EXPORT_DISK_FULL);
-                    }
-                    item = result.item();
-                    exportPathId = item.exportPathId();
-                    currentExportDir = result.exportDir();
-                    continue;
+                RecoveryResult recovery = recoverFromStorageException(attempt, attempt.storageException());
+                if (!recovery.recovered()) {
+                    return ExportResult.failure(attempt.item(), storageErrorMessage(attempt.storageException()));
                 }
-
-                // Source resolution failures are data errors — no retry.
-                Path source;
-                try {
-                    source = resolveSourcePath(fileView);
-                } catch (IOException ex) {
-                    String reason = classifyExportError(ex);
-                    log.error("Export failed for {}", fileName, ex);
-                    queueManagerService.markExportFileFailed(exportPathId, reason);
-                    return ExportResult.failure(item, reason);
-                }
-
-                try {
-                    Files.createDirectories(exportDir);
-
-                    Path matchingTarget = findExistingTargetWithSize(exportDir, fileName, Files.size(source));
-                    if (matchingTarget != null) {
-                        // A previous lifecycle may have exported this file under a conflict
-                        // suffix, so count this request as a successful no-op.
-                        String exportedFileName = matchingTarget.getFileName().toString();
-                        queueManagerService.renameExportFile(exportPathId, exportedFileName);
-                        queueManagerService.markExportFileCompleted(exportPathId);
-                        processedExportRequests.add(exportPathId);
-                        return ExportResult.completed(item, exportedFileName);
-                    }
-
-                    Path target = resolveUniqueTarget(exportDir, fileName);
-                    String exportedFileName = target.getFileName().toString();
-                    queueManagerService.renameExportFile(exportPathId, exportedFileName);
-                    copyWithProgress(source, target, exportPathId);
-                    queueManagerService.markExportFileCompleted(exportPathId);
-                    processedExportRequests.add(exportPathId);
-                    return ExportResult.completed(item, exportedFileName);
-
-                } catch (DiskFullException ex) {
-                    RecoveryResult result = pauseAndRecover(item, currentExportDir,
-                            StorageIssueReason.LOW_SPACE, ERROR_EXPORT_DISK_FULL);
-                    if (!result.recovered()) {
-                        return ExportResult.failure(item, ERROR_EXPORT_DISK_FULL);
-                    }
-                    item = result.item();
-                    exportPathId = item.exportPathId();
-                    currentExportDir = result.exportDir();
-                    // continue loop to retry with new dir
-                } catch (DriveUnavailableException ex) {
-                    RecoveryResult result = pauseAndRecover(item, currentExportDir,
-                            StorageIssueReason.DRIVE_UNAVAILABLE, ERROR_EXPORT_DRIVE_UNAVAILABLE);
-                    if (!result.recovered()) {
-                        return ExportResult.failure(item, ERROR_EXPORT_DRIVE_UNAVAILABLE);
-                    }
-                    item = result.item();
-                    exportPathId = item.exportPathId();
-                    currentExportDir = result.exportDir();
-                    // continue loop to retry with new dir
-                } catch (IOException ex) {
-                    // FileSystemException from createDirectories means the drive went away.
-                    try {
-                        rethrowAsStorageException(ex);
-                    } catch (DiskFullException dfe) {
-                        RecoveryResult result = pauseAndRecover(item, currentExportDir,
-                                StorageIssueReason.LOW_SPACE, ERROR_EXPORT_DISK_FULL);
-                        if (!result.recovered()) {
-                            return ExportResult.failure(item, ERROR_EXPORT_DISK_FULL);
-                        }
-                        item = result.item();
-                        exportPathId = item.exportPathId();
-                        currentExportDir = result.exportDir();
-                        continue;
-                    } catch (DriveUnavailableException due) {
-                        RecoveryResult result = pauseAndRecover(item, currentExportDir,
-                                StorageIssueReason.DRIVE_UNAVAILABLE, ERROR_EXPORT_DRIVE_UNAVAILABLE);
-                        if (!result.recovered()) {
-                            return ExportResult.failure(item, ERROR_EXPORT_DRIVE_UNAVAILABLE);
-                        }
-                        item = result.item();
-                        exportPathId = item.exportPathId();
-                        currentExportDir = result.exportDir();
-                        continue;
-                    } catch (IOException ignored) {
-                        // rethrowAsStorageException only re-throws as storage exceptions.
-                    }
-                    log.error("Export failed for {}", fileName, ex);
-                    queueManagerService.markExportFileFailed(exportPathId, ERROR_IO_EXCEPTION);
-                    return ExportResult.failure(item, ERROR_IO_EXCEPTION);
-                }
+                attempt = new ExportAttempt(recovery.item(), recovery.exportDir());
             }
-
+        } catch (CancellationException ex) {
+            throw ex;
         } catch (Exception ex) {
-            log.error("Export failed for {}", fileName, ex);
-            queueManagerService.markExportFileFailed(exportPathId, ERROR_UNKNOWN);
-            return ExportResult.failure(item, ERROR_UNKNOWN);
+            log.error(LOG_EXPORT_FAILED, fileName, ex);
+            queueManagerService.markExportFileFailed(attempt.exportPathId(), ERROR_UNKNOWN);
+            return ExportResult.failure(attempt.item(), ERROR_UNKNOWN);
         }
+    }
+
+    /**
+     * Validates destination availability before copy starts. Storage failures pause
+     * the queue and retry with the recovered export directory when available.
+     */
+    private StorageCheckResult validateExportStorage(ExportAttempt attempt) {
+        Path exportDir = attempt.exportDir();
+        if (!folderManagerService.isDriveAccessible(exportDir.toFile())) {
+            RecoveryResult recovery = pauseAndRecover(attempt.item(), exportDir,
+                    StorageIssueReason.DRIVE_UNAVAILABLE, ERROR_EXPORT_DRIVE_UNAVAILABLE);
+            return recovery.recovered()
+                    ? StorageCheckResult.retry(new ExportAttempt(recovery.item(), recovery.exportDir()))
+                    : StorageCheckResult.failed(ExportResult.failure(attempt.item(), ERROR_EXPORT_DRIVE_UNAVAILABLE));
+        }
+
+        return StorageCheckResult.retry(attempt);
+    }
+
+    /**
+     * Returns a terminal result for success or non-storage failures. Storage
+     * exceptions are attached to the attempt and handled by the recovery loop.
+     */
+    private ExportResult tryCopyToCurrentDirectory(ExportAttempt attempt) {
+        ExportFileItem item = attempt.item();
+        String exportPathId = attempt.exportPathId();
+        String fileName = resolveFileName(item.fileView());
+        Path source = resolveSourcePathForExport(item, exportPathId, fileName);
+        if (source == null) {
+            return ExportResult.failure(item, classifyExportError(new IOException(ERROR_SOURCE_NOT_FOUND)));
+        }
+
+        try {
+            return copyResolvedSource(attempt, source, fileName);
+        } catch (DiskFullException | DriveUnavailableException ex) {
+            attempt.setStorageException(ex);
+            return null;
+        } catch (IOException ex) {
+            IOException storageException = classifyStorageException(ex);
+            if (storageException != null) {
+                attempt.setStorageException(storageException);
+                return null;
+            }
+            log.error(LOG_EXPORT_FAILED, fileName, ex);
+            queueManagerService.markExportFileFailed(exportPathId, ERROR_IO_EXCEPTION);
+            return ExportResult.failure(item, ERROR_IO_EXCEPTION);
+        }
+    }
+
+    /**
+     * Source resolution failures are data errors and should not trigger storage
+     * recovery prompts.
+     */
+    private Path resolveSourcePathForExport(ExportFileItem item, String exportPathId, String fileName) {
+        try {
+            return resolveSourcePath(item.fileView());
+        } catch (IOException ex) {
+            String reason = classifyExportError(ex);
+            log.error(LOG_EXPORT_FAILED, fileName, ex);
+            queueManagerService.markExportFileFailed(exportPathId, reason);
+            return null;
+        }
+    }
+
+    private ExportResult copyResolvedSource(ExportAttempt attempt, Path source, String fileName) throws IOException {
+        Files.createDirectories(attempt.exportDir());
+
+        long sourceSize = Files.size(source);
+        Path matchingTarget = findExistingTargetWithSize(attempt.exportDir(), fileName, sourceSize);
+        if (matchingTarget != null) {
+            // A previous lifecycle may have exported this file under a conflict
+            // suffix, so count this request as a successful no-op.
+            String exportedFileName = matchingTarget.getFileName().toString();
+            completeExportFile(attempt.exportPathId(), exportedFileName);
+            return ExportResult.completed(attempt.item(), exportedFileName);
+        }
+
+        if (!folderManagerService.hasSufficientSpace(attempt.exportDir().toFile(), sourceSize)) {
+            throw new DiskFullException("Destination does not have enough space for export");
+        }
+
+        Path target = resolveUniqueTarget(attempt.exportDir(), fileName);
+        String exportedFileName = target.getFileName().toString();
+        queueManagerService.renameExportFile(attempt.exportPathId(), exportedFileName);
+        copyWithProgress(source, target, attempt.exportPathId());
+        queueManagerService.markExportFileCompleted(attempt.exportPathId());
+        processedExportRequests.add(attempt.exportPathId());
+        return ExportResult.completed(attempt.item(), exportedFileName);
+    }
+
+    private void completeExportFile(String exportPathId, String exportedFileName) {
+        queueManagerService.renameExportFile(exportPathId, exportedFileName);
+        queueManagerService.markExportFileCompleted(exportPathId);
+        processedExportRequests.add(exportPathId);
+    }
+
+    private IOException classifyStorageException(IOException ex) {
+        try {
+            rethrowAsStorageException(ex);
+        } catch (DiskFullException | DriveUnavailableException storageException) {
+            return storageException;
+        } catch (IOException ignored) {
+            // rethrowAsStorageException only re-throws as storage exceptions.
+        }
+        return null;
+    }
+
+    private RecoveryResult recoverFromStorageException(ExportAttempt attempt, IOException ex) {
+        return pauseAndRecover(attempt.item(), attempt.exportDir(), storageIssueReason(ex), storageErrorMessage(ex));
+    }
+
+    private StorageIssueReason storageIssueReason(IOException ex) {
+        return ex instanceof DiskFullException ? StorageIssueReason.LOW_SPACE : StorageIssueReason.DRIVE_UNAVAILABLE;
+    }
+
+    private String storageErrorMessage(IOException ex) {
+        return ex instanceof DiskFullException ? ERROR_EXPORT_DISK_FULL : ERROR_EXPORT_DRIVE_UNAVAILABLE;
     }
 
     /**
@@ -497,13 +552,19 @@ public class DataExportWorker {
      */
     private RecoveryResult pauseAndRecover(ExportFileItem processingItem, Path currentExportDir,
             StorageIssueReason reason, String errorMessage) {
+        if (isCancellationRequested()) {
+            return new RecoveryResult(false, processingItem, currentExportDir.toAbsolutePath().normalize());
+        }
         String exportPathId = processingItem.exportPathId();
         Path normalizedCurrentDir = currentExportDir.toAbsolutePath().normalize();
         ExportDirectoryQueue directoryQueue;
         int remainingCount;
         synchronized (queueLock) {
             directoryQueue = directoryQueueByPath.get(normalizedCurrentDir);
-            remainingCount = 1 + (directoryQueue != null ? directoryQueue.files.size() : 0);
+            if (directoryQueue == null) {
+                return new RecoveryResult(false, processingItem, normalizedCurrentDir);
+            }
+            remainingCount = 1 + directoryQueue.files.size();
         }
 
         log.error("Export storage error [{}]: {} (remaining={})", reason, normalizedCurrentDir, remainingCount);
@@ -606,11 +667,14 @@ public class DataExportWorker {
             // Clear any stale deferred flag before blocking so a leftover signal
             // from a previous recovery cycle does not cause an immediate false return.
             exportRecoveryDeferred = false;
-            while (!exportRecoveryDeferred && !Thread.currentThread().isInterrupted()) {
+            while (!exportRecoveryDeferred && !isCancellationRequested()) {
                 try {
                     recoveryLock.wait();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    return false;
+                }
+                if (isCancellationRequested()) {
                     return false;
                 }
                 if (!exportRecoveryDeferred) {
@@ -719,7 +783,7 @@ public class DataExportWorker {
     }
 
     /**
-     * Requeues only the failed files for the same export directory.
+     * Requeue only the failed files for the same export directory.
      */
     private void retryFailedDirectoryFiles(Path exportDir) {
         Path normalizedDir = exportDir.toAbsolutePath().normalize();
@@ -760,6 +824,7 @@ public class DataExportWorker {
         try {
             if (totalBytes <= 0) {
                 Files.copy(source, targetTmp, StandardCopyOption.REPLACE_EXISTING);
+                throwIfCancellationRequested();
                 Files.move(targetTmp, target, StandardCopyOption.REPLACE_EXISTING);
                 queueManagerService.updateExportFileProgress(exportPathId, 100);
                 return;
@@ -773,6 +838,7 @@ public class DataExportWorker {
                 byte[] buffer = new byte[BUFFER_SIZE];
                 int read;
                 while ((read = in.read(buffer)) != -1) {
+                    throwIfCancellationRequested();
                     writeChunk(out, buffer, read);
                     copied += read;
                     int percent = (int) ((copied * 100) / totalBytes);
@@ -788,6 +854,7 @@ public class DataExportWorker {
             }
 
             try {
+                throwIfCancellationRequested();
                 Files.move(targetTmp, target, StandardCopyOption.REPLACE_EXISTING);
             } catch (IOException ex) {
                 rethrowAsStorageException(ex);
@@ -830,7 +897,7 @@ public class DataExportWorker {
      * </ul>
      */
     private static void rethrowAsStorageException(IOException ex) throws IOException {
-        // NoSuchFileException: target path gone — drive was removed during the write.
+        // NoSuchFileException: target path gone — drive was removed during write.
         if (ex instanceof NoSuchFileException) {
             throw new DriveUnavailableException(ex.getMessage());
         }
@@ -1027,7 +1094,48 @@ public class DataExportWorker {
     private record RecoveryResult(boolean recovered, ExportFileItem item, Path exportDir) {
     }
 
+    private record StorageCheckResult(ExportAttempt attempt, ExportResult failureResult) {
+        private static StorageCheckResult retry(ExportAttempt attempt) {
+            return new StorageCheckResult(attempt, null);
+        }
+
+        private static StorageCheckResult failed(ExportResult failureResult) {
+            return new StorageCheckResult(null, failureResult);
+        }
+    }
+
     private record TargetNameParts(String base, String ext) {
+    }
+
+    private static class ExportAttempt {
+        private final ExportFileItem item;
+        private final Path exportDir;
+        private IOException storageException;
+
+        private ExportAttempt(ExportFileItem item, Path exportDir) {
+            this.item = item;
+            this.exportDir = exportDir;
+        }
+
+        private ExportFileItem item() {
+            return item;
+        }
+
+        private Path exportDir() {
+            return exportDir;
+        }
+
+        private String exportPathId() {
+            return item.exportPathId();
+        }
+
+        private IOException storageException() {
+            return storageException;
+        }
+
+        private void setStorageException(IOException storageException) {
+            this.storageException = storageException;
+        }
     }
 
     private static class ExportDirectoryQueue {

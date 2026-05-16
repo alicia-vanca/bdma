@@ -37,7 +37,6 @@ import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
-import javafx.geometry.Rectangle2D;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -52,7 +51,6 @@ import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.stage.Modality;
-import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 import lombok.Setter;
@@ -709,9 +707,8 @@ public class FileListController {
             if (page == currentPageIndex) {
                 btn.getStyleClass().add("btn-page-active");
             }
-            int target = page;
             btn.setOnAction(e -> {
-                currentPageIndex = target;
+                currentPageIndex = page;
                 setupPagination();
             });
             pageButtonsBox.getChildren().add(btn);

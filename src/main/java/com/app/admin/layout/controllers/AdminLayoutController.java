@@ -19,7 +19,6 @@ import com.app.admin.layout.services.StorageUnavailableEventHandler;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.settingsdialog.services.RestoreService;
-import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.dtos.DeviceSummary;
@@ -49,7 +48,6 @@ import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceMiniStatus;
 import com.app.common.services.DeviceValidationService;
-import com.app.common.services.UserSettingService;
 import com.app.common.utils.FileUtil;
 import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
 import com.app.user.userdetail.controllers.UserInfoController;
@@ -148,7 +146,6 @@ public class AdminLayoutController extends BaseLayoutController {
 
     public AdminLayoutController(ViewLoader viewLoader,
             AppUpdateController appUpdateController,
-            UserSettingService userSettingService,
             Session session,
             DeviceValidationService deviceValidationService,
             AppNoticeService appNoticeService,
@@ -256,20 +253,6 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @FXML
-    private void onUserInfo() {
-        // Open account settings as a dialog from the header action so users can
-        // inspect identity info and change password without leaving the current page.
-        DialogHelper.Dialog<UserEditFormController> dialog = DialogHelper.createDialog(
-                ViewPaths.USER_ACCOUNT_DIALOG,
-                I18n.get("user.account.title"));
-        dialog.controller().prepareForAccount(session.getUser());
-        dialog.controller().setOnSuccess(() -> showNoticeSuccess(I18n.get("user.account.password.updated.success")));
-        dialog.controller().setOnNoChange(() -> showNoticeSuccess(I18n.get("user.update.nochange")));
-        dialog.stage().setResizable(false);
-        dialog.stage().showAndWait();
-    }
-
-    @FXML
     public void logout() {
         log.info("User {} is logging out", session.getUser().getUsername());
         if (currentDashboardController != null) {
@@ -286,6 +269,8 @@ public class AdminLayoutController extends BaseLayoutController {
         backupRunner.resetForLogout();
         syncRunner.resetForLogout();
         dataExportService.resetForLogout();
+        pendingFailureSummaries.clear();
+        failureSummaryVisible = false;
 
         session.clear();
         MainApp.showLogin();
@@ -355,16 +340,23 @@ public class AdminLayoutController extends BaseLayoutController {
      */
     @EventListener
     public void onFailureSummaryRequested(FailureSummaryRequestedEvent event) {
-        if (event == null || event.getRows().isEmpty()) {
+        if (event == null || event.getRows().isEmpty() || session.getUser() == null) {
             return;
         }
         Platform.runLater(() -> {
+            if (session.getUser() == null) {
+                return;
+            }
             pendingFailureSummaries.add(event);
             showNextFailureSummaryIfIdle();
         });
     }
 
     private void showNextFailureSummaryIfIdle() {
+        if (session.getUser() == null) {
+            pendingFailureSummaries.clear();
+            return;
+        }
         if (failureSummaryVisible) {
             return;
         }
@@ -387,6 +379,7 @@ public class AdminLayoutController extends BaseLayoutController {
                     event.getPrimaryAction());
         } finally {
             failureSummaryVisible = false;
+            // Continue draining queued summaries after the current modal closes.
             showNextFailureSummaryIfIdle();
         }
     }

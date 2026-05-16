@@ -7,8 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -24,8 +22,6 @@ import com.app.common.modules.queuemanager.events.QueueStatusChangedEvent;
  */
 @Component
 public class ExportProgressTracker {
-
-    private static final Logger log = LoggerFactory.getLogger(ExportProgressTracker.class);
 
     private final Map<String, FileQueueItem> exportFiles = Collections.synchronizedMap(new LinkedHashMap<>());
     private final Map<Path, ExportDirectoryQueueItem> directories = Collections.synchronizedMap(new LinkedHashMap<>());
@@ -131,8 +127,6 @@ public class ExportProgressTracker {
             item.setErrorMessage(errorMessage);
             refreshDirectory(item);
             publishEvent(exportPathId, "Export failed: " + errorMessage);
-        } else {
-            log.warn("Export: markFailed — item not found for export path id: {}", exportPathId);
         }
     }
 
@@ -147,8 +141,6 @@ public class ExportProgressTracker {
             item.setErrorMessage(reason);
             refreshDirectory(item);
             publishEvent(exportPathId, "Export deferred: " + reason);
-        } else {
-            log.warn("Export: markDeferred — item not found for export path id: {}", exportPathId);
         }
     }
 
@@ -242,9 +234,6 @@ public class ExportProgressTracker {
             newDirectory.addFile(item);
             refreshDirectory(newDirectory);
             publishEvent(newExportPathId, "Export file moved to new directory");
-        } else {
-            log.warn("Export: moveFileToExportPath — item not found for export path id: {} (new export path id: {})",
-                    oldExportPathId, newExportPathId);
         }
     }
 
@@ -260,13 +249,6 @@ public class ExportProgressTracker {
         }
 
         refreshDirectory(directory);
-    }
-
-    /**
-     * Get specific export file by export path id.
-     */
-    public FileQueueItem getFile(String exportPathId) {
-        return exportFiles.get(exportPathId);
     }
 
     /**
