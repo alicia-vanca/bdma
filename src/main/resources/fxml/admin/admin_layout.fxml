@@ -37,42 +37,33 @@
             </StackPane>
         </center>
         <bottom>
-            <VBox styleClass="status-bar">
-                <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="8"
-                      styleClass="status-warning-strip" managed="false" visible="false">
-                    <Label text="⚠" styleClass="status-warning-icon"/>
-                    <HBox fx:id="warningTextRow" HBox.hgrow="ALWAYS" minWidth="0"
-                          styleClass="status-warning-text-row">
-                        <Label fx:id="lblStatusWarning" wrapText="false" minWidth="0"
-                               styleClass="status-warning-label" managed="false" visible="false" HBox.hgrow="NEVER"/>
-                        <Label fx:id="lblWarningSeparator" text=" | " wrapText="false" minWidth="0"
-                               styleClass="status-warning-label" managed="false" visible="false" HBox.hgrow="NEVER"/>
-                        <Label fx:id="lblDriveConflictWarning" wrapText="false" minWidth="0"
-                               styleClass="status-warning-label" managed="false" visible="false" HBox.hgrow="NEVER"/>
+            <HBox styleClass="status-bar" alignment="CENTER_LEFT" spacing="10">
+                <!-- Storage Area (50%) -->
+                <HBox alignment="CENTER_LEFT" spacing="10" HBox.hgrow="ALWAYS" styleClass="status-storage-row" prefWidth="400">
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
+                        <Label fx:id="lblDataStorageTitle" styleClass="storage-title"/>
+                        <ProgressBar fx:id="pbDataStorage" progress="0" styleClass="storage-progress"
+                                     HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
+                        <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
+                        <Label fx:id="lblDataStoragePercent" styleClass="storage-percent"/>
+                    </HBox>
+                    <Separator orientation="VERTICAL" styleClass="storage-separator"/>
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
+                        <Label fx:id="lblBackupStorageTitle" styleClass="storage-title"/>
+                        <ProgressBar fx:id="pbBackupStorage" progress="0" styleClass="storage-progress"
+                                     HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
+                        <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
+                        <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"/>
                     </HBox>
                 </HBox>
-                <HBox alignment="CENTER_LEFT" spacing="0" styleClass="status-storage-row">
-                    <VBox spacing="4" HBox.hgrow="ALWAYS" minWidth="0">
-                        <HBox alignment="CENTER_LEFT" spacing="6">
-                            <Label fx:id="lblDataStorageTitle" styleClass="storage-title"/>
-                            <ProgressBar fx:id="pbDataStorage" progress="0" styleClass="storage-progress"
-                                         HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
-                            <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
-                            <Label fx:id="lblDataStoragePercent" styleClass="storage-percent"/>
-                        </HBox>
-                    </VBox>
-                    <Separator orientation="VERTICAL" styleClass="storage-separator"/>
-                    <VBox spacing="4" HBox.hgrow="ALWAYS" minWidth="0">
-                        <HBox alignment="CENTER_LEFT" spacing="6">
-                            <Label fx:id="lblBackupStorageTitle" styleClass="storage-title"/>
-                            <ProgressBar fx:id="pbBackupStorage" progress="0" styleClass="storage-progress"
-                                         HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
-                            <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
-                            <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"/>
-                        </HBox>
-                    </VBox>
+
+                <!-- Warning Area (50%) -->
+                <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="8"
+                      styleClass="status-warning-strip" HBox.hgrow="ALWAYS" prefWidth="400">
+                    <Label fx:id="lblCombinedWarning" wrapText="false" minWidth="0"
+                           styleClass="status-warning-label" HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
                 </HBox>
-            </VBox>
+            </HBox>
         </bottom>
     </BorderPane>
 </StackPane>

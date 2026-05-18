@@ -104,6 +104,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private final MediaViewerService mediaViewerService;
 
     @FXML
+    private HBox warningTextRow;
+    @FXML
     private StackPane contentArea;
     @FXML
     private Label labelGreeting;
@@ -118,7 +120,7 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private HBox warningStrip;
     @FXML
-    private Label lblStatusWarning;
+    private Label lblCombinedWarning;
     @FXML
     private ProgressBar pbDataStorage;
     @FXML
@@ -127,10 +129,6 @@ public class AdminLayoutController extends BaseLayoutController {
     private Label lblDataStorageUsage;
     @FXML
     private Label lblBackupStorageUsage;
-    @FXML
-    private Label lblDriveConflictWarning;
-    @FXML
-    private Label lblWarningSeparator;
     @FXML
     private Label lblDataStorageTitle;
     @FXML
@@ -601,18 +599,27 @@ public class AdminLayoutController extends BaseLayoutController {
 
             boolean sameParent = isSameParentFolder(dataDir, backupDir);
 
-            lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
-            lblDriveConflictWarning.setStyle(STYLE_CLASS_WARNING);
-            lblDriveConflictWarning.setVisible(sameParent);
-            lblDriveConflictWarning.setManaged(sameParent);
+            String warningText = sameParent ? I18n.get("setting.storage.warn.same_drive") : "";
 
             int dataState = updateStorageBar(STATUS_SYNC_DRIVE, pbDataStorage,
                     lblDataStorageTitle, lblDataStoragePercent, lblDataStorageUsage, dataDir);
             int backupState = updateStorageBar(STATUS_BACKUP_DRIVE, pbBackupStorage,
                     lblBackupStorageTitle, lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
 
-            updateStorageWarning(dataState, backupState);
-            updateWarningStripVisibility();
+            String storageWarning = resolveStorageWarningKey(dataState, backupState);
+            if (storageWarning != null) {
+                String msg = I18n.get(storageWarning);
+                warningText = warningText.isEmpty() ? msg : warningText + " | " + msg;
+            }
+
+            lblCombinedWarning.setText(warningText);
+            lblCombinedWarning.setStyle(warningText.isEmpty() ? "" : STYLE_CLASS_WARNING);
+            
+            boolean hasWarning = !warningText.isEmpty();
+            warningStrip.getStyleClass().removeAll("status-warning-strip-active");
+            if (hasWarning) {
+                warningStrip.getStyleClass().add("status-warning-strip-active");
+            }
         });
     }
 
@@ -628,15 +635,10 @@ public class AdminLayoutController extends BaseLayoutController {
         return dataRoot.toString().equalsIgnoreCase(backupRoot.toString());
     }
 
-    private void updateStorageWarning(int dataState, int backupState) {
-        if (dataState == STORAGE_OK && backupState == STORAGE_OK) {
-            clearStatusWarning();
-            return;
-        }
-        showStatusWarning(I18n.get(resolveStorageWarningKey(dataState, backupState)));
-    }
-
     private String resolveStorageWarningKey(int dataState, int backupState) {
+        if (dataState == STORAGE_OK && backupState == STORAGE_OK) {
+            return null;
+        }
         if (dataState == STORAGE_UNAVAILABLE && backupState == STORAGE_UNAVAILABLE) {
             return "status.storage.both.unavailable";
         }
@@ -762,21 +764,6 @@ public class AdminLayoutController extends BaseLayoutController {
         return current;
     }
 
-    private void showStatusWarning(String message) {
-        lblStatusWarning.setText(message);
-        lblStatusWarning.setVisible(true);
-        lblStatusWarning.setManaged(true);
-        lblStatusWarning.setStyle(STYLE_CLASS_WARNING);
-        updateWarningStripVisibility();
-    }
-
-    private void clearStatusWarning() {
-        lblStatusWarning.setVisible(false);
-        lblStatusWarning.setManaged(false);
-        lblStatusWarning.setStyle("");
-        updateWarningStripVisibility();
-    }
-
     private static String formatBytes(long bytes) {
         if (bytes >= 1_073_741_824L)
             return String.format("%.1f GB", bytes / 1_073_741_824.0);
@@ -825,17 +812,4 @@ public class AdminLayoutController extends BaseLayoutController {
         });
     }
 
-    private void updateWarningStripVisibility() {
-        boolean showStorage = lblStatusWarning.isVisible();
-        boolean showConflict = lblDriveConflictWarning.isVisible();
-        boolean showBoth = showStorage && showConflict;
-
-        lblWarningSeparator.setVisible(showBoth);
-        lblWarningSeparator.setManaged(showBoth);
-        lblWarningSeparator.setStyle(STYLE_CLASS_WARNING);
-
-        boolean show = showStorage || showConflict;
-        warningStrip.setVisible(show);
-        warningStrip.setManaged(show);
-    }
 }

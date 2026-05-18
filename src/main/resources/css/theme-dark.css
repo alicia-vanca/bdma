@@ -144,7 +144,7 @@
 .button.btn-update:disabled {
     -fx-opacity: 1;
     -fx-text-fill: #475569;
-    -fx-background-color: #1e293b;
+    -fx-background-color: #253040;
 }
 
 /* ── INPUT ── */

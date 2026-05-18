@@ -197,6 +197,7 @@ public class DataBackupWorker implements Runnable {
             return false;
         } catch (Exception e) {
             log.error("Failed to check space for: {}", nonDriveLetterSyncedPath, e);
+            queueManagerService.markBackupFileFailed(nonDriveLetterSyncedPath, e.getMessage());
             return false;
         }
     }
@@ -227,7 +228,7 @@ public class DataBackupWorker implements Runnable {
             if (!checkSufficientSpace(nonDriveLetterSyncedPath)) {
                 return;
             }
-
+            queueManagerService.markBackupFileFailed(nonDriveLetterSyncedPath, e.getMessage());
             log.error("IO exception during backup for: {}", nonDriveLetterSyncedPath, e);
         } catch (Exception e) {
             queueManagerService.markBackupFileFailed(nonDriveLetterSyncedPath, e.getMessage());

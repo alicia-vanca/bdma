@@ -1,6 +1,21 @@
 package com.app.common.configs;
 
-import okhttp3.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,13 +25,11 @@ import org.springframework.stereotype.Component;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 /**
  * Sends local error logs to Loggly in periodic batches.
@@ -27,10 +40,6 @@ import java.util.concurrent.TimeUnit;
 public class LogglyBatchSender {
 
     private static final Logger log = LoggerFactory.getLogger(LogglyBatchSender.class);
-    private static final int BATCH_SIZE = AppConstants.BATCH_SIZE;
-    private static final String SYNC_FILENAME = AppConstants.SYNC_FILENAME;
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern(AppConstants.DATE_FORMAT);
-    private static final String FILES = AppConstants.FILES;
 
     private static class FileSyncState {
         long sentLines;
@@ -89,14 +98,14 @@ public class LogglyBatchSender {
         if (!logDir.exists())
             return;
 
-        File syncFile = new File(logDir, SYNC_FILENAME);
+        File syncFile = new File(logDir, AppConstants.SYNC_FILENAME);
         Map<String, FileSyncState> states = loadStates(syncFile);
 
         File[] logFiles = getSortedLogFiles(logDir);
         if (logFiles == null || logFiles.length == 0)
             return;
 
-        String todayFileName = "error-" + LocalDate.now().format(DATE_FORMATTER) + ".log";
+        String todayFileName = "error-" + LocalDate.now().format(AppConstants.DATE_FORMATTER) + ".log";
         boolean updated = processLogFiles(logFiles, states, todayFileName, token);
 
         if (updated) {
@@ -211,7 +220,7 @@ public class LogglyBatchSender {
                 batch.add(line);
             }
 
-            if (batch.size() >= BATCH_SIZE) {
+            if (batch.size() >= AppConstants.BATCH_SIZE) {
                 if (!sendBatch(batch, token))
                     return lastSuccessLine;
                 lastSuccessLine = currentLine;
@@ -280,8 +289,8 @@ public class LogglyBatchSender {
             String content = Files.readString(syncFile.toPath());
             JSONObject root = new JSONObject(content);
 
-            if (root.has(FILES) && root.get(FILES) instanceof JSONObject) {
-                JSONObject files = root.getJSONObject(FILES);
+            if (root.has(AppConstants.FILES) && root.get(AppConstants.FILES) instanceof JSONObject) {
+                JSONObject files = root.getJSONObject(AppConstants.FILES);
                 for (String fileName : files.keySet()) {
                     JSONObject fileState = files.optJSONObject(fileName);
                     if (fileState == null)
@@ -316,7 +325,7 @@ public class LogglyBatchSender {
             }
 
             JSONObject root = new JSONObject();
-            root.put(FILES, files);
+            root.put(AppConstants.FILES, files);
             Files.writeString(syncFile.toPath(), root.toString());
         } catch (Exception e) {
             log.warn("Failed to save loggly-sync.json: {}", e.getMessage());
