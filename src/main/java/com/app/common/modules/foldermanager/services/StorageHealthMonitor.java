@@ -32,7 +32,7 @@ public class StorageHealthMonitor {
             return;
         }
         if (target == null || target == FolderType.SYNC) {
-            boolean syncDriveAccessible = folderManagerService.isDataDirAccessible();
+            boolean syncDriveAccessible = folderManagerService.isSyncDirAccessible();
             publishState(FolderType.SYNC, syncDriveAccessible);
         }
         if (target == null || target == FolderType.BACKUP) {

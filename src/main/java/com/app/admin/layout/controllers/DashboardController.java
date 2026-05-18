@@ -54,8 +54,6 @@ public class DashboardController extends BaseLayoutController {
     @FXML
     private VBox devicePanel;
     @FXML
-    private VBox fileListPane;
-    @FXML
     private HBox root;
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final DeviceMiniStatus deviceMiniStatus;
@@ -492,10 +490,10 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private DeviceMiniStatus.SyncProgress resolveSyncProgress(DeviceSummary summary) {
-        if (summary.getHardwareId() == null) {
+        if (summary.getCameraId() == null) {
             return DeviceMiniStatus.SyncProgress.idle();
         }
-        return deviceMiniStatus.getProgress(summary.getHardwareId());
+        return deviceMiniStatus.getProgress(summary.getCameraId());
     }
 
     // Re-resolve sync state only for devices represented by persisted records.
@@ -579,6 +577,11 @@ public class DashboardController extends BaseLayoutController {
         deviceListView.getSelectionModel().clearSelection();
     }
 
+    /**
+     * Refreshes the active file list after a sync writes a new file record.
+     *
+     * @param syncedPath stored synced path used to mark the file as available
+     */
     public void onFileSyncCompleted(String syncedPath) {
         if (fileListController != null) {
             fileListController.onFileSyncCompleted(syncedPath);

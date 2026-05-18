@@ -270,8 +270,8 @@ public class DataSyncWorker implements Runnable {
     // -------------------------------------------------------------------------
 
     // Discover and prepare files for sync from device
-    private SyncPreparation prepareSyncFiles(String hardwareId, Long deviceId, SyncContext syncContext,
-            boolean autoDelete) {
+    private SyncPreparation prepareSyncFiles(Long deviceId, SyncContext syncContext, boolean autoDelete) {
+        String hardwareId = syncContext.hardwareId();
         List<FileRecord> syncedFiles = dataSyncService.loadSyncedFiles(deviceId);
         Set<String> relativeSyncedPaths = new java.util.HashSet<>();
         for (FileRecord syncedFile : syncedFiles) {
@@ -373,7 +373,7 @@ public class DataSyncWorker implements Runnable {
         String type = extractType(path);
         FileInfo info = FileInfo.parse(name(path), 0, type);
 
-        if (info == null || !syncContext.canSync(info.username())) {
+        if (info == null || !syncContext.canSync(info.username(), info.cameraId())) {
             return null;
         }
 
@@ -436,7 +436,7 @@ public class DataSyncWorker implements Runnable {
         saveRecoveryDeferred = false;
 
         try {
-            Long deviceId = dataSyncService.validateDevice(hardwareId);
+            Long deviceId = dataSyncService.resolveDeviceId(syncContext.cameraId());
             Long userId = dataSyncService.resolveUserId(syncContext.username());
             if (deviceId == null || userId == null)
                 return;
@@ -448,7 +448,7 @@ public class DataSyncWorker implements Runnable {
 
             boolean autoDelete = syncContext.autoDelete();
 
-            SyncPreparation preparedSyncFiles = prepareSyncFiles(hardwareId, deviceId, syncContext, autoDelete);
+            SyncPreparation preparedSyncFiles = prepareSyncFiles(deviceId, syncContext, autoDelete);
 
             int totalRemoteFileCount = preparedSyncFiles.fileCollection().allSyncFiles().size();
 
@@ -461,14 +461,13 @@ public class DataSyncWorker implements Runnable {
                 log.info("Skipped {} already synced files", counters.passed);
             }
 
-            progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+            progressTracker.markSyncing(syncContext.cameraId(), counters.total, counters.passed, counters.failed);
 
             List<SyncFile> failedList = new ArrayList<>();
-            boolean shouldRetryFailures = processSyncFiles(hardwareId, syncContext, preparedSyncFiles,
-                    failedList, counters);
+            boolean shouldRetryFailures = processSyncFiles(syncContext, preparedSyncFiles, failedList, counters);
 
             if (shouldRetryFailures && !failedList.isEmpty()) {
-                retryFailed(hardwareId, syncContext, preparedSyncFiles, failedList, counters);
+                retryFailed(syncContext, preparedSyncFiles, failedList, counters);
             }
 
             long elapsedMs = System.currentTimeMillis() - startedAt;
@@ -478,16 +477,16 @@ public class DataSyncWorker implements Runnable {
             queueManagerService.markDeviceSyncCompleted(hardwareId, counters.total, counters.passed, counters.failed);
 
             if (counters.failed > 0 && !shutdownRequested) {
-                showSyncFailureSummary(hardwareId, syncContext, deviceName, counters, failedList);
+                showSyncFailureSummary(syncContext, deviceName, counters, failedList);
             }
         } catch (PreflightException e) {
             log.warn("Aborting sync for {} before file processing: {}", hardwareId, e.getMessage());
-            progressTracker.markSyncing(hardwareId, 1, 0, 1);
+            progressTracker.markSyncing(syncContext.cameraId(), 1, 0, 1);
             appNoticeService.showError(e.getMessage());
         } finally {
             disconnectedDevices.remove(hardwareId);
             driveLetterCache.remove(hardwareId);
-            queue.done(hardwareId);
+            queue.done(syncContext.cameraId());
             adbClient.startCameraService(hardwareId);
         }
     }
@@ -497,24 +496,25 @@ public class DataSyncWorker implements Runnable {
     // -------------------------------------------------------------------------
 
     // Process each file in the sync list
-    private boolean processSyncFiles(String hardwareId, SyncContext syncContext, SyncPreparation prep,
+    private boolean processSyncFiles(SyncContext syncContext, SyncPreparation prep,
             List<SyncFile> failedList, SyncCounters counters) {
 
+        String hardwareId = syncContext.hardwareId();
         List<SyncFile> filesToBeProcessed = prep.filesToBeProcessed();
         int i = 0;
         while (i < filesToBeProcessed.size()) {
             SyncFile file = filesToBeProcessed.get(i);
 
-            if (!checkCanContinueProcessing(hardwareId, filesToBeProcessed, i, failedList, counters)) {
+            if (!checkCanContinueProcessing(syncContext.cameraId(), hardwareId, filesToBeProcessed, i, failedList, counters)) {
                 return false;
             }
 
             logProcessingFile(file, counters);
 
-            FileProcessingResult result = processSingleFile(hardwareId, syncContext, prep, i, file, counters);
+            FileProcessingResult result = processSingleFile(syncContext, prep, i, file, counters);
 
             if (result.shouldAbort() || isDeviceDead(hardwareId)) {
-                abortAndFailRemaining(hardwareId, result, filesToBeProcessed, i, failedList, counters);
+                abortAndFailRemaining(syncContext.cameraId(), hardwareId, result, filesToBeProcessed, i, failedList, counters);
                 return false;
             }
 
@@ -528,7 +528,7 @@ public class DataSyncWorker implements Runnable {
                 i++;
 
                 if (result.isSuccess()) {
-                    recordFileSyncSuccess(hardwareId, file, counters);
+                    recordFileSyncSuccess(syncContext.cameraId(), hardwareId, file, counters);
                 } else {
                     handleFailedFileSync(file, result, failedList);
                 }
@@ -540,13 +540,13 @@ public class DataSyncWorker implements Runnable {
 
     // Abort the sync loop if the result requests abort or the device is dead,
     // failing all remaining files in one pass.
-    private void abortAndFailRemaining(String hardwareId, FileProcessingResult result,
+    private void abortAndFailRemaining(String cameraId, String hardwareId, FileProcessingResult result,
             List<SyncFile> filesToBeProcessed, int index, List<SyncFile> failedList, SyncCounters counters) {
         String reason = result.getFailureReason();
         if (reason == null) {
             reason = isDeviceDead(hardwareId) ? ERROR_DISCONNECTED : ERROR_UNKNOWN;
         }
-        failRemaining(hardwareId, filesToBeProcessed, index, failedList, counters, reason);
+        failRemaining(cameraId, hardwareId, filesToBeProcessed, index, failedList, counters, reason);
     }
 
     // Classify a failed file result and add it to the failed list.
@@ -559,10 +559,10 @@ public class DataSyncWorker implements Runnable {
 
     // Update counters, log, and notify queue/progress tracker after a successful
     // file sync.
-    private void recordFileSyncSuccess(String hardwareId, SyncFile file, SyncCounters counters) {
+    private void recordFileSyncSuccess(String cameraId, String hardwareId, SyncFile file, SyncCounters counters) {
         counters.passed++;
         queueManagerService.markSyncFileCompleted(hardwareId, file.relativeLocalPath());
-        progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+        progressTracker.markSyncing(cameraId, counters.total, counters.passed, counters.failed);
     }
 
     private void logProcessingFile(SyncFile file, SyncCounters counters) {
@@ -575,15 +575,16 @@ public class DataSyncWorker implements Runnable {
     /**
      * Process a single file and return the result indicating next action.
      */
-    private FileProcessingResult processSingleFile(String hardwareId, SyncContext syncContext, SyncPreparation prep,
+    private FileProcessingResult processSingleFile(SyncContext syncContext, SyncPreparation prep,
             int index, SyncFile file, SyncCounters counters) {
 
-        if (handleAlreadySyncedFile(hardwareId, syncContext, prep.syncedPaths(), file)) {
+        String hardwareId = syncContext.hardwareId();
+        if (handleAlreadySyncedFile(syncContext, prep.syncedPaths(), file)) {
             return FileProcessingResult.success();
         }
 
-        if (!folderManagerService.isDataDirAccessible(syncContext.saveDir())) {
-            return handleDataDirInaccessible(hardwareId, syncContext, index);
+        if (!folderManagerService.isSyncDirAccessible(syncContext.saveDir())) {
+            return handleDataDirInaccessible(syncContext, index);
         }
 
         SyncFile sizedFile;
@@ -605,18 +606,19 @@ public class DataSyncWorker implements Runnable {
         if (!prep.syncedPaths().contains(file.relativeLocalPath())
                 && requiredBytes > 0
                 && !folderManagerService.hasSufficientSpace(syncContext.saveDir(), requiredBytes)) {
-            return handleInsufficientSpace(hardwareId, syncContext, filesToBeProcessed, index, requiredBytes);
+            return handleInsufficientSpace(syncContext, filesToBeProcessed, index, requiredBytes);
         }
 
         // Mark as processing before attempting
         queueManagerService.markSyncFileProcessing(hardwareId, file.relativeLocalPath());
 
-        return processFile(hardwareId, syncContext, prep, file, counters);
+        return processFile(syncContext, prep, file, counters);
     }
 
-    private FileProcessingResult processFile(String hardwareId, SyncContext syncContext, SyncPreparation prep,
+    private FileProcessingResult processFile(SyncContext syncContext, SyncPreparation prep,
             SyncFile file, SyncCounters counters) {
 
+        String hardwareId = syncContext.hardwareId();
         LookupCache lookupCache = prep.lookupCache();
 
         Set<String> syncedPaths = prep.syncedPaths();
@@ -754,10 +756,11 @@ public class DataSyncWorker implements Runnable {
     // -------------------------------------------------------------------------
 
     // Retry failed file transfers up to MAX_RETRY times, updating counters directly
-    private void retryFailed(String hardwareId, SyncContext syncContext, SyncPreparation prep,
+    private void retryFailed(SyncContext syncContext, SyncPreparation prep,
             List<SyncFile> failedList,
             SyncCounters counters) {
 
+        String hardwareId = syncContext.hardwareId();
         List<SyncFile> failedFilesRemaining = new ArrayList<>();
 
         int i = 0;
@@ -765,14 +768,14 @@ public class DataSyncWorker implements Runnable {
             SyncFile file = failedList.get(i);
 
             if (shouldAbortRetry(hardwareId)) {
-                handleAbortedRetry(hardwareId, failedList, file, failedFilesRemaining, counters);
+                handleAbortedRetry(syncContext.cameraId(), hardwareId, failedList, file, failedFilesRemaining, counters);
                 return;
             }
 
             FileProcessingResult result = retryFileWithAttempts(failedList, i, prep, syncContext, counters);
 
             if (result.shouldAbort()) {
-                handleAbortedRetry(hardwareId, failedList, file, failedFilesRemaining, counters);
+                handleAbortedRetry(syncContext.cameraId(), hardwareId, failedList, file, failedFilesRemaining, counters);
                 return;
             }
 
@@ -789,7 +792,7 @@ public class DataSyncWorker implements Runnable {
             }
             if (!result.shouldRetry()) {
                 i++;
-                progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+                progressTracker.markSyncing(syncContext.cameraId(), counters.total, counters.passed, counters.failed);
             }
         }
 
@@ -804,8 +807,7 @@ public class DataSyncWorker implements Runnable {
         FileProcessingResult result = FileProcessingResult.failure(ERROR_UNKNOWN);
         int attempt = 1;
         while (attempt <= AppConstants.MAX_RETRY) {
-            result = processSingleFile(hardwareId, syncContext, prep, index, file,
-                    counters);
+            result = processSingleFile(syncContext, prep, index, file, counters);
 
             if (result.shouldAbort()) {
                 logOneRetryAbortion(hardwareId, file);
@@ -843,7 +845,8 @@ public class DataSyncWorker implements Runnable {
     /**
      * Handle data directory inaccessibility during file processing.
      */
-    private FileProcessingResult handleDataDirInaccessible(String hardwareId, SyncContext syncContext, int index) {
+    private FileProcessingResult handleDataDirInaccessible(SyncContext syncContext, int index) {
+        String hardwareId = syncContext.hardwareId();
         if (log.isWarnEnabled()) {
             log.warn("[{}] Save directory became inaccessible during sync: {}",
                     hardwareId,
@@ -928,8 +931,9 @@ public class DataSyncWorker implements Runnable {
     /**
      * Handle insufficient space during file processing.
      */
-    private FileProcessingResult handleInsufficientSpace(String hardwareId, SyncContext syncContext,
+    private FileProcessingResult handleInsufficientSpace(SyncContext syncContext,
             List<SyncFile> filesToBeProcessed, int index, long requiredBytes) {
+        String hardwareId = syncContext.hardwareId();
         if (log.isWarnEnabled()) {
             log.warn("[{}] Insufficient space detected for {} (required={} bytes, saveDir={})",
                     hardwareId,
@@ -1012,7 +1016,7 @@ public class DataSyncWorker implements Runnable {
                 return null;
             }
 
-            File latestDataDir = folderManagerService.getDataDir();
+            File latestDataDir = folderManagerService.getSyncDir();
             if (!isRecoveredDataDirReady(latestDataDir, requiredBytes)) {
                 logRecoveryDirNotReady(hardwareId, latestDataDir, requiredBytes);
                 synchronized (recoveryLock) {
@@ -1021,7 +1025,7 @@ public class DataSyncWorker implements Runnable {
                 continue;
             }
 
-            return buildRecoveredContext(hardwareId, currentContext, latestDataDir, requiredBytes);
+            return buildRecoveredContext(currentContext, latestDataDir, requiredBytes);
         }
         return null;
     }
@@ -1061,8 +1065,9 @@ public class DataSyncWorker implements Runnable {
         }
     }
 
-    private SyncContext buildRecoveredContext(String hardwareId, SyncContext currentContext, File latestDataDir,
+    private SyncContext buildRecoveredContext(SyncContext currentContext, File latestDataDir,
             long requiredBytes) {
+        String hardwareId = currentContext.hardwareId();
         if (log.isInfoEnabled()) {
             log.info(
                     "[{}] Data directory recovery completed. activeSaveDir={} requiredBytes={}",
@@ -1075,7 +1080,9 @@ public class DataSyncWorker implements Runnable {
                 currentContext.isAdmin(),
                 latestDataDir,
                 currentContext.autoDelete(),
-                currentContext.deviceName(), hardwareId);
+                currentContext.deviceName(),
+                hardwareId,
+                currentContext.cameraId());
     }
 
     /**
@@ -1083,7 +1090,7 @@ public class DataSyncWorker implements Runnable {
      * space.
      */
     private boolean isRecoveredDataDirReady(File dataDir, long requiredBytes) {
-        if (dataDir == null || !folderManagerService.isDataDirAccessible(dataDir)) {
+        if (dataDir == null || !folderManagerService.isSyncDirAccessible(dataDir)) {
             return false;
         }
         return requiredBytes <= 0 || folderManagerService.hasSufficientSpace(dataDir, requiredBytes);
@@ -1124,7 +1131,7 @@ public class DataSyncWorker implements Runnable {
     /**
      * Check if processing can continue or should abort due to shutdown/disconnect.
      */
-    private boolean checkCanContinueProcessing(String hardwareId, List<SyncFile> syncFiles, int index,
+    private boolean checkCanContinueProcessing(String cameraId, String hardwareId, List<SyncFile> syncFiles, int index,
             List<SyncFile> failedList, SyncCounters counters) {
         if (shutdownRequested || Thread.currentThread().isInterrupted() || isDeviceDead(hardwareId)) {
             String abortReason;
@@ -1144,20 +1151,20 @@ public class DataSyncWorker implements Runnable {
             if (log.isWarnEnabled()) {
                 log.warn("[{}] {}. Breaking sync file loop", hardwareId, abortReason);
             }
-            failRemaining(hardwareId, syncFiles, index, failedList, counters, failureReason);
+            failRemaining(cameraId, hardwareId, syncFiles, index, failedList, counters, failureReason);
             return false;
         }
         return true;
     }
 
-    private void failRemaining(String hardwareId, List<SyncFile> syncFiles, int fromIndex, List<SyncFile> failedList,
-            SyncCounters counters, String reason) {
+    private void failRemaining(String cameraId, String hardwareId, List<SyncFile> syncFiles, int fromIndex,
+            List<SyncFile> failedList, SyncCounters counters, String reason) {
         int remainingCount = counters.total - counters.passed - counters.failed;
         failRemainingFiles(hardwareId, syncFiles, fromIndex, failedList, reason);
 
         counters.failed = failedList.size();
 
-        progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+        progressTracker.markSyncing(cameraId, counters.total, counters.passed, counters.failed);
 
         if (log.isWarnEnabled()) {
             log.warn("[{}] sync aborted. Marked remaining {} files as failed without retry",
@@ -1221,7 +1228,7 @@ public class DataSyncWorker implements Runnable {
         return PullResult.success();
     }
 
-    private boolean handleAlreadySyncedFile(String hardwareId,
+    private boolean handleAlreadySyncedFile(
             SyncContext syncContext,
             Set<String> syncedPaths,
             SyncFile file) {
@@ -1230,7 +1237,7 @@ public class DataSyncWorker implements Runnable {
         }
 
         if (syncContext.autoDelete()) {
-            deleteRemoteFile(hardwareId, file.remotePath());
+            deleteRemoteFile(syncContext.hardwareId(), file.remotePath());
         }
 
         return true;
@@ -1244,7 +1251,7 @@ public class DataSyncWorker implements Runnable {
      * Show detailed sync failure summary with device name, counts, and failed file
      * table.
      */
-    private void showSyncFailureSummary(String hardwareId, SyncContext syncContext, String deviceName,
+    private void showSyncFailureSummary(SyncContext syncContext, String deviceName,
             SyncCounters counters,
             List<SyncFile> failedList) {
         if (failedList.isEmpty()) {
@@ -1268,14 +1275,15 @@ public class DataSyncWorker implements Runnable {
                 I18n.get(SYNC_SUMMARY_COLUMN_FILENAME),
                 I18n.get(SYNC_SUMMARY_COLUMN_REASON),
                 rows,
-                () -> requeueRetry(hardwareId, syncContext)));
+                () -> requeueRetry(syncContext)));
     }
 
     /**
      * Queue a new sync attempt from the failure summary dialog or retry button.
      * Public to allow reuse from QueueDialogController.
      */
-    public void requeueRetry(String hardwareId, SyncContext syncContext) {
+    public void requeueRetry(SyncContext syncContext) {
+        String hardwareId = syncContext.hardwareId();
         if (isDeviceDead(hardwareId)) {
             if (log.isWarnEnabled()) {
                 log.warn("Cannot requeue sync for {} because device is disconnected", hardwareId);
@@ -1284,7 +1292,7 @@ public class DataSyncWorker implements Runnable {
             return;
         }
 
-        boolean queued = queue.add(hardwareId, syncContext);
+        boolean queued = queue.add(syncContext);
         if (!queued) {
             if (log.isInfoEnabled()) {
                 log.info("Skipped retry queue for {} because the device is already queued or syncing", hardwareId);
@@ -1312,14 +1320,14 @@ public class DataSyncWorker implements Runnable {
     }
 
     // Handle retry abortion mid-process, marking remaining files as failed
-    private void handleAbortedRetry(String hardwareId, List<SyncFile> failedList, SyncFile currentFile,
-            List<SyncFile> failedFilesRemaining, SyncCounters counters) {
+    private void handleAbortedRetry(String cameraId, String hardwareId, List<SyncFile> failedList,
+            SyncFile currentFile, List<SyncFile> failedFilesRemaining, SyncCounters counters) {
         logAllRetryAbortion(hardwareId);
 
         collectRemainingFiles(failedList, currentFile, failedFilesRemaining);
         markPendingFilesFailedInQueue(hardwareId, failedFilesRemaining, getAbortReasonMessage(hardwareId));
         counters.failed += failedFilesRemaining.size();
-        progressTracker.markSyncing(hardwareId, counters.total, counters.passed, counters.failed);
+        progressTracker.markSyncing(cameraId, counters.total, counters.passed, counters.failed);
         appNoticeService.showError(I18n.get(ERROR_DISCONNECTED));
         logFailedFiles(failedFilesRemaining);
     }

@@ -23,7 +23,7 @@ public class DeviceSyncQueue {
     private final BlockingQueue<Entry> queue = new LinkedBlockingQueue<>();
     private final Set<String> inQueue = ConcurrentHashMap.newKeySet();
 
-    private volatile String current = null;
+    private volatile String currentCameraId = null;
 
     private final DeviceMiniStatus deviceMiniStatus;
     private final QueueManagerService queueManagerService;
@@ -37,79 +37,93 @@ public class DeviceSyncQueue {
     }
 
     public boolean isActive() {
-        return current != null || !queue.isEmpty();
+        return currentCameraId != null || !queue.isEmpty();
     }
 
-    // Returns false if input is invalid or the device is already syncing/queued,
-    // avoiding duplicate entries.
-    public boolean add(String hardwareId, SyncContext context) {
-        if (hardwareId == null || hardwareId.isBlank() || context == null) {
+    // Returns false if input is invalid or the camera is already syncing/queued,
+    // avoiding duplicate entries across hardware reconnects.
+    public boolean add(SyncContext context) {
+        if (context == null || context.cameraId() == null || context.cameraId().isBlank()
+                || context.hardwareId() == null || context.hardwareId().isBlank()) {
             return false;
         }
-        if (hardwareId.equals(current) || !inQueue.add(hardwareId)) {
+
+        String cameraId = context.cameraId();
+        String hardwareId = context.hardwareId();
+        if (cameraId.equals(currentCameraId) || !inQueue.add(cameraId)) {
             return false;
         }
 
         if (queue.offer(new Entry(hardwareId, context))) {
-            deviceMiniStatus.markQueued(hardwareId);
+            deviceMiniStatus.markQueued(cameraId);
             queueManagerService.addDeviceToSyncTracker(hardwareId, context.deviceName());
-            log.info("Added to Device sync queue: {}", hardwareId);
+            log.info("Added camera {} to device sync queue using hardware {}", cameraId, hardwareId);
             return true;
         } else {
-            inQueue.remove(hardwareId);
+            inQueue.remove(cameraId);
             return false;
         }
     }
 
     public Entry take() throws InterruptedException {
         Entry entry = queue.take();
-        current = entry.hardwareId();
-        inQueue.remove(entry.hardwareId());
+        currentCameraId = entry.context().cameraId();
+        inQueue.remove(entry.context().cameraId());
         return entry;
     }
 
-    public void done(String hardwareId) {
-        if (hardwareId == null || hardwareId.isBlank()) {
+    public void done(String cameraId) {
+        if (cameraId == null || cameraId.isBlank()) {
             return;
         }
-        if (hardwareId.equals(current)) {
-            current = null;
+        if (cameraId.equals(currentCameraId)) {
+            currentCameraId = null;
         }
-        deviceMiniStatus.markDone(hardwareId);
+        deviceMiniStatus.markDone(cameraId);
     }
 
-    // Cancel a queued or in-progress sync when the device disconnects.
-    public void remove(String hardwareId) {
-        if (hardwareId == null || hardwareId.isBlank()) {
+    // Cancel a queued or in-progress sync when the camera disconnects.
+    public void remove(String cameraId) {
+        if (cameraId == null || cameraId.isBlank()) {
             return;
         }
 
-        queue.removeIf(e -> e.hardwareId().equals(hardwareId));
-        inQueue.remove(hardwareId);
-        if (hardwareId.equals(current)) {
-            deviceMiniStatus.markCancelled(hardwareId);
-        } else {
-            deviceMiniStatus.markDone(hardwareId);
+        List<Entry> removedEntries = new ArrayList<>();
+        queue.removeIf(entry -> {
+            boolean matches = cameraId.equals(entry.context().cameraId());
+            if (matches) {
+                removedEntries.add(entry);
+            }
+            return matches;
+        });
+        inQueue.remove(cameraId);
+
+        if (!removedEntries.isEmpty()) {
+            deviceMiniStatus.markDone(cameraId);
         }
-        log.info("Removed from Device sync queue: {}", hardwareId);
+        if (cameraId.equals(currentCameraId)) {
+            currentCameraId = null;
+            deviceMiniStatus.markCancelled(cameraId);
+        }
+        log.info("Removed camera {} from device sync queue", cameraId);
     }
 
     public void clearAll() {
         List<Entry> entries = new ArrayList<>();
         queue.drainTo(entries);
         for (Entry entry : entries) {
-            deviceMiniStatus.markDone(entry.hardwareId());
+            deviceMiniStatus.markDone(entry.context().cameraId());
         }
         inQueue.clear();
-        current = null;
+        currentCameraId = null;
         log.info("Device sync queue cleared");
     }
 
-    // Check if device is currently in sync queue or actively syncing
-    public boolean isInQueue(String hardwareId) {
-        if (hardwareId == null || hardwareId.isBlank()) {
+    // Check if camera is currently in sync queue or actively syncing.
+    public boolean isInQueue(String cameraId) {
+        if (cameraId == null || cameraId.isBlank()) {
             return false;
         }
-        return hardwareId.equals(current) || inQueue.contains(hardwareId);
+        return cameraId.equals(currentCameraId) || inQueue.contains(cameraId);
     }
 }

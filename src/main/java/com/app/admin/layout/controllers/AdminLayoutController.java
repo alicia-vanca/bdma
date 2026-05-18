@@ -4,10 +4,12 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,8 +106,6 @@ public class AdminLayoutController extends BaseLayoutController {
     private final MediaViewerService mediaViewerService;
 
     @FXML
-    private HBox warningTextRow;
-    @FXML
     private StackPane contentArea;
     @FXML
     private Label labelGreeting;
@@ -140,7 +140,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     private DashboardController currentDashboardController;
     private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
-    private final Map<String, String> pendingStorageSyncs = new HashMap<>();
+    private final Set<String> pendingStorageSyncs = new HashSet<>();
     private final Queue<FailureSummaryRequestedEvent> pendingFailureSummaries = new ArrayDeque<>();
     private boolean failureSummaryVisible;
 
@@ -237,7 +237,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (!summary.isConnected()) {
             return;
         }
-        showSyncConfirmation(summary.getHardwareId(), summary.getDeviceName());
+        showSyncConfirmation(summary.getHardwareId(), summary.getDeviceName(), summary.getCameraId());
     }
 
     @FXML
@@ -398,10 +398,26 @@ public class AdminLayoutController extends BaseLayoutController {
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             Platform.runLater(() -> handleValidatedResult(event.validationResult()));
         } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
-            deviceSyncQueue.remove(event.hardwareId());
-            pendingStorageSyncs.remove(event.hardwareId());
+            removeDeviceSyncQueue(event);
+            removePendingStorageSync(event);
             Platform.runLater(() -> closeDialogForHardwareId(event.hardwareId()));
         }
+    }
+
+    private void removeDeviceSyncQueue(DeviceEvent event) {
+        resolveCameraId(event).ifPresent(deviceSyncQueue::remove);
+    }
+
+    private void removePendingStorageSync(DeviceEvent event) {
+        resolveCameraId(event).ifPresent(pendingStorageSyncs::remove);
+    }
+
+    private Optional<String> resolveCameraId(DeviceEvent event) {
+        DeviceValidationResult result = event.validationResult();
+        if (result == null || result.getCameraId() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(result.getCameraId());
     }
 
     // Skip invalid or unrecognized connections; only process confirmed valid
@@ -421,7 +437,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
             showNoticeSuccess(I18n.get("device.connected.saved", result.getDeviceName()));
             if (!restoreService.isRunning()) {
-                registerDeviceForSync(result.getHardwareId(), result.getDeviceName());
+                registerDeviceForSync(cameraId);
             }
             return;
         }
@@ -470,13 +486,13 @@ public class AdminLayoutController extends BaseLayoutController {
             currentDashboardController.markDeviceSaved(result, saved.getDeviceName());
         }
         showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
-        registerDeviceForSync(result.getHardwareId(), saved.getDeviceName());
+        registerDeviceForSync(cameraId);
         refreshDashboardIfActive();
     }
 
-    private void showSyncConfirmation(String hardwareId, String deviceName) {
-        // Check if device is already in sync queue
-        if (deviceSyncQueue.isInQueue(hardwareId)) {
+    private void showSyncConfirmation(String hardwareId, String deviceName, String cameraId) {
+        // Check if camera is already in sync queue.
+        if (deviceSyncQueue.isInQueue(cameraId)) {
             showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
             return;
         }
@@ -500,13 +516,9 @@ public class AdminLayoutController extends BaseLayoutController {
                 return;
             }
 
-            // Check if device is in pending queue
-            boolean isInPending = pendingStorageSyncs.containsKey(hardwareId);
-            if (isInPending) {
-                // Move from pending to sync queue
-                pendingStorageSyncs.remove(hardwareId);
-            }
-            registerDeviceForSync(hardwareId, deviceName);
+            // Move from pending storage retry list to the active sync queue when present.
+            pendingStorageSyncs.remove(cameraId);
+            registerDeviceForSync(cameraId);
             refreshDashboardIfActive();
         } finally {
             unregisterAlert(hardwareId, confirm);
@@ -537,18 +549,28 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     // Auto-sync device without confirmation dialog
-    public void registerDeviceForSync(String hardwareId, String deviceName) {
+    public void registerDeviceForSync(String cameraId) {
+        Optional<ValidatedDevice> savedDevice = deviceValidationService.findValidatedDevice(cameraId);
+        if (savedDevice.isEmpty()) {
+            log.warn("Cannot queue sync because camera {} is not registered", cameraId);
+            showNoticeError(I18n.get("device.sync.failed"));
+            return;
+        }
+
+        ValidatedDevice device = savedDevice.get();
+        String hardwareId = device.getHardwareId();
+        String deviceName = device.getDeviceName();
+
         if (storageUnavailableEventHandler.isStorageBlocked(FolderType.SYNC)) {
-            log.debug("Sync drive is pending recovery, adding device {} to pending list", hardwareId);
-            pendingStorageSyncs.put(hardwareId, deviceName);
+            log.debug("Sync drive is pending recovery, adding camera {} to pending list", cameraId);
+            pendingStorageSyncs.add(cameraId);
             return;
         }
 
         boolean autoDelete = adminSettingsService.getAutoDelete();
 
-        boolean queued = deviceSyncQueue.add(hardwareId,
-                new SyncContext(session.getUser().getUsername(), session.isAdmin(),
-                        folderManagerService.getDataDir(), autoDelete, deviceName, hardwareId));
+        boolean queued = deviceSyncQueue.add(new SyncContext(session.getUser().getUsername(), session.isAdmin(),
+                folderManagerService.getSyncDir(), autoDelete, deviceName, hardwareId, cameraId));
         // Only show success notice if device wasn't already in queue
         if (queued) {
             showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
@@ -578,23 +600,27 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @EventListener
     public void onFileSyncCompleted(FileSyncCompletedEvent event) {
-        if (currentDashboardController != null) {
-            currentDashboardController.onFileSyncCompleted(event.getSyncedPath());
-        }
-        refreshStorageStatus();
+        Platform.runLater(() -> {
+            if (currentDashboardController != null) {
+                currentDashboardController.onFileSyncCompleted(event.getSyncedPath());
+            }
+            refreshStorageStatus();
+        });
     }
 
     @EventListener(FileBackupCompletedEvent.class)
     public void onFileBackupCompleted() {
-        if (currentDashboardController != null) {
-            currentDashboardController.onFileBackupCompleted();
-        }
-        refreshStorageStatus();
+        Platform.runLater(() -> {
+            if (currentDashboardController != null) {
+                currentDashboardController.onFileBackupCompleted();
+            }
+            refreshStorageStatus();
+        });
     }
 
     public void refreshStorageStatus() {
         Platform.runLater(() -> {
-            File dataDir = folderManagerService.getDataDir();
+            File dataDir = folderManagerService.getSyncDir();
             File backupDir = folderManagerService.getBackupDir();
 
             boolean sameParent = isSameParentFolder(dataDir, backupDir);
@@ -776,9 +802,8 @@ public class AdminLayoutController extends BaseLayoutController {
         if (!pendingStorageSyncs.isEmpty()) {
             // Continue pending devices
             log.debug("Sync drive recovered, continuing {} pending device(s)", pendingStorageSyncs.size());
-            Map<String, String> toRetry = new HashMap<>(pendingStorageSyncs);
+            Set<String> toRetry = new HashSet<>(pendingStorageSyncs);
             pendingStorageSyncs.clear();
-            logDebug("Draining {} pending sync(s) after storage folder saved", toRetry.size());
             Platform.runLater(() -> toRetry.forEach(this::registerDeviceForSync));
         }
     }
@@ -791,14 +816,8 @@ public class AdminLayoutController extends BaseLayoutController {
         refreshStorageStatus();
     }
 
-    private void logDebug(String message, Object... args) {
-        if (log.isDebugEnabled()) {
-            log.debug(message, args);
-        }
-    }
-
-    @EventListener
-    public void onStorageRestoreCompleted(StorageRecoveryCompletedEvent event) {
+    @EventListener(StorageRecoveryCompletedEvent.class)
+    public void onStorageRestoreCompleted() {
         if (session.getUser() == null) {
             return;
         }
