@@ -154,6 +154,7 @@ public class RestoreService {
     }
 
     private void copyWithRetry(Path src, Path dest, Path relative) throws IOException {
+        Path tempDest = dest.resolveSibling(dest.getFileName() + AppConstants.TMP_EXTENSION);
         int attempt = 0;
         while (attempt < MAX_RETRY) {
             attempt++;
@@ -161,13 +162,11 @@ public class RestoreService {
                 throw new IOException(I18n.get("setting.storage.error.cancelled"));
             }
             try {
-                Files.createDirectories(dest.getParent());
-                Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
-                if (Files.size(src) == Files.size(dest)) {
-                    return;
-                }
-                throw new IOException("Size mismatch after copy: " + relative);
+                copyToVerifiedTempFile(src, tempDest, dest, relative);
+                Files.move(tempDest, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                return;
             } catch (IOException e) {
+                cleanupTempFile(tempDest);
                 if (isDiskFull(e)) {
                     throw new DiskFullException(e.getMessage());
                 }
@@ -176,6 +175,23 @@ public class RestoreService {
                     throw e;
                 }
             }
+        }
+    }
+
+    private void copyToVerifiedTempFile(Path src, Path tempDest, Path dest, Path relative) throws IOException {
+        Files.createDirectories(dest.getParent());
+        Files.deleteIfExists(tempDest);
+        Files.copy(src, tempDest, StandardCopyOption.REPLACE_EXISTING);
+        if (Files.size(src) != Files.size(tempDest)) {
+            throw new IOException("Size mismatch after copy: " + relative);
+        }
+    }
+
+    private void cleanupTempFile(Path tempDest) {
+        try {
+            Files.deleteIfExists(tempDest);
+        } catch (IOException cleanupException) {
+            log.warn("[RESTORE] Failed to delete temp file {}: {}", tempDest, cleanupException.getMessage());
         }
     }
 
