@@ -20,6 +20,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.enums.FileType;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.dtos.FileInfo;
@@ -334,7 +335,7 @@ public class DataSyncWorker implements Runnable {
         }
         driveLetterCache.put(hardwareId, driveLetter);
         log.info("[{}] MassStorage fallback: using drive {}", hardwareId, driveLetter);
-        return massStorageFileSource.findFiles(driveLetter, AppConstants.MEDIA_TYPES);
+        return massStorageFileSource.findFiles(driveLetter, FileType.ALL_VALUES);
     }
 
     // Parse remote file paths into SyncFile objects and categorize by sync status
@@ -397,7 +398,7 @@ public class DataSyncWorker implements Runnable {
 
     private List<String> findFiles(String hardwareId, String root) {
         try {
-            return adbClient.findFiles(hardwareId, root, AppConstants.MEDIA_TYPES);
+            return adbClient.findFiles(hardwareId, root, FileType.ALL_VALUES);
         } catch (DeviceDisconnectedException e) {
             disconnectedDevices.add(hardwareId);
             throw new PreflightException(I18n.get(ERROR_DISCONNECTED));

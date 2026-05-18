@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.LoginResult;
 import com.app.common.definitions.enums.Role;
 import com.app.common.exceptions.CannotDeleteSelfException;
@@ -26,8 +27,6 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserActivationHistoryRepository activationHistoryRepository;
-
-    public static final int USERNAME_MIN_LENGTH = 4;
 
     private final Session session;
 
@@ -115,7 +114,7 @@ public class UserService {
      */
     public boolean isInvalidUsername(String username) {
         String normalized = normalizeUsername(username);
-        return normalized == null || normalized.length() < USERNAME_MIN_LENGTH;
+        return normalized == null || normalized.length() < AppConstants.USERNAME_MIN_LENGTH;
     }
 
     /**

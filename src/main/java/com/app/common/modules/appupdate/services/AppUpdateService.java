@@ -1,17 +1,5 @@
 package com.app.common.modules.appupdate.services;
 
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
-import com.app.common.modules.appupdate.models.AppUpdateInfo;
-import com.app.common.definitions.AppConstants;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,19 +10,26 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.WeekFields;
 import java.util.concurrent.TimeUnit;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import com.app.common.definitions.AppConstants;
+import com.app.common.modules.appupdate.models.AppUpdateInfo;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 @Service
 public class AppUpdateService {
 
     private static final Logger log = LoggerFactory.getLogger(AppUpdateService.class);
-
-    private static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
-    private static final String KEY_LAST_CHECK_DATE = AppConstants.KEY_LAST_CHECK_DATE;
-    private static final String KEY_SKIPPED_VERSION = AppConstants.KEY_SKIPPED_VERSION;
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern(AppConstants.DATE_FORMAT);
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
@@ -51,10 +46,10 @@ public class AppUpdateService {
 
     public boolean shouldCheckThisWeek() {
         try {
-            String lastCheckDate = appConfigService.getConfigValue(KEY_LAST_CHECK_DATE);
+            String lastCheckDate = appConfigService.getConfigValue(AppConstants.KEY_LAST_CHECK_DATE);
             if (lastCheckDate == null || lastCheckDate.isBlank())
                 return true;
-            LocalDate lastCheck = LocalDate.parse(lastCheckDate, FORMATTER);
+            LocalDate lastCheck = LocalDate.parse(lastCheckDate, AppConstants.DATE_FORMATTER);
             return !isSameWeek(lastCheck, LocalDate.now());
         } catch (Exception e) {
             return true;
@@ -63,7 +58,7 @@ public class AppUpdateService {
 
     public void saveCheckDate() {
         try {
-            appConfigService.saveConfigValue(KEY_LAST_CHECK_DATE, LocalDate.now().format(FORMATTER));
+            appConfigService.saveConfigValue(AppConstants.KEY_LAST_CHECK_DATE, LocalDate.now().format(AppConstants.DATE_FORMATTER));
         } catch (Exception e) {
             log.warn("Failed to save check date", e);
         }
@@ -73,7 +68,7 @@ public class AppUpdateService {
 
     public void saveSkippedVersion(String version) {
         try {
-            appConfigService.saveConfigValue(KEY_SKIPPED_VERSION, version);
+            appConfigService.saveConfigValue(AppConstants.KEY_SKIPPED_VERSION, version);
         } catch (Exception e) {
             log.warn("Failed to save skipped version", e);
         }
@@ -81,7 +76,7 @@ public class AppUpdateService {
 
     public String getSkippedVersion() {
         try {
-            String skipped = appConfigService.getConfigValue(KEY_SKIPPED_VERSION);
+            String skipped = appConfigService.getConfigValue(AppConstants.KEY_SKIPPED_VERSION);
             return skipped != null ? skipped : "";
         } catch (Exception e) {
             return "";
@@ -94,7 +89,7 @@ public class AppUpdateService {
         String currentVersion = resolveCurrentVersion();
         try {
             Request request = new Request.Builder()
-                    .url(GITHUB_API)
+                    .url(AppConstants.GITHUB_API)
                     .header("Accept", "application/vnd.github.v3+json")
                     .build();
 
@@ -145,7 +140,7 @@ public class AppUpdateService {
                 "BDMA-" + info.latestVersion() + ".exe");
 
         try (InputStream in = conn.getInputStream();
-                OutputStream out = Files.newOutputStream(dest)) {
+             OutputStream out = Files.newOutputStream(dest)) {
             in.transferTo(out);
         } finally {
             conn.disconnect();

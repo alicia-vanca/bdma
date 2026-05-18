@@ -1,5 +1,7 @@
 package com.app.common.definitions;
 
+import java.time.format.DateTimeFormatter;
+
 /**
  * Centralized constants for the application.
  */
@@ -13,8 +15,6 @@ public final class AppConstants {
 
     // ────────────── User Validation ──────────────
     public static final int USERNAME_MIN_LENGTH = 4;
-    public static final int USERNAME_MAX_LENGTH = 20;
-    public static final String USERNAME_REGEX = "^[a-z][a-z0-9_]{3,19}$";
     public static final String PASSWORD_POLICY_MESSAGE_KEY = "{user.account.password.policy}";
 
     // ────────────── Theme ──────────────
@@ -59,17 +59,12 @@ public final class AppConstants {
     public static final String STARTUP_REG_VALUE = "BDMA";
 
     // ────────────── UI ──────────────
-    public static final String MESSAGE_ERROR = "message-error";
-    public static final String MESSAGE_SUCCESS = "message-success";
-    public static final String COMMON_ALL = "common.all";
     public static final String FILTER_ALL_ROLES = "filter.allRoles";
     public static final String FILTER_ALL_STATUS = "filter.allStatus";
-    public static final int PAGE_SIZE = 10;
 
     // ────────────── File Status ──────────────
     public static final String FILE_STATUS_SYNCED = "SYNCED";
     public static final String FILE_STATUS_BACKEDUP = "BACKEDUP";
-    public static final String FILE_STATUS_FAILED = "FAILED";
 
     // ────────────── Dashboard ──────────────
     public static final String KEY_DEVICE_CONNECTED = "dashboard.device.connected";
@@ -90,7 +85,7 @@ public final class AppConstants {
 
     // ────────────── Update ──────────────
     public static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
-    public static final String DATE_FORMAT = "yyyy-MM-dd";
+    public static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     // ────────────── Loggly ──────────────
     public static final int BATCH_SIZE = 50;

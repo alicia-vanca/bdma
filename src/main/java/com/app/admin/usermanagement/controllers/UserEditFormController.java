@@ -291,7 +291,7 @@ public class UserEditFormController {
         }
 
         // 1) minimum length check
-        if (username.length() < UserService.USERNAME_MIN_LENGTH) {
+        if (username.length() < AppConstants.USERNAME_MIN_LENGTH) {
             showError(I18n.get("user.username.invalid"));
             return;
         }

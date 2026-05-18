@@ -93,36 +93,34 @@
 }
 
 .status-warning-strip {
-  -fx-background-color: -warn-strip-bg;
-  -fx-border-color: -warn-strip-border;
-  -fx-border-width: 0 0 1 0;
-  -fx-padding: 3 16;
-  /* was inline Insets */
+  -fx-border-color: -border-color;
+  -fx-border-width: 0 1 0 0;
+  -fx-padding: 4 16;
 }
 
-.status-warning-icon {
-  -fx-text-fill: -warning-color;
-  -fx-font-size: 13px;
+.status-warning-strip-active {
+  -fx-background-color: -warn-strip-bg;
+  -fx-border-color: -warn-strip-border;
 }
 
 .status-warning-label {
   -fx-text-fill: -warning-color;
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
 }
 
 /* ── STORAGE PANELS ─────────────────────────────────────────────── */
 .storage-title {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
   -fx-font-weight: 600;
 }
 
 .storage-percent {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
   -fx-opacity: 0.65;
 }
 
 .storage-detail {
-  -fx-font-size: 11px;
+  -fx-font-size: 13px;
   -fx-font-weight: 700;
 }
 
@@ -154,7 +152,9 @@
 }
 
 .storage-separator {
-  -fx-background-color: -border-color;
+  -fx-background-color: transparent;
+  -fx-border-color: -border-color;
+  -fx-border-width: 0 1 0 0;
   -fx-pref-width: 1;
   -fx-padding: 0 16;
 }
@@ -223,7 +223,7 @@
 
 /* ── PAGINATION BAR ─────────────────────────────────────────────── */
 .pagination-bar {
-  -fx-font-size: 9px;
+  -fx-font-size: 13px;
 }
 
 .pagination-bar .btn-pagination {
@@ -234,27 +234,29 @@
   -fx-padding: 0;
 }
 
+
 .pagination-bar .combo-box {
   -fx-pref-height: 20;
   -fx-min-height: 20;
 }
 
 .combo-box.page-size-combo {
-  -fx-pref-width: 30;
+  -fx-pref-width: 65;
+  -fx-pref-height: 30;
 }
 
 .combo-box.page-size-combo .arrow-button {
   -fx-padding: 0 10 0 0;
-  -fx-pref-width: 20;
+  -fx-pref-width: 10;
 }
 
 /* ── PAGE NUMBER INPUT ─────────────────────── */
 .page-number-input {
-  -fx-pref-width: 25;
+  -fx-pref-width: 20;
   -fx-pref-height: 20;
   -fx-min-height: 20;
   -fx-max-height: 20;
-  -fx-font-size: 9px;
+  -fx-font-size:13px;
   -fx-alignment: CENTER;
   -fx-padding: 1 2;
   -fx-background-radius: 2;
@@ -262,13 +264,13 @@
 }
 
 .page-total-label {
-  -fx-font-size: 9px;
+  -fx-font-size: 13px;
   -fx-text-fill: -text-color;
 }
 
 /* ── SETTINGS WARNING ───────────────────────────────────────────── */
 .settings-warning {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
 }
 
 /* ── CONTEXT MENU ───────────────────────────────────────────────── */
