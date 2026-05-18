@@ -50,11 +50,6 @@ public class DataSyncService {
         this.appNoticeService = appNoticeService;
     }
 
-    public Long validateDevice(String hardwareId) {
-        return validatedDeviceRepository.findByHardwareId(hardwareId)
-                .map(ValidatedDevice::getId)
-                .orElse(null);
-    }
 
     public Long resolveDeviceId(String cameraId) {
         ValidatedDevice validatedDevice = validatedDeviceRepository.findByCameraId(cameraId).orElse(null);

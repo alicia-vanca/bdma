@@ -3,13 +3,14 @@ package com.app.common.dtos;
 import java.io.File;
 
 /**
- * Represents the authenticated user context used during sync.
- * - ADMIN: canSync() always returns true → sync all files
- * - USER : canSync() returns true only if username matches file owner
+ * Represents the authenticated user and device context used during sync.
+ * - ADMIN: can sync files only from the connected camera
+ * - USER : can sync files only when username and camera ID both match
  * - saveDir: captured once when sync starts, unaffected by mid-sync changes
  * - autoDelete: captured once when sync starts, unaffected by mid-sync changes
  * - deviceName: captured once when sync starts for display purposes
  * - hardwareId: device hardware ID for queue tracking
+ * - cameraId: validated camera ID used to reject files from other cameras
  */
 public record SyncContext(
         String username,
@@ -17,10 +18,23 @@ public record SyncContext(
         File saveDir,
         boolean autoDelete,
         String deviceName,
-        String hardwareId) {
-    public boolean canSync(String fileUserName) {
-        if (isAdmin)
+        String hardwareId,
+        String cameraId) {
+    /**
+     * Determines whether a file is eligible for this sync context.
+     *
+     * @param fileUserName owner encoded in the remote filename
+     * @param fileCameraId camera ID encoded in the remote filename
+     * @return true when the file belongs to the connected camera and, for non-admins,
+     *         the authenticated user
+     */
+    public boolean canSync(String fileUserName, String fileCameraId) {
+        if (cameraId == null || !cameraId.equals(fileCameraId)) {
+            return false;
+        }
+        if (isAdmin) {
             return true;
-        return username.equals(fileUserName);
+        }
+        return username != null && username.equals(fileUserName);
     }
 }

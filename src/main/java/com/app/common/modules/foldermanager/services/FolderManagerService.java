@@ -88,8 +88,8 @@ public class FolderManagerService {
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
-    // Fetch latest dataDir from database instead of using cached value
-    public File getDataDir() {
+    // Fetch latest sync directory from database instead of using cached value.
+    public File getSyncDir() {
         String dataDirPath = appConfigService.getConfigValue(AppConstants.KEY_DATA_DIR);
         if (dataDirPath == null || dataDirPath.isBlank()) {
             return null;
@@ -106,28 +106,24 @@ public class FolderManagerService {
         return new File(backupDirPath, AppConstants.BACKUP_FOLDER_NAME);
     }
 
-    public File getTempFile(String fileName) {
-        return new File(tempDir, fileName);
-    }
-
-    public boolean isDataDirConfigured() {
-        return getDataDir() != null;
+    public boolean isSyncDirConfigured() {
+        return getSyncDir() != null;
     }
 
     public boolean isBackupDirConfigured() {
         return getBackupDir() != null;
     }
 
-    public boolean isDataDirAccessible() {
-        return isDirAccessible(getDataDir());
+    public boolean isSyncDirAccessible() {
+        return isDirAccessible(getSyncDir());
     }
 
     public boolean isBackupDirAccessible() {
         return isDirAccessible(getBackupDir());
     }
 
-    public boolean isDataDirAccessible(File dataDirPath) {
-        return isDirAccessible(dataDirPath);
+    public boolean isSyncDirAccessible(File syncDirPath) {
+        return isDirAccessible(syncDirPath);
     }
 
     public boolean isBackupDirAccessible(File backupDirPath) {
@@ -162,12 +158,11 @@ public class FolderManagerService {
             return true;
         }
 
-        File target = dir;
-        if (target == null) {
+        if (dir == null) {
             return false;
         }
 
-        Path root = Path.of(target.getAbsolutePath()).getRoot();
+        Path root = Path.of(dir.getAbsolutePath()).getRoot();
         if (root == null) {
             return false;
         }
@@ -180,17 +175,25 @@ public class FolderManagerService {
         return rootFile.getUsableSpace() >= requiredBytes;
     }
 
+    // Get the relative path after BDMA folder
+    // Ex: 000000\image\0001.jpg
     public String toRelativeDataPath(String absolutePath) throws IOException {
+        return toRelativeDataPath(Path.of(absolutePath)).toString();
+    }
 
-        Path path = Path.of(absolutePath);
+    public Path toRelativeDataPath(Path absolutePath) throws IOException {
+        if (absolutePath == null) {
+            throw new IOException("Absolute path is null");
+        }
 
-        // Find the deepest "data_bdma" folder in the path
-        // Ex: D:\BDMA_User_Dataxx\data_bdma\data_bdma\DataSave\data_bdma\
+        // Find the deepest "sync_bdma" or "backup_bdma" folder in the path
+        // Ex: D:\BDMA_User_Dataxx\sync_bdma\sync_bdma\DataSave\sync_bdma\
         Path deepestDataFolder = null;
-        Path current = path;
+        Path current = absolutePath;
         while (current != null) {
             if (current.getFileName() != null &&
-                    current.getFileName().toString().equals(AppConstants.SYNC_FOLDER_NAME)) {
+                    (current.getFileName().toString().equals(AppConstants.SYNC_FOLDER_NAME)
+                            || current.getFileName().toString().equals(AppConstants.BACKUP_FOLDER_NAME))) {
                 deepestDataFolder = current;
                 break;
             }
@@ -198,19 +201,11 @@ public class FolderManagerService {
         }
 
         if (deepestDataFolder == null) {
-            throw new IOException("Path does not contain " + AppConstants.SYNC_FOLDER_NAME + ": " + absolutePath);
+            throw new IOException("Path does not contain BDMA data folder: " + absolutePath);
         }
 
-        // Get relative path from the deepest data_bdma folder
-        return deepestDataFolder.relativize(path).toString();
-    }
-
-    public String getBackupPath(String relativePath) throws IOException {
-        File currentBackupDir = getBackupDir();
-        if (currentBackupDir == null) {
-            throw new IOException("Backup directory is not configured yet.");
-        }
-        return new File(currentBackupDir, relativePath).getAbsolutePath();
+        // Get relative path from the deepest BDMA folder
+        return deepestDataFolder.relativize(absolutePath);
     }
 
     // Ensures the target directory exists and is protected, then runs the action.
@@ -226,32 +221,6 @@ public class FolderManagerService {
 
         ensureDirAccessible(specificDir.getAbsolutePath());
 
-        return action.call();
-    }
-
-    public synchronized <T> T withDataAndBackupPrepared(Callable<T> action) throws Exception {
-        File currentDataDir = getDataDir();
-        if (currentDataDir == null) {
-            throw new IOException("Data directory is not configured yet.");
-        }
-        File currentBackupDir = getBackupDir();
-        if (currentBackupDir == null) {
-            throw new IOException("Backup directory is not configured yet.");
-        }
-
-        // Fail fast if drives are not accessible
-        if (!isDriveAccessible(currentDataDir)) {
-            throw new IOException("Data directory drive not accessible: " + currentDataDir.getAbsolutePath());
-        }
-        if (!isDriveAccessible(currentBackupDir)) {
-            throw new IOException("Backup directory drive not accessible: " + currentBackupDir.getAbsolutePath());
-        }
-
-        String dataPath = currentDataDir.getAbsolutePath();
-        String backupPath = currentBackupDir.getAbsolutePath();
-
-        ensureDirAccessible(dataPath);
-        ensureDirAccessible(backupPath);
         return action.call();
     }
 
@@ -408,7 +377,7 @@ public class FolderManagerService {
         }
 
         // Copy to temporary file first
-        Path tempTarget = Path.of(target.toString() + AppConstants.TMP_EXTENSION);
+        Path tempTarget = Path.of(target + AppConstants.TMP_EXTENSION);
         Files.copy(sourcePath, tempTarget, StandardCopyOption.REPLACE_EXISTING);
 
         // Validate temporary file matches source before renaming

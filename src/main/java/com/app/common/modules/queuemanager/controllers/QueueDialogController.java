@@ -283,6 +283,7 @@ public class QueueDialogController {
      * Called by DialogHelper when language changes.
      * Refreshes all tabs to re-translate error messages.
      */
+    @SuppressWarnings("unused") // Used in DialogHelper.java
     public void onLanguageChanged(LanguageChangedEvent event) {
         if (log.isDebugEnabled()) {
             log.debug("Queue dialog language changed: {}", event.getLanguageTag());
@@ -512,8 +513,7 @@ public class QueueDialogController {
         }
 
         private void onRetryDevice(QueueTreeItem deviceItem) {
-            String hardwareId = deviceItem.getHardwareId();
-            adminLayoutController.registerDeviceForSync(hardwareId, deviceItem.getName());
+            adminLayoutController.registerDeviceForSync(deviceItem.getCameraId());
         }
 
         private QueueTreeItem currentRowItem() {
@@ -766,6 +766,13 @@ public class QueueDialogController {
                 return device.getHardwareId();
             }
             return null;
+        }
+
+        public String getCameraId() {
+            if (device == null || device.getSyncContext() == null) {
+                return null;
+            }
+            return device.getSyncContext().cameraId();
         }
     }
 }

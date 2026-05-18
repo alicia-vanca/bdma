@@ -45,41 +45,41 @@ public class DeviceMiniStatus {
 
     private final Map<String, SyncProgress> progressMap = new ConcurrentHashMap<>();
 
-    public void markQueued(String hardwareId) {
-        progressMap.remove(hardwareId);
-        progressMap.put(hardwareId, SyncProgress.queued());
+    public void markQueued(String cameraId) {
+        progressMap.remove(cameraId);
+        progressMap.put(cameraId, SyncProgress.queued());
         notifyProgressChanged();
     }
 
-    public void markSyncing(String hardwareId, int total, int passed, int failed) {
-        progressMap.put(hardwareId, SyncProgress.syncing(total, passed, failed));
+    public void markSyncing(String cameraId, int total, int passed, int failed) {
+        progressMap.put(cameraId, SyncProgress.syncing(total, passed, failed));
         notifyProgressChanged();
     }
 
-    public void markCancelled(String hardwareId) {
-        SyncProgress current = progressMap.get(hardwareId);
+    public void markCancelled(String cameraId) {
+        SyncProgress current = progressMap.get(cameraId);
         if (current != null && current.status() == SyncStatus.SYNCING) {
-            progressMap.put(hardwareId, SyncProgress.cancelled(current.total(), current.passed(), current.failed()));
+            progressMap.put(cameraId, SyncProgress.cancelled(current.total(), current.passed(), current.failed()));
         } else {
-            progressMap.remove(hardwareId);
+            progressMap.remove(cameraId);
         }
         notifyProgressChanged();
     }
 
-    public void markDone(String hardwareId) {
-        SyncProgress current = progressMap.get(hardwareId);
+    public void markDone(String cameraId) {
+        SyncProgress current = progressMap.get(cameraId);
         if (current != null && current.status() == SyncStatus.SYNCING) {
-            progressMap.put(hardwareId, SyncProgress.completed(current.total(), current.passed(), current.failed()));
+            progressMap.put(cameraId, SyncProgress.completed(current.total(), current.passed(), current.failed()));
         } else if (current != null && current.status() == SyncStatus.CANCELLED) {
             // keep cancelled status if already set
         } else {
-            progressMap.remove(hardwareId);
+            progressMap.remove(cameraId);
         }
         notifyProgressChanged();
     }
 
-    public SyncProgress getProgress(String hardwareId) {
-        return progressMap.getOrDefault(hardwareId, SyncProgress.idle());
+    public SyncProgress getProgress(String cameraId) {
+        return progressMap.getOrDefault(cameraId, SyncProgress.idle());
     }
 
     public boolean isAnySyncActive() {

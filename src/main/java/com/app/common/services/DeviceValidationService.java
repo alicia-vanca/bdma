@@ -56,6 +56,16 @@ public class DeviceValidationService {
         return validatedDeviceRepository.saveOrUpdate(cameraId, hardwareId, whitelistId);
     }
 
+    /**
+     * Finds the saved device metadata used to rebuild sync context from camera ID.
+     *
+     * @param cameraId validated camera ID assigned to the device
+     * @return saved device metadata when the camera has been registered
+     */
+    public Optional<ValidatedDevice> findValidatedDevice(String cameraId) {
+        return validatedDeviceRepository.findByCameraId(cameraId);
+    }
+
     // Validate connected device and return metadata used by the UI flow.
     private DeviceValidationResult validate(String adbSerial) {
         if (adbSerial == null || adbSerial.isBlank()) {

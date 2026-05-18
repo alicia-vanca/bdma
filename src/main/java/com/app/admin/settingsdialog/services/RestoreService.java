@@ -105,7 +105,7 @@ public class RestoreService {
         }
         try {
             File backupDir = folderManager.getBackupDir();
-            File dataDir = folderManager.getDataDir();
+            File dataDir = folderManager.getSyncDir();
 
             if (backupDir == null) {
                 return BackupSyncResult.failure(I18n.get("setting.storage.error.backup.dir.not.configured"));
@@ -205,7 +205,7 @@ public class RestoreService {
     }
 
     public record BackupSyncResult(boolean success, int count, String errorMessage,
-                                   List<RestoreFailure> failures) {
+            List<RestoreFailure> failures) {
 
         public static BackupSyncResult success(int count, List<RestoreFailure> failures) {
             return new BackupSyncResult(true, count, null, failures);
@@ -229,7 +229,7 @@ public class RestoreService {
         }
         try {
             File backupDir = folderManager.getBackupDir();
-            File dataDir = folderManager.getDataDir();
+            File dataDir = folderManager.getSyncDir();
             if (backupDir == null) {
                 return BackupSyncResult.failure(I18n.get("setting.storage.error.backup.dir.not.configured"));
             }
@@ -326,7 +326,8 @@ public class RestoreService {
             Path destPath = dataDir.toPath().resolve(relative);
 
             try {
-                if (shouldSkipFile(srcPath, destPath, relative, dataDir, ctx)) continue;
+                if (shouldSkipFile(srcPath, destPath, relative, dataDir, ctx))
+                    continue;
 
                 copyWithRetry(srcPath, destPath, relative);
 
@@ -343,7 +344,7 @@ public class RestoreService {
                     currentProgress.incrementSkipped(sourceFiles.size() - i);
                     return BackupSyncResult.failure(I18n.get("setting.storage.error.disk.full", driveLetter));
                 }
-                dataDir = folderManager.getDataDir();
+                dataDir = folderManager.getSyncDir();
                 Path newDestPath = dataDir.toPath().resolve(relative);
                 try {
                     copyWithRetry(srcPath, newDestPath, relative);
@@ -447,7 +448,6 @@ public class RestoreService {
             Map<String, Long> deviceMap,
             List<RestoreFailure> failures,
             List<String> successPaths,
-            int totalFiles
-    ) {
+            int totalFiles) {
     }
 }
