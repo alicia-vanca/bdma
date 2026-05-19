@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.app.common.dtos.SyncContext;
 import com.app.common.modules.queuemanager.dtos.DeviceQueueItem;
 import com.app.common.modules.queuemanager.dtos.ExportDirectoryQueueItem;
 import com.app.common.modules.queuemanager.dtos.FileQueueItem;
@@ -36,10 +37,12 @@ public class QueueManagerService {
     // ── Sync Operations ──────────────────────────────────────────────────────
 
     /**
-     * Add device to sync queue.
+     * Add device to sync queue using the full context required by queue actions.
+     *
+     * @param syncContext sync request context containing camera and hardware identifiers
      */
-    public void addDeviceToSyncTracker(String hardwareId, String deviceName) {
-        syncTracker.addDevice(hardwareId, deviceName);
+    public void addDeviceToSyncTracker(SyncContext syncContext) {
+        syncTracker.addDevice(syncContext);
     }
 
     /**
