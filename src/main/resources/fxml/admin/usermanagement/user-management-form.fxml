@@ -30,18 +30,31 @@
         <Label fx:id="lblRole" visible="false" managed="false" styleClass="account-readonly-value"
                GridPane.rowIndex="1" GridPane.columnIndex="1"/>
         <Label fx:id="lblPasswordCaption" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
-        <StackPane alignment="CENTER_RIGHT" GridPane.rowIndex="2" GridPane.columnIndex="1">
-            <PasswordField fx:id="txtPassword" promptText="%user.password.hint" styleClass="input"/>
-            <TextField fx:id="txtPasswordVisible" promptText="%user.password.hint"
-                       styleClass="input" visible="false" managed="false"/>
-            <Button fx:id="btnPeekPassword" styleClass="peek-btn"/>
+        <StackPane GridPane.rowIndex="2" GridPane.columnIndex="1">
+            <TextField editable="false" mouseTransparent="true" styleClass="input"/>
+            <HBox alignment="CENTER_LEFT" style="-fx-background-color: transparent;">
+                <PasswordField fx:id="txtPassword" promptText="%user.password.hint"
+                               HBox.hgrow="ALWAYS"
+                               style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
+                <TextField fx:id="txtPasswordVisible" promptText="%user.password.hint"
+                           visible="false" managed="false" HBox.hgrow="ALWAYS"
+                           style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
+                <Button fx:id="btnPeekPassword" styleClass="peek-btn"/>
+            </HBox>
         </StackPane>
+
         <Label fx:id="lblPasswordConfirmCaption" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
-        <StackPane alignment="CENTER_RIGHT" GridPane.rowIndex="3" GridPane.columnIndex="1">
-            <PasswordField fx:id="txtPasswordConfirm" promptText="%user.password.confirm.hint" styleClass="input"/>
-            <TextField fx:id="txtPasswordConfirmVisible" promptText="%user.password.confirm.hint"
-                       styleClass="input" visible="false" managed="false"/>
-            <Button fx:id="btnPeekPasswordConfirm" styleClass="peek-btn"/>
+        <StackPane GridPane.rowIndex="3" GridPane.columnIndex="1">
+            <TextField editable="false" mouseTransparent="true" styleClass="input"/>
+            <HBox alignment="CENTER_LEFT" style="-fx-background-color: transparent;">
+                <PasswordField fx:id="txtPasswordConfirm" promptText="%user.password.confirm.hint"
+                               HBox.hgrow="ALWAYS"
+                               style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
+                <TextField fx:id="txtPasswordConfirmVisible" promptText="%user.password.confirm.hint"
+                           visible="false" managed="false" HBox.hgrow="ALWAYS"
+                           style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
+                <Button fx:id="btnPeekPasswordConfirm" styleClass="peek-btn"/>
+            </HBox>
         </StackPane>
     </GridPane>
     <Label fx:id="lblError" visible="false" styleClass="message-error"/>
