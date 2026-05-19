@@ -50,6 +50,7 @@ import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceMiniStatus;
+import com.app.common.services.DeviceTracker;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.utils.FileUtil;
 import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
@@ -86,6 +87,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     // I18n keys
     private static final String I18N_DEVICE_SYNC_QUEUED = "device.sync.queued";
+    private static final String I18N_DEVICE_SYNC_QUEUE_FAILED = "device.sync.queue_failed";
     private static final String I18N_STATUS_STORAGE_DRIVE_NOT_FOUND = "status.storage.drive.not_found";
 
     private final AppUpdateController appUpdateController;
@@ -93,6 +95,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DeviceValidationService deviceValidationService;
     private final AppNoticeService appNoticeService;
     private final DeviceSyncQueue deviceSyncQueue;
+    private final DeviceTracker deviceTracker;
     private final DataSyncRunner syncRunner;
     private final DataBackupRunner backupRunner;
     private final DeviceMiniStatus deviceMiniStatus;
@@ -150,6 +153,7 @@ public class AdminLayoutController extends BaseLayoutController {
             DeviceValidationService deviceValidationService,
             AppNoticeService appNoticeService,
             DeviceSyncQueue deviceSyncQueue,
+            DeviceTracker deviceTracker,
             DeviceMiniStatus deviceMiniStatus,
             QueueManagerService queueManagerService,
             DataSyncRunner syncRunner,
@@ -167,6 +171,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.deviceValidationService = deviceValidationService;
         this.appNoticeService = appNoticeService;
         this.deviceSyncQueue = deviceSyncQueue;
+        this.deviceTracker = deviceTracker;
         this.syncRunner = syncRunner;
         this.backupRunner = backupRunner;
         this.deviceMiniStatus = deviceMiniStatus;
@@ -230,7 +235,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     private void handleRequestSync(DeviceSummary summary) {
         if (summary == null) {
-            showNoticeError(I18n.get("device.sync.failed"));
+            showNoticeError(I18n.get(I18N_DEVICE_SYNC_QUEUE_FAILED));
             return;
         }
         // Don't show sync dialog if device is no longer connected
@@ -553,13 +558,16 @@ public class AdminLayoutController extends BaseLayoutController {
         Optional<ValidatedDevice> savedDevice = deviceValidationService.findValidatedDevice(cameraId);
         if (savedDevice.isEmpty()) {
             log.warn("Cannot queue sync because camera {} is not registered", cameraId);
-            showNoticeError(I18n.get("device.sync.failed"));
+            showNoticeError(I18n.get(I18N_DEVICE_SYNC_QUEUE_FAILED));
             return;
         }
 
         ValidatedDevice device = savedDevice.get();
         String hardwareId = device.getHardwareId();
         String deviceName = device.getDeviceName();
+        if (!isDeviceConnectedForSync(hardwareId, cameraId)) {
+            return;
+        }
 
         if (storageUnavailableEventHandler.isStorageBlocked(FolderType.SYNC)) {
             log.debug("Sync drive is pending recovery, adding camera {} to pending list", cameraId);
@@ -576,6 +584,24 @@ public class AdminLayoutController extends BaseLayoutController {
             showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
         }
         refreshDashboardIfActive();
+    }
+
+    /**
+     * Checks DeviceTracker's managed state before queueing sync work. Retrying an
+     * offline device must fail fast so stale queue rows do not move back to
+     * processing.
+     *
+     * @param hardwareId hardware serial stored for the validated camera
+     * @param cameraId   stable camera identifier used for user-facing logging
+     * @return true when the tracker has confirmed the device is connected
+     */
+    private boolean isDeviceConnectedForSync(String hardwareId, String cameraId) {
+        if (!deviceTracker.isConnected(hardwareId)) {
+            log.warn("Cannot queue sync because camera {} hardware {} is disconnected", cameraId, hardwareId);
+            showNoticeError(I18n.get(I18N_DEVICE_SYNC_QUEUE_FAILED));
+            return false;
+        }
+        return true;
     }
 
     private void openDefaultTab() {
@@ -640,7 +666,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
             lblCombinedWarning.setText(warningText);
             lblCombinedWarning.setStyle(warningText.isEmpty() ? "" : STYLE_CLASS_WARNING);
-            
+
             boolean hasWarning = !warningText.isEmpty();
             warningStrip.getStyleClass().removeAll("status-warning-strip-active");
             if (hasWarning) {

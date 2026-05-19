@@ -52,6 +52,21 @@ public class DeviceTracker implements Runnable {
         STABILIZING, CONNECTED, DISCONNECTING, UNVALIDATED
     }
 
+    /**
+     * Returns whether a hardware serial is currently accepted as connected by the
+     * tracker. DISCONNECTING devices are treated as unavailable so retry actions do
+     * not enqueue work during the grace period.
+     *
+     * @param serial hardware serial reported by ADB
+     * @return true only when the tracker has confirmed the device is connected
+     */
+    public boolean isConnected(String serial) {
+        if (serial == null || serial.isBlank()) {
+            return false;
+        }
+        return deviceStates.get(serial) == DeviceState.CONNECTED;
+    }
+
     public DeviceTracker(AdbClient adbClient,
             DeviceValidationService deviceValidationService,
             ApplicationEventPublisher eventPublisher) {

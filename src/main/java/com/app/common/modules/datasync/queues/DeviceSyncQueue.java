@@ -56,7 +56,7 @@ public class DeviceSyncQueue {
 
         if (queue.offer(new Entry(hardwareId, context))) {
             deviceMiniStatus.markQueued(cameraId);
-            queueManagerService.addDeviceToSyncTracker(hardwareId, context.deviceName());
+            queueManagerService.addDeviceToSyncTracker(context);
             log.info("Added camera {} to device sync queue using hardware {}", cameraId, hardwareId);
             return true;
         } else {

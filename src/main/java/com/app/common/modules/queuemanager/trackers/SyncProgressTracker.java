@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
+import com.app.common.dtos.SyncContext;
 import com.app.common.modules.queuemanager.dtos.DeviceQueueItem;
 import com.app.common.modules.queuemanager.dtos.FileQueueItem;
 import com.app.common.modules.queuemanager.enums.ItemStatus;
@@ -37,10 +38,18 @@ public class SyncProgressTracker {
     }
 
     /**
-     * Add device to sync queue.
+     * Add device to sync queue and retain its sync context for later queue actions.
+     *
+     * @param syncContext context containing the stable camera id and current hardware id
      */
-    public void addDevice(String hardwareId, String deviceName) {
-        DeviceQueueItem device = new DeviceQueueItem(hardwareId, deviceName);
+    public void addDevice(SyncContext syncContext) {
+        if (syncContext == null) {
+            return;
+        }
+
+        String hardwareId = syncContext.hardwareId();
+        DeviceQueueItem device = new DeviceQueueItem(hardwareId, syncContext.deviceName());
+        device.setSyncContext(syncContext);
         devices.put(hardwareId, device);
         deviceFiles.put(hardwareId, Collections.synchronizedMap(new LinkedHashMap<>()));
         publishEvent(hardwareId, "Device added to sync queue");
