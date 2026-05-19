@@ -38,28 +38,31 @@
         </center>
         <bottom>
             <HBox styleClass="status-bar" alignment="CENTER_LEFT" spacing="10">
-                <!-- Storage Area (50%) -->
-                <HBox alignment="CENTER_LEFT" spacing="10" HBox.hgrow="ALWAYS" styleClass="status-storage-row" prefWidth="400">
-                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
-                        <Label fx:id="lblDataStorageTitle" styleClass="storage-title"/>
-                        <ProgressBar fx:id="pbDataStorage" progress="0" styleClass="storage-progress"
-                                     HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
-                        <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
-                        <Label fx:id="lblDataStoragePercent" styleClass="storage-percent"/>
+                <HBox alignment="CENTER_LEFT" spacing="10" HBox.hgrow="ALWAYS" styleClass="status-storage-row"
+                      prefWidth="350" minWidth="300">
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS" minWidth="120">
+                        <Label fx:id="lblDataStorageTitle" styleClass="storage-title" minWidth="-1"/>
+                        <StackPane HBox.hgrow="ALWAYS" maxWidth="160" minWidth="40">
+                            <ProgressBar fx:id="pbDataStorage" progress="0" styleClass="storage-progress"
+                                         maxWidth="1.7976931348623157E308"/>
+                            <Label fx:id="lblDataStoragePercent" styleClass="storage-percent" mouseTransparent="true"/>
+                        </StackPane>
+                        <Label fx:id="lblDataStorageUsage" styleClass="storage-detail" minWidth="-1"/>
                     </HBox>
                     <Separator orientation="VERTICAL" styleClass="storage-separator"/>
-                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS">
-                        <Label fx:id="lblBackupStorageTitle" styleClass="storage-title"/>
-                        <ProgressBar fx:id="pbBackupStorage" progress="0" styleClass="storage-progress"
-                                     HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
-                        <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
-                        <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"/>
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS" minWidth="120">
+                        <Label fx:id="lblBackupStorageTitle" styleClass="storage-title" minWidth="-1"/>
+                        <StackPane HBox.hgrow="ALWAYS" maxWidth="160" minWidth="40">
+                            <ProgressBar fx:id="pbBackupStorage" progress="0" styleClass="storage-progress"
+                                         maxWidth="1.7976931348623157E308"/>
+                            <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"
+                                   mouseTransparent="true"/>
+                        </StackPane>
+                        <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail" minWidth="-1"/>
                     </HBox>
                 </HBox>
-
-                <!-- Warning Area (50%) -->
                 <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="8"
-                      styleClass="status-warning-strip" HBox.hgrow="ALWAYS" prefWidth="400">
+                      styleClass="status-warning-strip" HBox.hgrow="ALWAYS" prefWidth="450">
                     <Label fx:id="lblCombinedWarning" wrapText="false" minWidth="0"
                            styleClass="status-warning-label" HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
                 </HBox>

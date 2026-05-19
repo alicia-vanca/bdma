@@ -116,7 +116,6 @@
 
 .storage-percent {
   -fx-font-size: 13px;
-  -fx-opacity: 0.65;
 }
 
 .storage-detail {
@@ -125,9 +124,9 @@
 }
 
 .storage-progress {
-  -fx-pref-height: 7px;
-  -fx-min-height: 7px;
-  -fx-max-height: 7px;
+  -fx-pref-height: 15px;
+  -fx-min-height: 15px;
+  -fx-max-height: 15px;
   -fx-background-radius: 4;
   -fx-accent: -primary;
 }
@@ -156,7 +155,7 @@
   -fx-border-color: -border-color;
   -fx-border-width: 0 1 0 0;
   -fx-pref-width: 1;
-  -fx-padding: 0 16;
+  -fx-padding: 0 0;
 }
 
 .drive-conflict-row {
