@@ -42,6 +42,24 @@
   -fx-background-radius: 6;
 }
 
+.btn-primary-small {
+  -fx-padding: 1 12;
+  -fx-alignment: CENTER;
+  -fx-text-fill: white;
+  -fx-background-color: -primary;
+  -fx-background-radius: 6;
+}
+
+.btn-primary-small:hover {
+  -fx-background-color: -primary-hover;
+}
+
+.btn-primary-small:disabled {
+  -fx-opacity: 1;
+  -fx-text-fill: #94a3b8;
+  -fx-background-color: #e2e8f0;
+}
+
 /* COMBO BOX */
 .combo-box {
   -fx-background-radius: 6;

@@ -65,6 +65,7 @@ public class AdminSettingsDialogController {
     private static final String CSS_CLASS_STATUS_ERROR = "status-error";
     private static final String I18N_SETTING_STORAGE_PROGRESS = "setting.storage.progress";
     private static final String I18N_SETTING_STORAGE_FINAL = "setting.storage.final";
+    private static final String I18N_SETTING_STORAGE_BTN_CHOOSE = "setting.storage.btn.choose";
 
     private final AdminSettingsDialogService adminSettingsService;
     private final Session session;
@@ -189,11 +190,11 @@ public class AdminSettingsDialogController {
         btnDarkTheme.setText("☾ " + I18n.get("settings.theme.dark"));
 
         lblSaveFolderTitle.setText(I18n.get("setting.storage.sync.title"));
-        btnChooseSaveFolder.setText(I18n.get("setting.storage.btn.choose"));
+        btnChooseSaveFolder.setText(I18n.get(I18N_SETTING_STORAGE_BTN_CHOOSE));
         lblBackupFolderTitle.setText(I18n.get("setting.storage.backup.title"));
-        btnChooseBackupFolder.setText(I18n.get("setting.storage.btn.choose"));
+        btnChooseBackupFolder.setText(I18n.get(I18N_SETTING_STORAGE_BTN_CHOOSE));
         lblExportFolderTitle.setText(I18n.get("setting.storage.export.title"));
-        btnChooseExportFolder.setText(I18n.get("setting.storage.btn.choose"));
+        btnChooseExportFolder.setText(I18n.get(I18N_SETTING_STORAGE_BTN_CHOOSE));
         chkAskEveryTimeExport.setText(I18n.get("setting.export.mode.ask.checkbox"));
         lblSaveFolderNote.setText(I18n.get("setting.storage.sync.note"));
 
