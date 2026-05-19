@@ -48,7 +48,9 @@ public class QueueDialogController {
     private static final Logger log = LoggerFactory.getLogger(QueueDialogController.class);
     private static final String I18N_QUEUE_EMPTY = "queue.empty";
     private static final String I18N_QUEUE_COLUMN_STATUS = "queue.column.status";
+    private static final String I18N_COMMON_RETRY = "common.retry";
     private static final String STYLE_LAST_CELL = "last-cell";
+    private static final String STYLE_QUEUE_CELL_CONTENT = "queue-cell-content";
     private static final String STYLE_REASON_LABEL = "-fx-text-fill: #c62828; -fx-font-size: 13px;";
 
     // Sync tab components
@@ -66,8 +68,6 @@ public class QueueDialogController {
     private TableColumn<FileQueueItem, String> backupColFile;
     @FXML
     private TableColumn<FileQueueItem, String> backupColStatus;
-    @FXML
-    private Label lblTitle;
     @FXML
     private TabPane tabPane;
     @FXML
@@ -127,6 +127,7 @@ public class QueueDialogController {
         syncColStatus.setCellValueFactory(
                 param -> new SimpleStringProperty(formatStatusForDisplay(param.getValue().getValue())));
         syncColStatus.setCellFactory(SyncStatusTreeCell::new);
+        syncColStatus.getStyleClass().add(STYLE_LAST_CELL);
         syncTreeTable.setPlaceholder(new Label(I18n.get(I18N_QUEUE_EMPTY)));
     }
 
@@ -139,7 +140,7 @@ public class QueueDialogController {
 
     private void refreshSyncTab() {
         TreeItem<QueueTreeItem> root = syncTreeTable.getRoot();
-        root.getChildren().clear();
+        List<TreeItem<QueueTreeItem>> deviceNodes = new ArrayList<>();
 
         // Create defensive copy to avoid ConcurrentModificationException
         List<DeviceQueueItem> devices = new ArrayList<>(queueManagerService.getAllTrackingSyncDevices());
@@ -152,15 +153,15 @@ public class QueueDialogController {
             deviceNode.setExpanded(!isFinishedStatus(device.getStatus()));
 
             for (FileQueueItem file : files) {
-                TreeItem<QueueTreeItem> fileNode = new TreeItem<>(new QueueTreeItem(file));
-                deviceNode.getChildren().add(fileNode);
+                deviceNode.getChildren().add(new TreeItem<>(new QueueTreeItem(file)));
             }
 
-            root.getChildren().add(deviceNode);
+            deviceNodes.add(deviceNode);
         }
 
-        // Force refresh the TreeTableView
-        syncTreeTable.refresh();
+        // Replace rows in one notification so JavaFX selection state is less likely to
+        // observe a transient empty tree while a mouse selection is being processed.
+        root.getChildren().setAll(deviceNodes);
     }
 
     // ── Backup Tab Setup ─────────────────────────────────────────────────────
@@ -169,6 +170,7 @@ public class QueueDialogController {
         backupColFile.setCellValueFactory(param -> new SimpleStringProperty(param.getValue().getFileName()));
         backupColStatus
                 .setCellValueFactory(param -> new SimpleStringProperty(formatStatusWithProgress(param.getValue())));
+        backupColStatus.getStyleClass().add(STYLE_LAST_CELL);
         backupColStatus.setCellFactory(column -> new javafx.scene.control.TableCell<>() {
             private final Label statusLabel = new Label();
             private final Label reasonLabel = new Label();
@@ -176,11 +178,11 @@ public class QueueDialogController {
 
             {
                 getStyleClass().add(STYLE_LAST_CELL);
+                container.getStyleClass().add(STYLE_QUEUE_CELL_CONTENT);
                 statusLabel.setWrapText(false);
                 reasonLabel.setWrapText(false);
                 reasonLabel.setStyle(STYLE_REASON_LABEL);
                 container.setAlignment(Pos.CENTER_LEFT);
-                container.setMaxHeight(40);
                 container.prefWidthProperty().bind(column.widthProperty().subtract(24));
                 statusLabel.maxWidthProperty().bind(container.prefWidthProperty());
                 reasonLabel.maxWidthProperty().bind(container.prefWidthProperty());
@@ -234,6 +236,7 @@ public class QueueDialogController {
         exportColStatus.setCellValueFactory(
                 param -> new SimpleStringProperty(formatStatusForDisplay(param.getValue().getValue())));
         exportColStatus.setCellFactory(ExportStatusTreeCell::new);
+        exportColStatus.getStyleClass().add(STYLE_LAST_CELL);
         exportTreeTable.setPlaceholder(new Label(I18n.get(I18N_QUEUE_EMPTY)));
         TreeItem<QueueTreeItem> root = new TreeItem<>(new QueueTreeItem());
         root.setExpanded(true);
@@ -243,7 +246,7 @@ public class QueueDialogController {
 
     private void refreshExportTab() {
         TreeItem<QueueTreeItem> root = exportTreeTable.getRoot();
-        root.getChildren().clear();
+        List<TreeItem<QueueTreeItem>> directoryNodes = new ArrayList<>();
 
         // Defensive copy to avoid ConcurrentModificationException.
         List<ExportDirectoryQueueItem> directories = new ArrayList<>(
@@ -255,10 +258,12 @@ public class QueueDialogController {
             for (FileQueueItem file : new ArrayList<>(directory.getFiles())) {
                 dirNode.getChildren().add(new TreeItem<>(new QueueTreeItem(file)));
             }
-            root.getChildren().add(dirNode);
+            directoryNodes.add(dirNode);
         }
 
-        exportTreeTable.refresh();
+        // Replace rows in one notification so JavaFX selection state is less likely to
+        // observe a transient empty tree while a mouse selection is being processed.
+        root.getChildren().setAll(directoryNodes);
     }
 
     // ── Event Listeners ──────────────────────────────────────────────────────
@@ -312,9 +317,6 @@ public class QueueDialogController {
      * while language changes at runtime.
      */
     private void refreshStaticTexts() {
-        if (lblTitle != null) {
-            lblTitle.setText(I18n.get("queue.dialog.title"));
-        }
         if (tabSync != null) {
             tabSync.setText(I18n.get("queue.tab.sync"));
         }
@@ -463,25 +465,25 @@ public class QueueDialogController {
     private class SyncStatusTreeCell extends javafx.scene.control.TreeTableCell<QueueTreeItem, String> {
         private final Label statusLabel = new Label();
         private final Label reasonLabel = new Label();
-        private final Button retryButton = new Button(I18n.get("common.retry"));
+        private final Button retryButton = new Button(I18n.get(I18N_COMMON_RETRY));
         private final Region statusSpacer = new Region();
         private final HBox statusWithButton = new HBox(10, statusLabel, statusSpacer, retryButton);
         private final VBox container = new VBox(1, statusWithButton, reasonLabel);
 
         private SyncStatusTreeCell(TreeTableColumn<QueueTreeItem, String> column) {
             getStyleClass().add(STYLE_LAST_CELL);
+            container.getStyleClass().add(STYLE_QUEUE_CELL_CONTENT);
             statusLabel.setWrapText(false);
             reasonLabel.setWrapText(false);
             reasonLabel.setStyle(STYLE_REASON_LABEL);
             statusWithButton.setAlignment(Pos.CENTER_LEFT);
             statusWithButton.prefWidthProperty().bind(container.prefWidthProperty());
             container.setAlignment(Pos.CENTER_LEFT);
-            container.setMaxHeight(40);
             container.prefWidthProperty().bind(column.widthProperty().subtract(24));
             statusLabel.maxWidthProperty().bind(container.prefWidthProperty());
             reasonLabel.maxWidthProperty().bind(container.prefWidthProperty());
             HBox.setHgrow(statusSpacer, Priority.ALWAYS);
-            retryButton.getStyleClass().add("btn-action");
+            retryButton.getStyleClass().add("btn-primary-small");
             retryButton.setOnAction(e -> onRetryAction());
         }
 
@@ -495,7 +497,7 @@ public class QueueDialogController {
             }
 
             QueueTreeItem rowItem = currentRowItem();
-            retryButton.setText(I18n.get("common.retry"));
+            retryButton.setText(I18n.get(I18N_COMMON_RETRY));
             statusLabel.setText(item);
             updateRetryButton(rowItem);
             updateReasonLabel(rowItem);
@@ -558,25 +560,25 @@ public class QueueDialogController {
     private class ExportStatusTreeCell extends javafx.scene.control.TreeTableCell<QueueTreeItem, String> {
         private final Label statusLabel = new Label();
         private final Label reasonLabel = new Label();
-        private final Button retryButton = new Button(I18n.get("common.retry"));
+        private final Button retryButton = new Button(I18n.get(I18N_COMMON_RETRY));
         private final Region statusSpacer = new Region();
         private final HBox statusWithButton = new HBox(10, statusLabel, statusSpacer, retryButton);
         private final VBox container = new VBox(1, statusWithButton, reasonLabel);
 
         private ExportStatusTreeCell(TreeTableColumn<QueueTreeItem, String> column) {
             getStyleClass().add(STYLE_LAST_CELL);
+            container.getStyleClass().add(STYLE_QUEUE_CELL_CONTENT);
             statusLabel.setWrapText(false);
             reasonLabel.setWrapText(false);
             reasonLabel.setStyle(STYLE_REASON_LABEL);
             statusWithButton.setAlignment(Pos.CENTER_LEFT);
             statusWithButton.prefWidthProperty().bind(container.prefWidthProperty());
             container.setAlignment(Pos.CENTER_LEFT);
-            container.setMaxHeight(40);
             container.prefWidthProperty().bind(column.widthProperty().subtract(24));
             statusLabel.maxWidthProperty().bind(container.prefWidthProperty());
             reasonLabel.maxWidthProperty().bind(container.prefWidthProperty());
             HBox.setHgrow(statusSpacer, Priority.ALWAYS);
-            retryButton.getStyleClass().add("btn-action");
+            retryButton.getStyleClass().add("btn-primary-small");
             retryButton.setOnAction(e -> onRetryAction());
         }
 
@@ -589,7 +591,7 @@ public class QueueDialogController {
                 return;
             }
             QueueTreeItem rowItem = currentRowItem();
-            retryButton.setText(I18n.get("common.retry"));
+            retryButton.setText(I18n.get(I18N_COMMON_RETRY));
             statusLabel.setText(item);
             updateRetryButton(rowItem);
             updateReasonLabel(rowItem);
@@ -721,10 +723,6 @@ public class QueueDialogController {
 
         public boolean isExportDir() {
             return exportDirectory != null;
-        }
-
-        public java.nio.file.Path getExportDir() {
-            return exportDirectory != null ? exportDirectory.getExportDir() : null;
         }
 
         public Runnable getRetryAction() {

@@ -108,6 +108,11 @@
     -fx-border-color: transparent -border-color -border-color transparent;
 }
 
+/* Remove the right-most border. */
+.table-view .column-header.last-cell {
+    -fx-border-color: transparent transparent -border-color transparent;
+}
+
 .table-view .column-header .label {
     -fx-text-fill: -text-color;
     -fx-font-weight: 600;
@@ -134,7 +139,7 @@
     -fx-text-fill: -text-color;
 }
 
-/* Hide right border only on the last column cell so it doesn't overlap the primary selection inset */
+/* Hide the right-most border so it doesn't overlap the selected row's inset border */
 .table-row-cell:selected .last-cell {
     -fx-border-color: transparent;
 }
@@ -168,10 +173,20 @@
     -fx-padding: 2 12;
     -fx-text-fill: -text-color;
     -fx-wrap-text: true;
+    -fx-min-height: 10;
+}
+
+.queue-cell-content {
+    -fx-padding: 4 0 4 0;
 }
 
 .tree-table-view .column-header {
     -fx-border-color: transparent -border-color -border-color transparent;
+}
+
+/* Remove the right-most border. */
+.tree-table-view .column-header.last-cell {
+    -fx-border-color: transparent transparent -border-color transparent;
 }
 
 .tree-table-view .column-header .label {
@@ -200,8 +215,8 @@
     -fx-text-fill: -text-color;
 }
 
-/* Hide right border only on the last column cell so it doesn't overlap the primary selection inset */
-.tree-table-row-cell:selected .last-cell {
+/* Hide the right-most border so it doesn't overlap the selected row's inset border */
+.tree-table-row-cell .last-cell {
     -fx-border-color: transparent;
 }
 
@@ -215,22 +230,4 @@
 
 .tree-table-row-cell:selected .tree-disclosure-node .arrow {
     -fx-background-color: -text-color;
-}
-
-.btn-action {
-    -fx-padding: 4 12;
-    -fx-alignment: CENTER;
-    -fx-text-fill: white;
-    -fx-background-color: -primary;
-    -fx-background-radius: 6;
-}
-
-.btn-action:hover {
-    -fx-background-color: -primary-hover;
-}
-
-.btn-action:disabled {
-    -fx-opacity: 1;
-    -fx-text-fill: #94a3b8;
-    -fx-background-color: #e2e8f0;
 }

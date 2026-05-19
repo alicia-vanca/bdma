@@ -596,28 +596,25 @@ public class FileListController {
     // Format file name with verification status (non-blocking)
     private String formatFileName(FileView fileView) {
         String fileName = fileView.name();
+        String displayName = shortenFileName(fileName);
         String syncedPath = fileView.syncedPath();
 
         if (syncedPath == null || syncedPath.isEmpty()) {
-            return "(MISSING) " + shortenFileName(fileName);
+            return "(MISSING) " + displayName;
         }
 
-        // Check cache first
-        VerificationStatus status = fileVerificationCache.get(syncedPath);
+        // Render the stable shortened name while verification runs; only status
+        // prefixes are added later so frequent table refreshes do not alternate
+        // between full and shortened names.
+        VerificationStatus status = fileVerificationCache.computeIfAbsent(syncedPath, path -> {
+            startAsyncVerification(path, fileView.fileSize());
+            return VerificationStatus.CHECKING;
+        });
 
-        if (status == null) {
-            // Not checked yet - mark as checking and start async verification
-            fileVerificationCache.put(syncedPath, VerificationStatus.CHECKING);
-            startAsyncVerification(syncedPath, fileView.fileSize());
-            return fileName; // Show without prefix while checking
-        }
-
-        // Return based on cached status
         return switch (status) {
-            case CHECKING -> shortenFileName(fileName);
-            case MISSING -> "(MISSING) " + shortenFileName(fileName);
-            case ERROR -> "(ERROR) " + shortenFileName(fileName);
-            case EXISTS -> shortenFileName(fileName);
+            case CHECKING, EXISTS -> displayName;
+            case MISSING -> "(MISSING) " + displayName;
+            case ERROR -> "(ERROR) " + displayName;
         };
     }
 

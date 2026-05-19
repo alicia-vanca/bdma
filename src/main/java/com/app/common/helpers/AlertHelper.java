@@ -22,6 +22,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.image.Image;
@@ -51,10 +52,10 @@ public final class AlertHelper {
     private static final int TABLE_COLUMN_WIDTH = 300;
     private static final int TABLE_SCROLL_HEIGHT = 400;
     // actual row height after CSS is applied, used for dynamic height calculation
-    private static final double TABLE_ROW_HEIGHT = 36.8;
-    private static final double TABLE_HEADER_HEIGHT = 46;
+    private static final double TABLE_HEADER_HEIGHT = 31;
+    private static final double TABLE_ROW_HEIGHT = 30;
 
-    private static final int DIALOG_PREFERRED_WIDTH = 1100;
+    private static final int DIALOG_PREFERRED_WIDTH = 1000;
     private static final int LOGO_SIZE = 48;
     private static final double SCREEN_SIZE_RATIO = 0.8;
     private static final double DIALOG_MIN_WIDTH = 360;
@@ -295,6 +296,13 @@ public final class AlertHelper {
 
         table.getColumns().add(col1);
         table.getColumns().add(col2);
+        table.setRowFactory(tableView -> {
+            // Empty rows don't receive mouse events, so they won't get highlighted
+            TableRow<T> row = new TableRow<>();
+            row.emptyProperty().addListener((observable, wasEmpty, isEmpty) -> row.setMouseTransparent(isEmpty));
+            row.setMouseTransparent(row.isEmpty());
+            return row;
+        });
         table.getItems().addAll(items);
 
         return table;

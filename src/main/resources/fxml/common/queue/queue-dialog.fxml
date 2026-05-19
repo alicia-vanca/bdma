@@ -11,9 +11,7 @@
       prefWidth="800"
       prefHeight="500">
     <!-- Header -->
-    <HBox alignment="CENTER_LEFT" spacing="10">
-        <Label fx:id="lblTitle" text="%queue.dialog.title" styleClass="title"/>
-    </HBox>
+
     <!-- Tab Pane -->
     <TabPane fx:id="tabPane" VBox.vgrow="ALWAYS">
         <!-- Sync Tab -->
