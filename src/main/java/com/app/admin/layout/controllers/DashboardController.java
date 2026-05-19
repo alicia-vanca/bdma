@@ -66,8 +66,8 @@ public class DashboardController extends BaseLayoutController {
     @Setter
     private Consumer<DeviceSummary> onRequestSync;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
-            DashboardController::sortName,
-            String.CASE_INSENSITIVE_ORDER)
+                    DashboardController::sortName,
+                    String.CASE_INSENSITIVE_ORDER)
             .thenComparing(summary -> summary.getHardwareId() == null ? "" : summary.getHardwareId(),
                     String.CASE_INSENSITIVE_ORDER);
 
@@ -111,6 +111,9 @@ public class DashboardController extends BaseLayoutController {
 
         TextField nameField = createHiddenTextField(summary.getDeviceName());
 
+        Label cameraIdLabel = new Label(summary.getCameraId());
+        cameraIdLabel.getStyleClass().add("device-cell-camera-id");
+
         Label sub = new Label();
         applyStatusStyle(summary, dot, sub);
 
@@ -124,7 +127,7 @@ public class DashboardController extends BaseLayoutController {
         StackPane nameBox = new StackPane(name, nameField);
         nameBox.setAlignment(Pos.CENTER_LEFT);
         nameBox.setMaxWidth(110);
-        VBox text = new VBox(2, nameBox, sub);
+        VBox text = new VBox(2, nameBox, cameraIdLabel, sub);
         HBox.setHgrow(text, Priority.NEVER);
 
         return buildLayout(dot, text, icon, isAdmin);

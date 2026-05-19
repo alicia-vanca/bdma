@@ -48,19 +48,24 @@
 
 .device-cell-name {
   -fx-font-weight: bold;
-  -fx-font-size: 14px;
+  -fx-font-size: 13px;
+}
+
+.device-cell-camera-id {
+    -fx-font-size: 13px;
+    -fx-opacity: 0.55;
 }
 
 .device-cell-connected {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
 }
 
 .device-cell-offline {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
 }
 
 .device-cell-unvalidated {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
 }
 
 .edit-icon-svg {

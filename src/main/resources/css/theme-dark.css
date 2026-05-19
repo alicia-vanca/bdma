@@ -470,6 +470,10 @@
     -fx-text-fill: #f1f5f9;
 }
 
+.device-cell-camera-id {
+     -fx-text-fill: #f1f5f9;
+ }
+
 .device-cell-connected {
     -fx-text-fill: #4ade80;
 }

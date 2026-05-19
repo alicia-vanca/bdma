@@ -18,10 +18,17 @@
         <VBox spacing="10">
             <TextField fx:id="username" promptText="%login.username" maxWidth="1.7976931348623157E308"/>
             <StackPane>
-                <PasswordField fx:id="password" promptText="%login.password"/>
-                <TextField fx:id="passwordVisible" promptText="%login.password" visible="false" managed="false"/>
-                <Button fx:id="btnPeekPassword" styleClass="peek-btn"
-                        StackPane.alignment="CENTER_RIGHT"/>
+                <TextField editable="false" mouseTransparent="true" styleClass="input"/>
+
+                <HBox alignment="CENTER_LEFT" style="-fx-background-color: transparent;">
+                    <PasswordField fx:id="password" promptText="%login.password"
+                                   HBox.hgrow="ALWAYS"
+                                   style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
+                    <TextField fx:id="passwordVisible" promptText="%login.password"
+                               visible="false" managed="false" HBox.hgrow="ALWAYS"
+                               style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
+                    <Button fx:id="btnPeekPassword" styleClass="peek-btn"/>
+                </HBox>
             </StackPane>
         </VBox>
         <Label fx:id="message" visible="false" styleClass="message-error"/>

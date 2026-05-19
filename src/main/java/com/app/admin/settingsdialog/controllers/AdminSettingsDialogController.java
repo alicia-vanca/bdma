@@ -65,6 +65,7 @@ public class AdminSettingsDialogController {
     private static final String CSS_CLASS_STATUS_ERROR = "status-error";
     private static final String I18N_SETTING_STORAGE_PROGRESS = "setting.storage.progress";
     private static final String I18N_SETTING_STORAGE_FINAL = "setting.storage.final";
+    private static final String I18N_SETTING_STORAGE_CHOOSE = "setting.storage.btn.choose";
 
     private final AdminSettingsDialogService adminSettingsService;
     private final Session session;
@@ -117,15 +118,21 @@ public class AdminSettingsDialogController {
     @FXML
     private CheckBox chkAskEveryTimeExport;
     @FXML
+    private Label lblAskEveryTimeExportTitle;
+    @FXML
     private Label lblSaveFolderNote;
     @FXML
     private Label lblAutoDeleteDescription;
     @FXML
     private CheckBox chkAutoDelete;
     @FXML
+    private Label lblAutoDeleteTitle;
+    @FXML
     private Label lblStartWithWindowsDescription;
     @FXML
     private CheckBox chkStartWithWindows;
+    @FXML
+    private Label lblStartWithWindowsTitle;
     @FXML
     private VBox noticeContainer;
     @FXML
@@ -189,21 +196,21 @@ public class AdminSettingsDialogController {
         btnDarkTheme.setText("☾ " + I18n.get("settings.theme.dark"));
 
         lblSaveFolderTitle.setText(I18n.get("setting.storage.sync.title"));
-        btnChooseSaveFolder.setText(I18n.get("setting.storage.btn.choose"));
+        btnChooseSaveFolder.setText(I18n.get(I18N_SETTING_STORAGE_CHOOSE));
         lblBackupFolderTitle.setText(I18n.get("setting.storage.backup.title"));
-        btnChooseBackupFolder.setText(I18n.get("setting.storage.btn.choose"));
+        btnChooseBackupFolder.setText(I18n.get(I18N_SETTING_STORAGE_CHOOSE));
         lblExportFolderTitle.setText(I18n.get("setting.storage.export.title"));
-        btnChooseExportFolder.setText(I18n.get("setting.storage.btn.choose"));
-        chkAskEveryTimeExport.setText(I18n.get("setting.export.mode.ask.checkbox"));
+        btnChooseExportFolder.setText(I18n.get(I18N_SETTING_STORAGE_CHOOSE));
+        lblAskEveryTimeExportTitle.setText(I18n.get("setting.export.mode.ask.checkbox"));
         lblSaveFolderNote.setText(I18n.get("setting.storage.sync.note"));
 
         lblDriveConflictWarning.setText(I18n.get("setting.storage.warn.same_drive"));
 
         lblAutoDeleteDescription.setText(I18n.get("setting.databackup.autodelete.desc"));
-        chkAutoDelete.setText(I18n.get("setting.databackup.autodelete.checkbox"));
+        lblAutoDeleteTitle.setText(I18n.get("setting.databackup.autodelete.checkbox"));
 
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
-        chkStartWithWindows.setText(I18n.get("setting.startWithWindows.checkbox"));
+        lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.checkbox"));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
         btnRetryFailedRestore.setText(I18n.get("setting.storage.btn.retry"));
     }
@@ -268,7 +275,7 @@ public class AdminSettingsDialogController {
             String saved = adminSettingsService.getLastRestoreProgress();
             if (saved != null && !saved.isBlank()) {
                 String[] parts = saved.split(",");
-                Object[] args = new Object[] {
+                Object[] args = new Object[]{
                         Integer.parseInt(parts[0]),
                         Integer.parseInt(parts[1]),
                         Integer.parseInt(parts[2]),

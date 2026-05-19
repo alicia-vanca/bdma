@@ -1,5 +1,6 @@
 .form {
   -fx-background-color: -card-bg;
+  -fx-min-width: 600px;
 }
 
 /* READ-ONLY VALUE */
