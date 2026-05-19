@@ -51,6 +51,7 @@ import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
@@ -136,10 +137,10 @@ public class FileListController {
 
     private final Map<String, VerificationStatus> fileVerificationCache = new ConcurrentHashMap<>();
     private final Map<String, FileView> cachedFileViews = new ConcurrentHashMap<>();
-    private final Map<String, SimpleBooleanProperty> selectedFileProperties = new ConcurrentHashMap<>();
-    private final Set<String> selectedFileKeys = ConcurrentHashMap.newKeySet();
+    private final Map<String, SimpleBooleanProperty> selectionStateByKey = new ConcurrentHashMap<>();
     private final CheckBox selectAllCheckBox = new CheckBox();
     private boolean refreshingSelectAllState;
+    private boolean applyingPageSelection;
     private String selectionAnchorKey;
 
     private final ExecutorService verificationExecutor = Executors.newFixedThreadPool(
@@ -296,17 +297,22 @@ public class FileListController {
                 setStyle("-fx-alignment: CENTER;");
                 checkBox.setFocusTraversable(false);
 
-                checkBox.setOnMouseClicked(event -> {
-                    if (event.getButton() != MouseButton.PRIMARY || isEmpty()) {
+                checkBox.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+                    if (applyingPageSelection || event.getButton() != MouseButton.PRIMARY || isEmpty()) {
+                        event.consume();
                         return;
                     }
 
                     FileView fileView = getTableRow() == null ? null : getTableRow().getItem();
                     if (fileView == null) {
                         log.debug("Ignoring file selection click because row item is unavailable");
+                        event.consume();
                         return;
                     }
 
+                    // Keep the checkbox visual state controlled by the selection model.
+                    // JavaFX reuses table cells while scrolling, so allowing the CheckBox
+                    // to toggle itself can leave recycled cells visually out of sync.
                     handleSelectionClick(fileView, event.isShiftDown(), event.isControlDown());
                     event.consume();
                 });
@@ -315,13 +321,15 @@ public class FileListController {
             @Override
             protected void updateItem(Boolean selected, boolean empty) {
                 super.updateItem(selected, empty);
-                if (empty) {
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    checkBox.setSelected(false);
                     setGraphic(null);
                     return;
                 }
 
+                FileView fileView = getTableRow().getItem();
+                checkBox.setSelected(getSelectionProperty(fileView).get());
                 setGraphic(checkBox);
-                checkBox.setSelected(Boolean.TRUE.equals(selected));
             }
         };
     }
@@ -333,12 +341,12 @@ public class FileListController {
             return;
         }
 
-        boolean shouldSelect = !selectedFileKeys.contains(targetKey);
+        boolean shouldSelect = isFileUnselected(targetKey);
         setFileSelected(targetKey, fileView, shouldSelect);
         selectionAnchorKey = targetKey;
         log.debug("File checkbox click: key={}, selected={}, ctrl={}, shift={}, selectedCount={}",
-                targetKey, shouldSelect, controlDown, shiftDown, selectedFileKeys.size());
-        fileTable.refresh();
+                targetKey, shouldSelect, controlDown, shiftDown, getSelectedCount());
+        refreshSelectionUi();
     }
 
     /**
@@ -363,7 +371,7 @@ public class FileListController {
             anchorIndex = targetIndex;
         }
 
-        boolean shouldSelect = !selectedFileKeys.contains(targetKey);
+        boolean shouldSelect = isFileUnselected(targetKey);
         int from = Math.min(anchorIndex, targetIndex);
         int to = Math.max(anchorIndex, targetIndex);
         for (int i = from; i <= to; i++) {
@@ -373,8 +381,8 @@ public class FileListController {
         selectionAnchorKey = targetKey;
         log.debug(
                 "File checkbox shift selection: anchorIndex={}, targetIndex={}, from={}, to={}, selected={}, selectedCount={}",
-                anchorIndex, targetIndex, from, to, shouldSelect, selectedFileKeys.size());
-        fileTable.refresh();
+                anchorIndex, targetIndex, from, to, shouldSelect, getSelectedCount());
+        refreshSelectionUi();
     }
 
     private int findPageIndexBySelectionKey(String key) {
@@ -392,6 +400,37 @@ public class FileListController {
         getSelectionProperty(fileView).set(selected);
     }
 
+    private boolean isFileUnselected(String key) {
+        SimpleBooleanProperty property = selectionStateByKey.get(key);
+        return property == null || !property.get();
+    }
+
+    private int getSelectedCount() {
+        int count = 0;
+        for (SimpleBooleanProperty property : selectionStateByKey.values()) {
+            if (property.get()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private List<String> getSelectedKeys() {
+        List<String> keys = new ArrayList<>();
+        for (Map.Entry<String, SimpleBooleanProperty> entry : selectionStateByKey.entrySet()) {
+            if (entry.getValue().get()) {
+                keys.add(entry.getKey());
+            }
+        }
+        return keys;
+    }
+
+    private void refreshSelectionUi() {
+        updateSelectionSummary();
+        updateSelectAllHeaderState();
+        fileTable.refresh();
+    }
+
     private void setupSelectionHeader() {
         selectAllCheckBox.setFocusTraversable(false);
         selectAllCheckBox.setOnAction(e -> onSelectAllChanged());
@@ -401,14 +440,9 @@ public class FileListController {
 
     private SimpleBooleanProperty getSelectionProperty(FileView fileView) {
         String key = selectionKey(fileView);
-        return selectedFileProperties.computeIfAbsent(key, k -> {
+        return selectionStateByKey.computeIfAbsent(key, k -> {
             SimpleBooleanProperty property = new SimpleBooleanProperty(false);
             property.addListener((obs, wasSelected, isSelected) -> {
-                if (isSelected != null && isSelected) {
-                    selectedFileKeys.add(k);
-                } else {
-                    selectedFileKeys.remove(k);
-                }
                 updateSelectionSummary();
                 updateSelectAllHeaderState();
             });
@@ -425,16 +459,29 @@ public class FileListController {
         // range.
         selectionAnchorKey = null;
 
-        // Only select/deselect items visible on the current page.
         boolean shouldSelect = selectAllCheckBox.isSelected();
-        for (FileView fileView : fileTable.getItems()) {
-            getSelectionProperty(fileView).set(shouldSelect);
-        }
+        applySelectionToCurrentPage(shouldSelect);
         log.debug("File checkbox select-all: selected={}, pageSize={}, selectedCount={}",
-                shouldSelect, fileTable.getItems().size(), selectedFileKeys.size());
+                shouldSelect, fileTable.getItems().size(), getSelectedCount());
 
-        updateSelectionSummary();
-        updateSelectAllHeaderState();
+        refreshSelectionUi();
+    }
+
+    /**
+     * Applies the header checkbox state to every row in the current logical page,
+     * including rows outside the visible viewport.
+     *
+     * @param selected target selected state for all rows on the current page
+     */
+    private void applySelectionToCurrentPage(boolean selected) {
+        applyingPageSelection = true;
+        try {
+            for (FileView fileView : List.copyOf(fileTable.getItems())) {
+                setFileSelected(selectionKey(fileView), fileView, selected);
+            }
+        } finally {
+            applyingPageSelection = false;
+        }
     }
 
     private void updateSelectAllHeaderState() {
@@ -449,7 +496,7 @@ public class FileListController {
             // Header checkbox reflects selection state of the current page only.
             boolean allSelected = true;
             for (FileView fileView : pageItems) {
-                if (!selectedFileKeys.contains(selectionKey(fileView))) {
+                if (isFileUnselected(selectionKey(fileView))) {
                     allSelected = false;
                     break;
                 }
@@ -461,7 +508,7 @@ public class FileListController {
     }
 
     private void updateSelectionSummary() {
-        int selectedCount = selectedFileKeys.size();
+        int selectedCount = getSelectedCount();
         lblSelectedCount.setText(I18n.get("file.selected.count.dynamic", selectedCount));
         boolean hasSelection = selectedCount > 0;
         lblSelectedCount.setManaged(hasSelection);
@@ -484,14 +531,13 @@ public class FileListController {
      */
     private void clearSelectionState() {
         // Create a copy to avoid concurrent modifications while listeners update sets.
-        Set<String> keys = new HashSet<>(selectedFileProperties.keySet());
+        Set<String> keys = new HashSet<>(selectionStateByKey.keySet());
         for (String key : keys) {
-            SimpleBooleanProperty property = selectedFileProperties.get(key);
+            SimpleBooleanProperty property = selectionStateByKey.get(key);
             if (property != null) {
                 property.set(false);
             }
         }
-        selectedFileKeys.clear();
         selectionAnchorKey = null;
         updateSelectionSummary();
         updateSelectAllHeaderState();
@@ -500,7 +546,7 @@ public class FileListController {
     @FXML
     private void onExportSelected() {
         List<FileView> selected = new ArrayList<>();
-        for (String key : selectedFileKeys) {
+        for (String key : getSelectedKeys()) {
             FileView fileView = cachedFileViews.get(key);
             if (fileView != null) {
                 selected.add(fileView);
