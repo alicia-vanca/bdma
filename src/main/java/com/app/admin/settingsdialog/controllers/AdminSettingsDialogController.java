@@ -655,11 +655,23 @@ public class AdminSettingsDialogController {
     public void onStorageRestored(StorageRestoredEvent event) {
         Platform.runLater(() -> {
             switch (event.getTarget()) {
-                case SYNC -> adminSettingsService.getFolderPath(FolderType.SYNC).ifPresent(txtSavePath::setText);
-                case BACKUP -> adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
-                case EXPORT -> adminSettingsService.getFolderPath(FolderType.EXPORT).ifPresent(txtExportPath::setText);
+                case SYNC -> refreshStoragePathField(txtSavePath, FolderType.SYNC);
+                case BACKUP -> refreshStoragePathField(txtBackupPath, FolderType.BACKUP);
+                case EXPORT -> refreshStoragePathField(txtExportPath, FolderType.EXPORT);
             }
-            checkAndShowDriveConflict();
+            if (txtSavePath != null && txtBackupPath != null && lblDriveConflictWarning != null) {
+                checkAndShowDriveConflict();
+            }
         });
+    }
+
+    /**
+     * Refreshes a storage path field only when its FXML control is currently loaded.
+     */
+    private void refreshStoragePathField(TextField textField, FolderType folderType) {
+        if (textField == null) {
+            return;
+        }
+        adminSettingsService.getFolderPath(folderType).ifPresent(textField::setText);
     }
 }
