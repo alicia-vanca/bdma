@@ -147,7 +147,7 @@ public class MainApp extends Application {
         primaryStage.setMinWidth(800);
         primaryStage.setMinHeight(500);
         loadAndNavigate(ViewPaths.ADMIN_LAYOUT, "BDMA", 1201, 800);
-        primaryStage.setMaximized(true);
+        Platform.runLater(() -> primaryStage.setMaximized(true));
     }
 
     private static void loadAndNavigate(String fxml, String title, int w, int h) {
@@ -164,18 +164,9 @@ public class MainApp extends Application {
             }
 
             primaryStage.setTitle(title);
-            if (!ViewPaths.LOGIN.equals(fxml)) {
-                Screen screen = Screen.getPrimary();
-                Rectangle2D bounds = screen.getVisualBounds();
-                primaryStage.setWidth(bounds.getWidth());
-                primaryStage.setHeight(bounds.getHeight());
-                primaryStage.setX(bounds.getMinX());
-                primaryStage.setY(bounds.getMinY());
-            } else {
-                primaryStage.setWidth(w);
-                primaryStage.setHeight(h);
-                primaryStage.centerOnScreen();
-            }
+            primaryStage.setWidth(w);
+            primaryStage.setHeight(h);
+            primaryStage.centerOnScreen();
 
             if (primaryStage.getScene() == null) {
                 primaryStage.setScene(scene);

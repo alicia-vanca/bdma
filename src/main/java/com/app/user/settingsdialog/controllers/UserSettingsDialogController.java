@@ -7,6 +7,7 @@ import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
@@ -14,17 +15,20 @@ import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
+import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.Language;
 import com.app.common.definitions.enums.Theme;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.NoticeStackRenderer;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
+import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.services.UserSettingService;
 
+import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -285,5 +289,18 @@ public class UserSettingsDialogController {
         if (!activeButton.getStyleClass().contains(AppConstants.ACTIVE_BUTTON)) {
             activeButton.getStyleClass().add(AppConstants.ACTIVE_BUTTON);
         }
+    }
+
+    @EventListener
+    public void onStorageRestored(StorageRestoredEvent event) {
+        if (event.getTarget() != FolderType.EXPORT) {
+            return;
+        }
+
+        Platform.runLater(() -> {
+            if (txtExportPath != null) {
+                txtExportPath.setText(settingsService.getExportFolderForUser(session.getCurrentUserId()));
+            }
+        });
     }
 }
