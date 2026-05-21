@@ -9,8 +9,8 @@ import java.io.File;
  * - saveDir: captured once when sync starts, unaffected by mid-sync changes
  * - autoDelete: captured once when sync starts, unaffected by mid-sync changes
  * - deviceName: captured once when sync starts for display purposes
- * - hardwareId: device hardware ID for queue tracking
- * - cameraId: validated camera ID used to reject files from other cameras
+ * - hardwareId: connected device hardware ID used for ADB/device access
+ * - cameraId: validated camera ID used for permissions and sync queue root rows
  */
 public record SyncContext(
         String username,

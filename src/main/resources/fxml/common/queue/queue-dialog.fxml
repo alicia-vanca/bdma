@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <VBox xmlns="http://javafx.com/javafx"
@@ -10,59 +9,15 @@
       styleClass="queue-dialog-container"
       prefWidth="800"
       prefHeight="500">
-    <!-- Header -->
-
-    <!-- Tab Pane -->
     <TabPane fx:id="tabPane" VBox.vgrow="ALWAYS">
-        <!-- Sync Tab -->
         <Tab fx:id="tabSync" text="%queue.tab.sync" closable="false">
-            <VBox spacing="5">
-                <padding>
-                    <Insets top="10" right="0" bottom="0" left="0"/>
-                </padding>
-                <TreeTableView fx:id="syncTreeTable" VBox.vgrow="ALWAYS">
-                    <columnResizePolicy>
-                        <TreeTableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
-                    </columnResizePolicy>
-                    <columns>
-                        <TreeTableColumn fx:id="syncColName" text="%queue.column.name" prefWidth="55"/>
-                        <TreeTableColumn fx:id="syncColStatus" text="%queue.column.status" prefWidth="45"/>
-                    </columns>
-                </TreeTableView>
-            </VBox>
+            <fx:include fx:id="syncQueue" source="sync-queue-tab.fxml"/>
         </Tab>
-        <!-- Backup Tab -->
         <Tab fx:id="tabBackup" text="%queue.tab.backup" closable="false">
-            <VBox spacing="5">
-                <padding>
-                    <Insets top="10" right="0" bottom="0" left="0"/>
-                </padding>
-                <TableView fx:id="backupTable" VBox.vgrow="ALWAYS">
-                    <columnResizePolicy>
-                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
-                    </columnResizePolicy>
-                    <columns>
-                        <TableColumn fx:id="backupColFile" text="%queue.column.file" prefWidth="55"/>
-                        <TableColumn fx:id="backupColStatus" text="%queue.column.status" prefWidth="45"/>
-                    </columns>
-                </TableView>
-            </VBox>
+            <fx:include fx:id="backupQueue" source="backup-queue-tab.fxml"/>
         </Tab>
         <Tab fx:id="tabExport" text="%queue.tab.export" closable="false">
-            <VBox spacing="5">
-                <padding>
-                    <Insets top="10" right="0" bottom="0" left="0"/>
-                </padding>
-                <TreeTableView fx:id="exportTreeTable" VBox.vgrow="ALWAYS">
-                    <columnResizePolicy>
-                        <TreeTableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
-                    </columnResizePolicy>
-                    <columns>
-                        <TreeTableColumn fx:id="exportColName" text="%queue.column.name" prefWidth="55"/>
-                        <TreeTableColumn fx:id="exportColStatus" text="%queue.column.status" prefWidth="45"/>
-                    </columns>
-                </TreeTableView>
-            </VBox>
+            <fx:include fx:id="exportQueue" source="export-queue-tab.fxml"/>
         </Tab>
     </TabPane>
 </VBox>
