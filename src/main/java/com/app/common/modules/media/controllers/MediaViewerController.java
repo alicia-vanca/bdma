@@ -23,7 +23,9 @@ import com.app.common.modules.media.dtos.GpsPoint;
 import com.app.common.modules.media.services.MediaMetadataService;
 
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
 import javafx.fxml.FXML;
+import javafx.geometry.Bounds;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
@@ -31,6 +33,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Slider;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
@@ -123,6 +126,8 @@ public class MediaViewerController {
     @FXML
     private StackPane videoPane;
     @FXML
+    private Pane mediaViewWrapper;
+    @FXML
     private MediaView mediaView;
     @FXML
     private Button btnPlayPause;
@@ -134,15 +139,23 @@ public class MediaViewerController {
     private Label lblVideoTime;
     @FXML
     private ComboBox<String> cbSpeed;
+
     // ── State ─────────────────────────────────────────────────────────────────
+    private FileView currentFile;
+    private Path currentPath;
+    private Image currentImage;
     private List<FileView> mediaList;
     private int currentIndex;
     private double zoomFactor = 1.0;
     private double rotation = 0;
     private List<GpsPoint> gpsTimeline = new ArrayList<>();
-    private boolean initialFitDone = false;
+    private boolean fitMode = true;
     private boolean sliderDragging = false;
     private MediaPlayer mediaPlayer;
+    private ChangeListener<Bounds> boundsListener;
+    private ChangeListener<Number> videoPaneWidthListener;
+    private ChangeListener<Number> videoPaneHeightListener;
+
     private final FolderManagerService folderManagerService;
     private final MediaMetadataService mediaMetadataService;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
@@ -161,7 +174,7 @@ public class MediaViewerController {
     }
 
     public void refreshLocalizedText() {
-        // Detail panel labels
+        lblDetailTitle.setText(I18n.get("media.viewer.detail.title"));
         lblDetailTitle.setText(I18n.get("media.viewer.detail.title"));
         lblDetailNameKey.setText(I18n.get("media.viewer.detail.name"));
         lblDetailTypeKey.setText(I18n.get("media.viewer.detail.type"));
@@ -172,23 +185,48 @@ public class MediaViewerController {
         lblDetailStatusKey.setText(I18n.get("media.viewer.detail.status"));
         lblDetailDimensionKey.setText(I18n.get("media.viewer.detail.dimension"));
         lblDetailGpsKey.setText(I18n.get("media.viewer.detail.gps"));
+        if (currentFile != null) {
+            updateDetailPanel(currentFile, currentImage, currentPath);
+        }
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
     @FXML
     public void initialize() {
         refreshLocalizedText();
-        scrollPane.setOnScroll(e -> {
+
+        scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
             if (e.isControlDown()) {
                 applyZoom(e.getDeltaY() > 0 ? 1.1 : 0.9);
                 e.consume();
             }
         });
 
-        scrollPane.heightProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal.doubleValue() > 0 && imageView.getImage() != null && !initialFitDone) {
-                initialFitDone = true;
+        scrollPane.widthProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal.doubleValue() > 0 && imageView.getImage() != null && fitMode) {
                 fitImageToPane();
+            }
+        });
+
+        scrollPane.heightProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal.doubleValue() > 0 && imageView.getImage() != null && fitMode) {
+                fitImageToPane();
+            }
+        });
+
+        contentPane.widthProperty().addListener((obs, oldVal, newVal) -> {
+            if (mediaView.getMediaPlayer() != null) {
+                mediaView.setFitWidth(newVal.doubleValue());
+                mediaViewWrapper.setMaxWidth(newVal.doubleValue());
+                mediaViewWrapper.setPrefWidth(newVal.doubleValue());
+            }
+        });
+
+        contentPane.heightProperty().addListener((obs, oldVal, newVal) -> {
+            if (mediaView.getMediaPlayer() != null) {
+                mediaView.setFitHeight(newVal.doubleValue());
+                mediaViewWrapper.setMaxHeight(newVal.doubleValue());
+                mediaViewWrapper.setPrefHeight(newVal.doubleValue());
             }
         });
     }
@@ -252,7 +290,6 @@ public class MediaViewerController {
                     }
                 });
 
-                // Image may already be cached and fully loaded
                 if (img.getProgress() >= 1.0) {
                     Platform.runLater(() -> onImageReady(img, file, absolutePath));
                 }
@@ -301,8 +338,6 @@ public class MediaViewerController {
                         mediaView.setMediaPlayer(mediaPlayer);
                         mediaView.setPreserveRatio(true);
 
-                        mediaView.fitWidthProperty().bind(videoPane.widthProperty());
-                        mediaView.fitHeightProperty().bind(videoPane.heightProperty());
                         executor.submit(() -> {
                             List<GpsPoint> timeline = mediaMetadataService
                                     .readGpsTimeline(result.getPath(), file.type());
@@ -328,18 +363,20 @@ public class MediaViewerController {
     // ── Zoom ─────────────────────────────────────────────────────────────────
     @FXML
     private void onZoomIn() {
+        fitMode = false;
         applyZoom(1.2);
     }
 
     @FXML
     private void onZoomOut() {
+        fitMode = false;
         applyZoom(0.8);
     }
 
     @FXML
     private void onFit() {
+        fitMode = true;
         fitImageToPane();
-        lblZoom.setText("Fit");
     }
 
     private void applyZoom(double factor) {
@@ -464,7 +501,7 @@ public class MediaViewerController {
     private void resetTransform() {
         rotation = 0;
         zoomFactor = 1.0;
-        initialFitDone = false;
+        fitMode = true;
         imageView.getTransforms().clear();
         stopCurrentMedia();
     }
@@ -496,7 +533,6 @@ public class MediaViewerController {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
     private String formatSize(long bytes) {
         if (bytes < 0) return "-";
         if (bytes < 1024) return bytes + " B";
@@ -510,13 +546,16 @@ public class MediaViewerController {
     }
 
     private void updateDetailPanel(FileView file, Image img, Path absolutePath) {
+        this.currentFile = file;
+        this.currentImage = img;
+        this.currentPath = absolutePath;
         detailName.setText(file.name() != null ? file.name() : "—");
-        detailType.setText(file.type() != null ? file.type() : "—");
+        detailType.setText(formatType(file.type()));
         detailSize.setText(formatSize(file.fileSize()));
         detailDate.setText(file.createDate() != null ? file.createDate() : "—");
         detailDevice.setText(file.deviceName() != null ? file.deviceName() : "—");
         detailUser.setText(file.username() != null ? file.username() : "—");
-        detailStatus.setText(file.status() != null ? file.status() : "—");
+        detailStatus.setText(formatStatus(file.status()));
         detailDimension.setText(img != null
                 ? (int) img.getWidth() + " × " + (int) img.getHeight()
                 : "—");
@@ -531,16 +570,39 @@ public class MediaViewerController {
     }
 
     private void setupMediaPlayer(FileView file) {
-        // Speed combo
+        mediaView.setFitWidth(contentPane.getWidth());
+        mediaView.setFitHeight(contentPane.getHeight());
+        mediaViewWrapper.setMaxWidth(contentPane.getWidth());
+        mediaViewWrapper.setMaxHeight(contentPane.getHeight());
+        mediaViewWrapper.setPrefWidth(contentPane.getWidth());
+        mediaViewWrapper.setPrefHeight(contentPane.getHeight());
+
+        boundsListener = (obs, oldVal, newVal) -> {
+            double x = (videoPane.getWidth() - newVal.getWidth()) / 2;
+            double y = (videoPane.getHeight() - newVal.getHeight()) / 2;
+            mediaView.setLayoutX(Math.max(0, x));
+            mediaView.setLayoutY(Math.max(0, y));
+        };
+        videoPaneWidthListener = (obs, oldVal, newVal) -> {
+            double x = (newVal.doubleValue() - mediaView.getBoundsInLocal().getWidth()) / 2;
+            mediaView.setLayoutX(Math.max(0, x));
+        };
+        videoPaneHeightListener = (obs, oldVal, newVal) -> {
+            double y = (newVal.doubleValue() - mediaView.getBoundsInLocal().getHeight()) / 2;
+            mediaView.setLayoutY(Math.max(0, y));
+        };
+
+        mediaView.boundsInLocalProperty().addListener(boundsListener);
+        videoPane.widthProperty().addListener(videoPaneWidthListener);
+        videoPane.heightProperty().addListener(videoPaneHeightListener);
+
         if (cbSpeed.getItems().isEmpty()) {
             cbSpeed.getItems().addAll("0.25x", "0.5x", "0.75x", "1x", "1.25x", "1.5x", "2x");
         }
         cbSpeed.setValue("1x");
 
-        // Volume
         mediaPlayer.volumeProperty().bind(volumeSlider.valueProperty());
 
-        // Progress slider
         mediaPlayer.currentTimeProperty().addListener((obs, oldVal, newVal) -> {
             if (!sliderDragging) {
                 Duration total = mediaPlayer.getTotalDuration();
@@ -548,7 +610,6 @@ public class MediaViewerController {
                     videoSlider.setValue(newVal.toSeconds() / total.toSeconds() * 100);
                 }
                 lblVideoTime.setText(formatDuration(newVal) + " / " + formatDuration(total));
-
                 updateGpsForTime(newVal.toSeconds());
             }
         });
@@ -574,15 +635,11 @@ public class MediaViewerController {
             e.consume();
         });
 
-        // Ready
         mediaPlayer.setOnReady(() -> {
             int width = mediaPlayer.getMedia().getWidth();
             int height = mediaPlayer.getMedia().getHeight();
-
             if (width > 0 && height > 0) {
-                Platform.runLater(() ->
-                        detailDimension.setText(width + " × " + height)
-                );
+                Platform.runLater(() -> detailDimension.setText(width + " × " + height));
             }
             lblVideoTime.setText("00:00 / " + formatDuration(mediaPlayer.getTotalDuration()));
             mediaPlayer.play();
@@ -590,18 +647,15 @@ public class MediaViewerController {
             Platform.runLater(() -> videoPane.requestFocus());
         });
 
-        // End
         mediaPlayer.setOnEndOfMedia(() -> {
             btnPlayPause.setText("▶");
             videoSlider.setValue(0);
         });
 
-        // Error
         mediaPlayer.setOnError(() ->
                 Platform.runLater(() -> showError(I18n.get("media.viewer.error.video.playback", file.name())))
         );
 
-        // Status bar
         lblFileName.setText(file.name());
         lblFileSize.setText(formatSize(file.fileSize()));
         lblZoom.setText("");
@@ -658,8 +712,8 @@ public class MediaViewerController {
         try {
             double rate = Double.parseDouble(cbSpeed.getValue().replace("x", ""));
             mediaPlayer.setRate(rate);
-        } catch (NumberFormatException ignored) {
-            // Invalid speed format — skip silently, keep current rate
+        } catch (NumberFormatException e) {
+            log.warn("Invalid speed format: {}", cbSpeed.getValue());
         }
     }
 
@@ -669,9 +723,21 @@ public class MediaViewerController {
             mediaPlayer.stop();
             mediaPlayer.dispose();
             mediaPlayer = null;
-            mediaView.fitWidthProperty().unbind();
-            mediaView.fitHeightProperty().unbind();
         }
+        if (boundsListener != null) {
+            mediaView.boundsInLocalProperty().removeListener(boundsListener);
+            boundsListener = null;
+        }
+        if (videoPaneWidthListener != null) {
+            videoPane.widthProperty().removeListener(videoPaneWidthListener);
+            videoPaneWidthListener = null;
+        }
+        if (videoPaneHeightListener != null) {
+            videoPane.heightProperty().removeListener(videoPaneHeightListener);
+            videoPaneHeightListener = null;
+        }
+        mediaView.setLayoutX(0);
+        mediaView.setLayoutY(0);
     }
 
     private void showVideoPane() {
@@ -713,5 +779,15 @@ public class MediaViewerController {
 
         GpsCoordinate coord = best.toCoordinate();
         detailGps.setText(coord.toString());
+    }
+
+    private String formatStatus(String status) {
+        if (status == null || status.isEmpty()) return "—";
+        return I18n.get("file.status." + status);
+    }
+
+    private String formatType(String type) {
+        if (type == null || type.isEmpty()) return "—";
+        return I18n.get("file.type." + type);
     }
 }

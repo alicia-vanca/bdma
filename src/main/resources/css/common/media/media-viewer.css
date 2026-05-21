@@ -51,7 +51,7 @@
     -fx-text-fill: #888;
 }
 
-.media-viewer-error {
+.media-viewer-root .media-viewer-error {
     -fx-font-size: 14px;
     -fx-text-fill: -danger;
     -fx-text-alignment: CENTER;
