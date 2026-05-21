@@ -71,7 +71,7 @@ jobs:
             --icon build\package\logo.ico `
             --dest build\dist `
             --module-path "$modulePath" `
-            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,java.sql,java.logging" `
+            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,java.sql,java.logging,javafx.media" `
             --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
