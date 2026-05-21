@@ -10,7 +10,6 @@ import java.util.Map;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
-import com.app.common.modules.dataexport.workers.DataExportWorker;
 import com.app.common.modules.queuemanager.dtos.ExportDirectoryQueueItem;
 import com.app.common.modules.queuemanager.dtos.FileQueueItem;
 import com.app.common.modules.queuemanager.enums.ItemStatus;
@@ -32,20 +31,6 @@ public class ExportProgressTracker {
     }
 
     /**
-     * Add a file to export queue tracking.
-     */
-    public void addFile(String exportPathId, String fileName) {
-        addFile(exportPathId, fileName, null, null);
-    }
-
-    /**
-     * Add a file to export queue tracking with size metadata for stable ordering.
-     */
-    public void addFile(String exportPathId, String fileName, Long fileSize) {
-        addFile(exportPathId, fileName, fileSize, fileSize);
-    }
-
-    /**
      * Add a file to export queue tracking with separate display and sort sizes.
      */
     public void addFile(String exportPathId, String fileName, Long fileSize, Long sortSize) {
@@ -57,15 +42,16 @@ public class ExportProgressTracker {
             ExportDirectoryQueueItem directory = directoryFor(exportPathId);
             directory.sortFiles();
             refreshDirectory(directory);
-            publishEvent(exportPathId, "File re-queued for export");
+            publishRowChangedEvent(exportPathId, directory.getExportDir().toString(), "File re-queued for export");
             return;
         }
 
-        FileQueueItem item = new FileQueueItem(fileName, exportPathId, QueueType.EXPORT, fileSize, sortSize);
+        FileQueueItem item = new FileQueueItem(fileName, exportPathId, fileSize, sortSize);
         exportFiles.put(exportPathId, item);
-        directoryFor(exportPathId).addFile(item);
-        refreshDirectory(item);
-        publishEvent(exportPathId, "File added to export queue");
+        ExportDirectoryQueueItem directory = directoryFor(exportPathId);
+        directory.addFile(item);
+        refreshDirectory(directory);
+        publishRowChangedEvent(exportPathId, directory.getExportDir().toString(), "File added to export queue");
     }
 
     /**
@@ -75,8 +61,8 @@ public class ExportProgressTracker {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null) {
             item.setStatus(ItemStatus.PROCESSING);
-            refreshDirectory(item);
-            publishEvent(exportPathId, "Export in progress");
+            ExportDirectoryQueueItem directory = refreshDirectory(item);
+            publishRowChangedEvent(exportPathId, directory.getExportDir().toString(), "Export in progress");
         }
     }
 
@@ -87,7 +73,8 @@ public class ExportProgressTracker {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null) {
             item.setProgress(progress);
-            publishEvent(exportPathId, "Export progress: " + progress + "%");
+            publishRowChangedEvent(exportPathId, directoryFor(exportPathId).getExportDir().toString(),
+                    "Export progress: " + progress + "%");
         }
     }
 
@@ -99,8 +86,8 @@ public class ExportProgressTracker {
         if (item != null) {
             item.setStatus(ItemStatus.COMPLETED);
             item.setProgress(100);
-            refreshDirectory(item);
-            publishEvent(exportPathId, "Export completed");
+            ExportDirectoryQueueItem directory = refreshDirectory(item);
+            publishCounterChangedEvent(exportPathId, directory.getExportDir().toString(), "Export completed");
         }
     }
 
@@ -113,7 +100,8 @@ public class ExportProgressTracker {
         if (item != null && exportedFileName != null && !exportedFileName.isBlank()
                 && !exportedFileName.equals(item.getFileName())) {
             item.setFileName(exportedFileName);
-            publishEvent(exportPathId, "Export file renamed");
+            publishRowChangedEvent(exportPathId, directoryFor(exportPathId).getExportDir().toString(),
+                    "Export file renamed");
         }
     }
 
@@ -125,8 +113,9 @@ public class ExportProgressTracker {
         if (item != null) {
             item.setStatus(ItemStatus.FAILED);
             item.setErrorMessage(errorMessage);
-            refreshDirectory(item);
-            publishEvent(exportPathId, "Export failed: " + errorMessage);
+            ExportDirectoryQueueItem directory = refreshDirectory(item);
+            publishCounterChangedEvent(exportPathId, directory.getExportDir().toString(),
+                    "Export failed: " + errorMessage);
         }
     }
 
@@ -139,30 +128,9 @@ public class ExportProgressTracker {
         if (item != null) {
             item.setStatus(ItemStatus.DEFERRED);
             item.setErrorMessage(reason);
-            refreshDirectory(item);
-            publishEvent(exportPathId, "Export deferred: " + reason);
+            ExportDirectoryQueueItem directory = refreshDirectory(item);
+            publishRowChangedEvent(exportPathId, directory.getExportDir().toString(), "Export deferred: " + reason);
         }
-    }
-
-    /**
-     * Mark file export as skipped (e.g. user chose to skip a conflicting file).
-     * The reason is stored as an i18n key so the queue UI can translate it.
-     */
-    public void markSkipped(String exportPathId, String reason) {
-        FileQueueItem item = exportFiles.get(exportPathId);
-        if (item != null) {
-            item.setStatus(ItemStatus.SKIPPED);
-            item.setErrorMessage(reason);
-            refreshDirectory(item);
-            publishEvent(exportPathId, "Export skipped: " + reason);
-        }
-    }
-
-    /**
-     * Get all files in export queue.
-     */
-    public List<FileQueueItem> getAllFiles() {
-        return new ArrayList<>(exportFiles.values());
     }
 
     /**
@@ -173,11 +141,18 @@ public class ExportProgressTracker {
     }
 
     /**
+     * Get a specific export file.
+     */
+    public FileQueueItem getFile(String exportPathId) {
+        return exportFiles.get(exportPathId);
+    }
+
+    /**
      * Marks an export directory with the final counts reported by the worker. The
      * worker owns directory execution, so its finished totals are the authoritative
      * aggregate result shown by the queue UI.
      */
-    public void markDirectoryFinished(Path exportDir, int total, int passed, int failed, Runnable retryAction) {
+    public void markDirectoryFinished(Path exportDir, int total, int passed, int failed) {
         if (exportDir == null) {
             return;
         }
@@ -187,9 +162,8 @@ public class ExportProgressTracker {
         directory.setTotal(total);
         directory.setPassed(passed);
         directory.setFailed(failed);
-        directory.setRetryAction(failed > 0 ? retryAction : null);
         directory.setStatus(failed > 0 ? ItemStatus.COMPLETED_WITH_ERRORS : ItemStatus.COMPLETED);
-        publishEvent(normalizedDir.toString(), "Export directory completed");
+        publishRowChangedEvent(normalizedDir.toString(), "Export directory completed");
     }
 
     /**
@@ -204,14 +178,19 @@ public class ExportProgressTracker {
         Path normalizedDir = exportDir.toAbsolutePath().normalize();
         exportFiles.entrySet().removeIf(entry -> normalizedDir.equals(extractExportDir(entry.getKey())));
 
-        ExportDirectoryQueueItem directory = directories.computeIfAbsent(normalizedDir, ExportDirectoryQueueItem::new);
+        ExportDirectoryQueueItem directory = directories.remove(normalizedDir);
+        if (directory == null) {
+            directory = new ExportDirectoryQueueItem(normalizedDir);
+        }
         directory.getFiles().clear();
         directory.setTotal(0);
         directory.setPassed(0);
         directory.setFailed(0);
-        directory.setRetryAction(null);
         directory.setStatus(ItemStatus.QUEUED);
-        publishEvent(normalizedDir.toString(), "Export directory reset for new run");
+        // Reinsert the root row so a reused export directory appears after older
+        // history rows instead of keeping its previous insertion position.
+        directories.put(normalizedDir, directory);
+        publishQueueChangedEvent(normalizedDir.toString(), "Export directory reset for new run");
     }
 
     /**
@@ -227,13 +206,13 @@ public class ExportProgressTracker {
             oldDirectory.removeFile(old);
             removeEmptyUnfinishedDirectory(oldDirectory);
 
-            FileQueueItem item = new FileQueueItem(old.getFileName(), newExportPathId, QueueType.EXPORT,
+            FileQueueItem item = new FileQueueItem(old.getFileName(), newExportPathId,
                     old.getFileSize(), old.getSortSize());
             exportFiles.put(newExportPathId, item);
             ExportDirectoryQueueItem newDirectory = directoryFor(newExportPathId);
             newDirectory.addFile(item);
             refreshDirectory(newDirectory);
-            publishEvent(newExportPathId, "Export file moved to new directory");
+            publishQueueChangedEvent(newExportPathId, "Export file moved to new directory");
         }
     }
 
@@ -244,7 +223,7 @@ public class ExportProgressTracker {
     private void removeEmptyUnfinishedDirectory(ExportDirectoryQueueItem directory) {
         if (directory.getFiles().isEmpty() && directory.getPassed() == 0 && directory.getFailed() == 0) {
             directories.remove(directory.getExportDir());
-            publishEvent(directory.getExportDir().toString(), "Empty export directory removed");
+            publishQueueChangedEvent(directory.getExportDir().toString(), "Empty export directory removed");
             return;
         }
 
@@ -257,7 +236,7 @@ public class ExportProgressTracker {
     public void clear() {
         exportFiles.clear();
         directories.clear();
-        publishEvent(null, "Export queue cleared");
+        publishQueueChangedEvent(null, "Export queue cleared");
     }
 
     private ExportDirectoryQueueItem directoryFor(String exportPathId) {
@@ -266,18 +245,19 @@ public class ExportProgressTracker {
     }
 
     private Path extractExportDir(String exportPathId) {
-        String prefix = DataExportWorker.FILE_KEY_PREFIX;
-        if (exportPathId != null && exportPathId.startsWith(prefix)) {
-            Path parent = Path.of(exportPathId.substring(prefix.length())).getParent();
-            if (parent != null) {
-                return parent.toAbsolutePath().normalize();
-            }
+        String normalizedExportPathId = exportPathId != null ? exportPathId : "";
+        Path exportPath = Path.of(normalizedExportPathId);
+        Path parent = exportPath.getParent();
+        if (parent != null) {
+            return parent.toAbsolutePath().normalize();
         }
-        return Path.of(exportPathId != null ? exportPathId : "").toAbsolutePath().normalize();
+        return exportPath.toAbsolutePath().normalize();
     }
 
-    private void refreshDirectory(FileQueueItem item) {
-        refreshDirectory(directoryFor(item.getFilePath()));
+    private ExportDirectoryQueueItem refreshDirectory(FileQueueItem item) {
+        ExportDirectoryQueueItem directory = directoryFor(item.getRowId());
+        refreshDirectory(directory);
+        return directory;
     }
 
     private void refreshDirectory(ExportDirectoryQueueItem directory) {
@@ -289,11 +269,20 @@ public class ExportProgressTracker {
         directory.setTotal(total);
         directory.setPassed(passed);
         directory.setFailed(failed);
-        directory.setStatus(computeDirectoryStatus(files));
+        directory.setStatus(computeDirectoryStatus(directory.getStatus(), files));
     }
 
-    private ItemStatus computeDirectoryStatus(List<FileQueueItem> files) {
+    /**
+     * Keeps an in-flight export root in processing state while storage recovery
+     * defers remaining files. The root should only return to queued when it has not
+     * started processing yet or when a retry explicitly re-queues files.
+     */
+    private ItemStatus computeDirectoryStatus(ItemStatus currentStatus, List<FileQueueItem> files) {
         if (files.stream().anyMatch(file -> file.getStatus() == ItemStatus.PROCESSING)) {
+            return ItemStatus.PROCESSING;
+        }
+        if (files.stream().anyMatch(file -> file.getStatus() == ItemStatus.DEFERRED)
+                && currentStatus == ItemStatus.PROCESSING) {
             return ItemStatus.PROCESSING;
         }
         if (files.stream().anyMatch(file -> file.getStatus() == ItemStatus.QUEUED
@@ -306,7 +295,20 @@ public class ExportProgressTracker {
         return ItemStatus.COMPLETED;
     }
 
-    private void publishEvent(String exportPathId, String message) {
-        eventPublisher.publishEvent(new QueueStatusChangedEvent(QueueType.EXPORT, exportPathId, message));
+    private void publishRowChangedEvent(String rowId, String message) {
+        publishRowChangedEvent(rowId, null, message);
+    }
+
+    private void publishRowChangedEvent(String rowId, String rootRowId, String message) {
+        eventPublisher
+                .publishEvent(new QueueStatusChangedEvent(QueueType.EXPORT, rowId, rootRowId, false, message));
+    }
+
+    private void publishCounterChangedEvent(String rowId, String rootRowId, String message) {
+        eventPublisher.publishEvent(new QueueStatusChangedEvent(QueueType.EXPORT, rowId, rootRowId, true, message));
+    }
+
+    private void publishQueueChangedEvent(String rowId, String message) {
+        eventPublisher.publishEvent(new QueueStatusChangedEvent(QueueType.EXPORT, rowId, true, message));
     }
 }

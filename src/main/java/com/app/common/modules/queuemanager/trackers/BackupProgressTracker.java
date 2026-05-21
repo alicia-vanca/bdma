@@ -45,11 +45,11 @@ public class BackupProgressTracker {
             existing.setStatus(ItemStatus.QUEUED);
             existing.setProgress(0);
             existing.setErrorMessage(null);
-            publishEvent(filePath, "File re-queued for backup");
+            publishRowChangedEvent(filePath, "File re-queued for backup");
         } else {
-            FileQueueItem item = new FileQueueItem(fileName, filePath, QueueType.BACKUP);
+            FileQueueItem item = new FileQueueItem(fileName, filePath);
             backupFiles.put(filePath, item);
-            publishEvent(filePath, "File added to backup queue");
+            publishRowChangedEvent(filePath, "File added to backup queue");
         }
     }
 
@@ -60,7 +60,7 @@ public class BackupProgressTracker {
         FileQueueItem item = backupFiles.get(filePath);
         if (item != null) {
             item.setStatus(ItemStatus.PROCESSING);
-            publishEvent(filePath, "Backup in progress");
+            publishRowChangedEvent(filePath, "Backup in progress");
         }
     }
 
@@ -71,7 +71,7 @@ public class BackupProgressTracker {
         FileQueueItem item = backupFiles.get(filePath);
         if (item != null) {
             item.setProgress(progress);
-            publishEvent(filePath, "Backup progress: " + progress + "%");
+            publishRowChangedEvent(filePath, "Backup progress: " + progress + "%");
         }
     }
 
@@ -83,7 +83,7 @@ public class BackupProgressTracker {
         if (item != null) {
             item.setStatus(ItemStatus.COMPLETED);
             item.setProgress(100);
-            publishEvent(filePath, "Backup completed");
+            publishRowChangedEvent(filePath, "Backup completed");
         }
     }
 
@@ -95,7 +95,7 @@ public class BackupProgressTracker {
         if (item != null) {
             item.setStatus(ItemStatus.FAILED);
             item.setErrorMessage(errorMessage);
-            publishEvent(filePath, "Backup failed: " + errorMessage);
+            publishRowChangedEvent(filePath, "Backup failed: " + errorMessage);
         }
     }
 
@@ -108,16 +108,8 @@ public class BackupProgressTracker {
             item.setStatus(ItemStatus.DEFERRED);
             item.setErrorMessage(reason);
             item.setProgress(0);
-            publishEvent(filePath, "Backup deferred: " + reason);
+            publishRowChangedEvent(filePath, "Backup deferred: " + reason);
         }
-    }
-
-    /**
-     * Remove file from tracking after completion or failure.
-     */
-    public void removeFile(String filePath) {
-        backupFiles.remove(filePath);
-        publishEvent(filePath, "File removed from backup queue");
     }
 
     /**
@@ -140,7 +132,7 @@ public class BackupProgressTracker {
         List<FileQueueItem> result = new ArrayList<>();
 
         for (FileQueueItem item : backupFiles.values()) {
-            String fileName = new File(item.getFilePath()).getName();
+            String fileName = new File(item.getRowId()).getName();
             FileInfo fileInfo = FileInfo.parse(fileName);
 
             if (fileInfo != null && currentUsername.equals(fileInfo.username())) {
@@ -163,10 +155,14 @@ public class BackupProgressTracker {
      */
     public void clear() {
         backupFiles.clear();
-        publishEvent(null, "Backup queue cleared");
+        publishQueueChangedEvent(null, "Backup queue cleared");
     }
 
-    private void publishEvent(String filePath, String message) {
-        eventPublisher.publishEvent(new QueueStatusChangedEvent(QueueType.BACKUP, filePath, message));
+    private void publishRowChangedEvent(String filePath, String message) {
+        eventPublisher.publishEvent(new QueueStatusChangedEvent(QueueType.BACKUP, filePath, false, message));
+    }
+
+    private void publishQueueChangedEvent(String filePath, String message) {
+        eventPublisher.publishEvent(new QueueStatusChangedEvent(QueueType.BACKUP, filePath, true, message));
     }
 }

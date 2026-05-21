@@ -36,7 +36,7 @@ import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.databackup.DataBackupRunner;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
-import com.app.common.modules.dataexport.services.DataExportService;
+import com.app.common.modules.dataexport.DataExportRunner;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
@@ -105,7 +105,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DataSyncService dataSyncService;
     private final AdminSettingsDialogService adminSettingsService;
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
-    private final DataExportService dataExportService;
+    private final DataExportRunner exportRunner;
     private final MediaViewerService mediaViewerService;
 
     @FXML
@@ -163,7 +163,7 @@ public class AdminLayoutController extends BaseLayoutController {
             DataSyncService dataSyncService,
             AdminSettingsDialogService adminSettingsService,
             StorageUnavailableEventHandler storageUnavailableEventHandler,
-            DataExportService dataExportService,
+            DataExportRunner exportRunner,
             MediaViewerService mediaViewerService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
@@ -181,7 +181,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.dataSyncService = dataSyncService;
         this.adminSettingsService = adminSettingsService;
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
-        this.dataExportService = dataExportService;
+        this.exportRunner = exportRunner;
         this.mediaViewerService = mediaViewerService;
     }
 
@@ -276,7 +276,7 @@ public class AdminLayoutController extends BaseLayoutController {
         // start from a fresh device scan.
         backupRunner.resetForLogout();
         syncRunner.resetForLogout();
-        dataExportService.resetForLogout();
+        exportRunner.resetForLogout();
         pendingFailureSummaries.clear();
         failureSummaryVisible = false;
 

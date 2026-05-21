@@ -44,7 +44,6 @@ import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
 
-import jakarta.annotation.PreDestroy;
 import javafx.application.Platform;
 
 /**
@@ -74,10 +73,6 @@ public class DataExportWorker {
 
     private static final String LOG_EXPORT_FAILED = "Export failed for {}";
 
-    // Key prefix used to namespace export target paths; parsed by the queue UI to
-    // extract the dir label.
-    public static final String FILE_KEY_PREFIX = "export:target:";
-
     private final FolderManagerService folderManagerService;
     private final QueueManagerService queueManagerService;
     private final AdminSettingsDialogService adminSettingsDialogService;
@@ -100,8 +95,7 @@ public class DataExportWorker {
     // Tracks export requests that reached a terminal state in the current
     // lifecycle.
     // This prevents a repeated export click from re-queuing completed or failed
-    // rows
-    // before the completion notice closes the lifecycle.
+    // rows before the completion notice closes the lifecycle.
     private final Set<String> processedExportRequests = ConcurrentHashMap.newKeySet();
 
     // Tracks .tmp paths currently being written so they can be deleted on cancel.
@@ -111,7 +105,6 @@ public class DataExportWorker {
     // worker drains one directory fully before moving to the next directory.
     private final Object queueLock = new Object();
     private final List<ExportDirectoryQueue> directoryQueues = new ArrayList<>();
-    private final ConcurrentHashMap<Path, ExportDirectoryQueue> directoryQueueByPath = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Path, List<FailedExportFile>> failedFilesByDirectory = new ConcurrentHashMap<>();
     private boolean processorRunning;
 
@@ -119,8 +112,6 @@ public class DataExportWorker {
     // Drops to zero when every pending file finishes; triggers the completion
     // notice.
     private final AtomicInteger pendingFileCount = new AtomicInteger(0);
-    private final AtomicInteger queuedFileCount = new AtomicInteger(0);
-    private final AtomicInteger failedFileCount = new AtomicInteger(0);
 
     // Missing sources still show size 0 in the UI/free-space check, but sort after
     // resolvable files so they fail only after valid exports have run.
@@ -181,13 +172,10 @@ public class DataExportWorker {
         processedExportRequests.clear();
         synchronized (queueLock) {
             directoryQueues.clear();
-            directoryQueueByPath.clear();
             failedFilesByDirectory.clear();
             processorRunning = false;
         }
         pendingFileCount.set(0);
-        queuedFileCount.set(0);
-        failedFileCount.set(0);
         // Keep the visible export queue in sync with the worker lifecycle so stale
         // directory nodes cannot survive logout and appear after the next login.
         queueManagerService.clearAll();
@@ -219,12 +207,6 @@ public class DataExportWorker {
         }
     }
 
-    @PreDestroy
-    public void onShutdown() {
-        cancelAndCleanup();
-        log.info("Export worker shut down");
-    }
-
     private static ExecutorService newExecutor() {
         return Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "DataExportWorker");
@@ -245,19 +227,17 @@ public class DataExportWorker {
         logReceivedExportFiles(selectedFiles, normalizedDir);
 
         synchronized (queueLock) {
-            if (!directoryQueueByPath.containsKey(normalizedDir)) {
-                // A finished directory starts a fresh queue run when the user retries or
-                // exports more files to the same destination.
-                queueManagerService.resetExportDirectoryForNewRun(normalizedDir);
-                processedExportRequests.removeIf(exportPathId -> isExportPathInDirectory(exportPathId, normalizedDir));
+            if (findDirectoryQueue(normalizedDir) == null) {
+                resetDirectoryQueueForNewRun(normalizedDir);
             }
         }
 
         List<ExportFileItem> acceptedItems = new ArrayList<>();
         for (FileView fileView : selectedFiles) {
-            String exportPathId = buildExportPathId(fileView, normalizedDir);
-            if (!processedExportRequests.contains(exportPathId) && activeExportPaths.add(exportPathId)) {
-                acceptedItems.add(createExportFileItem(fileView, exportPathId));
+            String progressTrackerRowId = buildProgressTrackerRowId(fileView, normalizedDir);
+            if (!processedExportRequests.contains(progressTrackerRowId)
+                    && activeExportPaths.add(progressTrackerRowId)) {
+                acceptedItems.add(createExportFileItem(fileView, progressTrackerRowId));
             }
         }
         acceptedItems.sort(EXPORT_FILE_SIZE_COMPARATOR);
@@ -268,25 +248,16 @@ public class DataExportWorker {
             return;
         }
 
-        // Reset summary counters when the whole export queue is idle.
-        if (pendingFileCount.get() == 0) {
-            queuedFileCount.set(0);
-            failedFileCount.set(0);
-        }
         pendingFileCount.addAndGet(acceptedItems.size());
-        queuedFileCount.addAndGet(acceptedItems.size());
 
         synchronized (queueLock) {
-            ExportDirectoryQueue directoryQueue = directoryQueueByPath.computeIfAbsent(normalizedDir, dir -> {
-                ExportDirectoryQueue created = new ExportDirectoryQueue(dir);
-                directoryQueues.add(created);
-                return created;
-            });
+            ExportDirectoryQueue directoryQueue = getOrCreateDirectoryQueue(normalizedDir);
 
             for (ExportFileItem item : acceptedItems) {
                 directoryQueue.files.add(item);
-                queueManagerService.addFileToExportTracker(item.exportPathId(), resolveFileName(item.fileView()),
-                        item.displaySize(), item.sortSize());
+                queueManagerService.addFileToExportTracker(item.progressTrackerRowId(),
+                        resolveFileName(item.fileView()),
+                        item.fileSize(), item.sortSize());
             }
             // Re-sort the pending list after appends so an already processing directory
             // continues with the smallest remaining files first.
@@ -300,6 +271,39 @@ public class DataExportWorker {
     }
 
     // ── Per-file copy logic ───────────────────────────────────────────────────
+
+    /**
+     * Resets worker and visible queue state before a completed destination root is
+     * reused as a fresh queue run. Removing and later recreating the queue also
+     * moves the root directory to the bottom of the directory-first processing
+     * list.
+     */
+    private void resetDirectoryQueueForNewRun(Path normalizedDir) {
+        queueManagerService.resetExportDirectoryForNewRun(normalizedDir);
+        ExportDirectoryQueue staleQueue = findDirectoryQueue(normalizedDir);
+        if (staleQueue != null) {
+            directoryQueues.remove(staleQueue);
+        }
+        processedExportRequests.removeIf(
+                progressTrackerRowId -> isProgressTrackerRowInDirectory(progressTrackerRowId, normalizedDir));
+    }
+
+    private ExportDirectoryQueue findDirectoryQueue(Path normalizedDir) {
+        return directoryQueues.stream()
+                .filter(queue -> queue.exportDir.equals(normalizedDir))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private ExportDirectoryQueue getOrCreateDirectoryQueue(Path normalizedDir) {
+        ExportDirectoryQueue existing = findDirectoryQueue(normalizedDir);
+        if (existing != null) {
+            return existing;
+        }
+        ExportDirectoryQueue created = new ExportDirectoryQueue(normalizedDir);
+        directoryQueues.add(created);
+        return created;
+    }
 
     /**
      * Drains one directory queue at a time. New files appended while processing are
@@ -339,7 +343,6 @@ public class DataExportWorker {
     private void finishDirectoryQueue(ExportDirectoryQueue directoryQueue) {
         synchronized (queueLock) {
             directoryQueues.remove(directoryQueue);
-            directoryQueueByPath.remove(directoryQueue.exportDir, directoryQueue);
         }
 
         if (directoryQueue.total == 0) {
@@ -347,8 +350,7 @@ public class DataExportWorker {
         }
 
         queueManagerService.markExportDirectoryFinished(directoryQueue.exportDir, directoryQueue.total,
-                directoryQueue.passed, directoryQueue.failed,
-                directoryQueue.failed > 0 ? () -> retryFailedDirectoryFiles(directoryQueue.exportDir) : null);
+                directoryQueue.passed, directoryQueue.failed);
         showDirectoryFailureSummary(directoryQueue);
     }
 
@@ -371,12 +373,10 @@ public class DataExportWorker {
                     ExportDirectoryQueue resultQueue = resolveResultDirectoryQueue(directoryQueue, result);
                     recordDirectoryResult(resultQueue, result);
                     logProcessedExportFile(resultQueue, result);
-                    processedExportRequests.add(result.item().exportPathId());
-                    if (result.status() == ItemStatus.FAILED) {
-                        failedFileCount.incrementAndGet();
-                    }
-                    activeExportPaths.remove(result.item().exportPathId());
-                    if (pendingFileCount.decrementAndGet() == 0) {
+                    processedExportRequests.add(result.item().progressTrackerRowId());
+                    activeExportPaths.remove(result.item().progressTrackerRowId());
+                    pendingFileCount.decrementAndGet();
+                    if (pendingFileCount.get() == 0) {
                         Platform.runLater(this::fireCompletionNotice);
                     }
                 }
@@ -399,7 +399,7 @@ public class DataExportWorker {
         String fileName = resolveFileName(item.fileView());
 
         try {
-            queueManagerService.markExportFileProcessing(attempt.exportPathId());
+            queueManagerService.markExportFileProcessing(attempt.progressTrackerRowId());
 
             while (true) {
                 StorageCheckResult storageCheck = validateExportStorage(attempt);
@@ -423,7 +423,7 @@ public class DataExportWorker {
             throw ex;
         } catch (Exception ex) {
             log.error(LOG_EXPORT_FAILED, fileName, ex);
-            queueManagerService.markExportFileFailed(attempt.exportPathId(), ERROR_UNKNOWN);
+            queueManagerService.markExportFileFailed(attempt.progressTrackerRowId(), ERROR_UNKNOWN);
             return ExportResult.failure(attempt.item(), ERROR_UNKNOWN);
         }
     }
@@ -451,9 +451,9 @@ public class DataExportWorker {
      */
     private ExportResult tryCopyToCurrentDirectory(ExportAttempt attempt) {
         ExportFileItem item = attempt.item();
-        String exportPathId = attempt.exportPathId();
+        String progressTrackerRowId = attempt.progressTrackerRowId();
         String fileName = resolveFileName(item.fileView());
-        Path source = resolveSourcePathForExport(item, exportPathId, fileName);
+        Path source = resolveSourcePathForExport(item, progressTrackerRowId, fileName);
         if (source == null) {
             return ExportResult.failure(item, classifyExportError(new IOException(ERROR_SOURCE_NOT_FOUND)));
         }
@@ -470,7 +470,7 @@ public class DataExportWorker {
                 return null;
             }
             log.error(LOG_EXPORT_FAILED, fileName, ex);
-            queueManagerService.markExportFileFailed(exportPathId, ERROR_IO_EXCEPTION);
+            queueManagerService.markExportFileFailed(progressTrackerRowId, ERROR_IO_EXCEPTION);
             return ExportResult.failure(item, ERROR_IO_EXCEPTION);
         }
     }
@@ -479,13 +479,13 @@ public class DataExportWorker {
      * Source resolution failures are data errors and should not trigger storage
      * recovery prompts.
      */
-    private Path resolveSourcePathForExport(ExportFileItem item, String exportPathId, String fileName) {
+    private Path resolveSourcePathForExport(ExportFileItem item, String progressTrackerRowId, String fileName) {
         try {
             return resolveSourcePath(item.fileView());
         } catch (IOException ex) {
             String reason = classifyExportError(ex);
             log.error(LOG_EXPORT_FAILED, fileName, ex);
-            queueManagerService.markExportFileFailed(exportPathId, reason);
+            queueManagerService.markExportFileFailed(progressTrackerRowId, reason);
             return null;
         }
     }
@@ -499,7 +499,7 @@ public class DataExportWorker {
             // A previous lifecycle may have exported this file under a conflict
             // suffix, so count this request as a successful no-op.
             String exportedFileName = matchingTarget.getFileName().toString();
-            completeExportFile(attempt.exportPathId(), exportedFileName);
+            completeExportFile(attempt.progressTrackerRowId(), exportedFileName);
             return ExportResult.completed(attempt.item(), exportedFileName);
         }
 
@@ -509,17 +509,17 @@ public class DataExportWorker {
 
         Path target = resolveUniqueTarget(attempt.exportDir(), fileName);
         String exportedFileName = target.getFileName().toString();
-        queueManagerService.renameExportFile(attempt.exportPathId(), exportedFileName);
-        copyWithProgress(source, target, attempt.exportPathId());
-        queueManagerService.markExportFileCompleted(attempt.exportPathId());
-        processedExportRequests.add(attempt.exportPathId());
+        queueManagerService.renameExportFile(attempt.progressTrackerRowId(), exportedFileName);
+        copyWithProgress(source, target, attempt.progressTrackerRowId());
+        queueManagerService.markExportFileCompleted(attempt.progressTrackerRowId());
+        processedExportRequests.add(attempt.progressTrackerRowId());
         return ExportResult.completed(attempt.item(), exportedFileName);
     }
 
-    private void completeExportFile(String exportPathId, String exportedFileName) {
-        queueManagerService.renameExportFile(exportPathId, exportedFileName);
-        queueManagerService.markExportFileCompleted(exportPathId);
-        processedExportRequests.add(exportPathId);
+    private void completeExportFile(String progressTrackerRowId, String exportedFileName) {
+        queueManagerService.renameExportFile(progressTrackerRowId, exportedFileName);
+        queueManagerService.markExportFileCompleted(progressTrackerRowId);
+        processedExportRequests.add(progressTrackerRowId);
     }
 
     private IOException classifyStorageException(IOException ex) {
@@ -555,12 +555,12 @@ public class DataExportWorker {
         if (isCancellationRequested()) {
             return new RecoveryResult(false, processingItem, currentExportDir.toAbsolutePath().normalize());
         }
-        String exportPathId = processingItem.exportPathId();
+        String progressTrackerRowId = processingItem.progressTrackerRowId();
         Path normalizedCurrentDir = currentExportDir.toAbsolutePath().normalize();
         ExportDirectoryQueue directoryQueue;
         int remainingCount;
         synchronized (queueLock) {
-            directoryQueue = directoryQueueByPath.get(normalizedCurrentDir);
+            directoryQueue = findDirectoryQueue(normalizedCurrentDir);
             if (directoryQueue == null) {
                 return new RecoveryResult(false, processingItem, normalizedCurrentDir);
             }
@@ -568,7 +568,7 @@ public class DataExportWorker {
         }
 
         log.error("Export storage error [{}]: {} (remaining={})", reason, normalizedCurrentDir, remainingCount);
-        queueManagerService.markExportFileDeferred(exportPathId, errorMessage);
+        queueManagerService.markExportFileDeferred(progressTrackerRowId, errorMessage);
 
         eventPublisher.publishEvent(
                 new StorageUnavailableEvent(FolderType.EXPORT, reason, normalizedCurrentDir, remainingCount));
@@ -598,15 +598,15 @@ public class DataExportWorker {
             directoryQueue.files.clear();
         }
 
-        queueManagerService.markExportFileFailed(processingItem.exportPathId(), errorMessage);
+        queueManagerService.markExportFileFailed(processingItem.progressTrackerRowId(), errorMessage);
 
         for (ExportFileItem pending : pendingItems) {
-            queueManagerService.markExportFileFailed(pending.exportPathId(), errorMessage);
+            queueManagerService.markExportFileFailed(pending.progressTrackerRowId(), errorMessage);
             recordDirectoryResult(directoryQueue, ExportResult.failure(pending, errorMessage));
-            processedExportRequests.add(pending.exportPathId());
-            failedFileCount.incrementAndGet();
-            activeExportPaths.remove(pending.exportPathId());
-            if (pendingFileCount.decrementAndGet() == 0) {
+            processedExportRequests.add(pending.progressTrackerRowId());
+            activeExportPaths.remove(pending.progressTrackerRowId());
+            pendingFileCount.decrementAndGet();
+            if (pendingFileCount.get() == 0) {
                 Platform.runLater(this::fireCompletionNotice);
             }
         }
@@ -620,12 +620,16 @@ public class DataExportWorker {
     private ExportFileItem moveDirectoryQueue(ExportDirectoryQueue oldQueue, ExportFileItem processingItem,
             Path newDir) {
         Path normalizedNewDir = newDir.toAbsolutePath().normalize();
+        boolean targetQueueExists = findDirectoryQueue(normalizedNewDir) != null;
+        if (!targetQueueExists) {
+            resetDirectoryQueueForNewRun(normalizedNewDir);
+        }
+
         List<ExportFileItem> pendingItems;
         synchronized (queueLock) {
             pendingItems = new ArrayList<>(oldQueue.files);
             oldQueue.files.clear();
             directoryQueues.remove(oldQueue);
-            directoryQueueByPath.remove(oldQueue.exportDir, oldQueue);
         }
 
         ExportFileItem updatedProcessingItem = moveExportItem(processingItem, normalizedNewDir);
@@ -635,11 +639,7 @@ public class DataExportWorker {
         }
 
         synchronized (queueLock) {
-            ExportDirectoryQueue targetQueue = directoryQueueByPath.computeIfAbsent(normalizedNewDir, dir -> {
-                ExportDirectoryQueue created = new ExportDirectoryQueue(dir);
-                directoryQueues.add(created);
-                return created;
-            });
+            ExportDirectoryQueue targetQueue = getOrCreateDirectoryQueue(normalizedNewDir);
             targetQueue.files.addAll(movedPendingItems);
             targetQueue.files.sort(EXPORT_FILE_SIZE_COMPARATOR);
         }
@@ -647,13 +647,19 @@ public class DataExportWorker {
     }
 
     private ExportFileItem moveExportItem(ExportFileItem item, Path newDir) {
-        String oldExportPathId = item.exportPathId();
-        String newExportPathId = buildExportPathId(resolveFileName(item.fileView()), newDir);
-        queueManagerService.moveExportFile(oldExportPathId, newExportPathId);
-        activeExportPaths.remove(oldExportPathId);
-        activeExportPaths.add(newExportPathId);
-        return new ExportFileItem(item.fileView(), newExportPathId, item.sourceMissing(), item.sortSize(),
-                item.displaySize());
+        Path normalizedNewDir = newDir.toAbsolutePath().normalize();
+        String oldProgressTrackerRowId = item.progressTrackerRowId();
+        String newProgressTrackerRowId = buildProgressTrackerRowId(resolveFileName(item.fileView()), normalizedNewDir);
+        if (oldProgressTrackerRowId.equals(newProgressTrackerRowId)) {
+            return item;
+        }
+
+        queueManagerService.moveExportFile(oldProgressTrackerRowId, newProgressTrackerRowId);
+        activeExportPaths.remove(oldProgressTrackerRowId);
+        activeExportPaths.add(newProgressTrackerRowId);
+
+        return new ExportFileItem(item.fileView(), newProgressTrackerRowId, item.sourceMissing(), item.sortSize(),
+                item.fileSize());
     }
 
     /**
@@ -703,17 +709,13 @@ public class DataExportWorker {
      * so final counters must be written to the queue matching the completed path.
      */
     private ExportDirectoryQueue resolveResultDirectoryQueue(ExportDirectoryQueue fallbackQueue, ExportResult result) {
-        Path resultDir = extractExportDir(result.item().exportPathId());
+        Path resultDir = extractExportDir(result.item().progressTrackerRowId());
         if (resultDir == null || fallbackQueue.exportDir.equals(resultDir)) {
             return fallbackQueue;
         }
 
         synchronized (queueLock) {
-            return directoryQueueByPath.computeIfAbsent(resultDir, dir -> {
-                ExportDirectoryQueue created = new ExportDirectoryQueue(dir);
-                directoryQueues.add(created);
-                return created;
-            });
+            return getOrCreateDirectoryQueue(resultDir);
         }
     }
 
@@ -784,8 +786,10 @@ public class DataExportWorker {
 
     /**
      * Requeue only the failed files for the same export directory.
+     *
+     * @param exportDir export root row id selected by the queue UI
      */
-    private void retryFailedDirectoryFiles(Path exportDir) {
+    public void retryFailedDirectoryFiles(Path exportDir) {
         Path normalizedDir = exportDir.toAbsolutePath().normalize();
         List<FailedExportFile> failedFiles = failedFilesByDirectory.getOrDefault(normalizedDir, List.of());
         List<FileView> filesToRetry = failedFiles.stream()
@@ -794,16 +798,16 @@ public class DataExportWorker {
         enqueueFiles(filesToRetry, normalizedDir);
     }
 
-    private boolean isExportPathInDirectory(String exportPathId, Path exportDir) {
-        Path parent = extractExportDir(exportPathId);
+    private boolean isProgressTrackerRowInDirectory(String progressTrackerRowId, Path exportDir) {
+        Path parent = extractExportDir(progressTrackerRowId);
         return parent != null && parent.equals(exportDir);
     }
 
-    private Path extractExportDir(String exportPathId) {
-        if (exportPathId == null || !exportPathId.startsWith(FILE_KEY_PREFIX)) {
+    private Path extractExportDir(String progressTrackerRowId) {
+        if (progressTrackerRowId == null || progressTrackerRowId.isBlank()) {
             return null;
         }
-        Path parent = Path.of(exportPathId.substring(FILE_KEY_PREFIX.length())).getParent();
+        Path parent = Path.of(progressTrackerRowId).getParent();
         return parent != null ? parent.toAbsolutePath().normalize() : null;
     }
 
@@ -816,7 +820,7 @@ public class DataExportWorker {
      * @throws DriveUnavailableException if the destination drive becomes
      *                                   inaccessible
      */
-    private void copyWithProgress(Path source, Path target, String exportPathId) throws IOException {
+    private void copyWithProgress(Path source, Path target, String progressTrackerRowId) throws IOException {
         Path targetTmp = Path.of(target.toString() + AppConstants.TMP_EXTENSION);
         long totalBytes = Files.size(source);
 
@@ -826,7 +830,7 @@ public class DataExportWorker {
                 Files.copy(source, targetTmp, StandardCopyOption.REPLACE_EXISTING);
                 throwIfCancellationRequested();
                 Files.move(targetTmp, target, StandardCopyOption.REPLACE_EXISTING);
-                queueManagerService.updateExportFileProgress(exportPathId, 100);
+                queueManagerService.updateExportFileProgress(progressTrackerRowId, 100);
                 return;
             }
 
@@ -845,7 +849,7 @@ public class DataExportWorker {
                     int normalized = normalizeTo5PercentStep(percent);
                     if (normalized >= lastReported + 5 && normalized <= 100) {
                         lastReported = normalized;
-                        queueManagerService.updateExportFileProgress(exportPathId, normalized);
+                        queueManagerService.updateExportFileProgress(progressTrackerRowId, normalized);
                     }
                 }
             } catch (IOException ex) {
@@ -862,7 +866,7 @@ public class DataExportWorker {
             }
 
             if (lastReported < 100) {
-                queueManagerService.updateExportFileProgress(exportPathId, 100);
+                queueManagerService.updateExportFileProgress(progressTrackerRowId, 100);
             }
         } finally {
             // Remove from tracking regardless of outcome; the file is either fully
@@ -988,16 +992,16 @@ public class DataExportWorker {
     }
 
     /**
-     * Builds the queue item id from its full destination export path. This lets the
-     * same source file be queued for several export directories while still
+     * Builds the queue leaf row id from its full destination export path. This lets
+     * the same source file be queued for several export directories while still
      * deduplicating duplicate exports to the same destination file.
      */
-    static String buildExportPathId(String fileName, Path exportDir) {
-        return FILE_KEY_PREFIX + exportDir.resolve(fileName).toAbsolutePath().normalize();
+    static String buildProgressTrackerRowId(String fileName, Path exportDir) {
+        return exportDir.resolve(fileName).toAbsolutePath().normalize().toString();
     }
 
-    private String buildExportPathId(FileView fileView, Path exportDir) {
-        return buildExportPathId(resolveFileName(fileView), exportDir);
+    private String buildProgressTrackerRowId(FileView fileView, Path exportDir) {
+        return buildProgressTrackerRowId(resolveFileName(fileView), exportDir);
     }
 
     private String resolveFileName(FileView fileView) {
@@ -1007,11 +1011,11 @@ public class DataExportWorker {
         return "unknown-file";
     }
 
-    private ExportFileItem createExportFileItem(FileView fileView, String exportPathId) {
+    private ExportFileItem createExportFileItem(FileView fileView, String progressTrackerRowId) {
         boolean sourceMissing = isSourceMissing(fileView);
         long sortSize = sourceMissing ? Long.MAX_VALUE : fileSizeOrMax(fileView.fileSize());
-        Long displaySize = sourceMissing ? 0L : fileView.fileSize();
-        return new ExportFileItem(fileView, exportPathId, sourceMissing, sortSize, displaySize);
+        Long fileSize = sourceMissing ? 0L : fileView.fileSize();
+        return new ExportFileItem(fileView, progressTrackerRowId, sourceMissing, sortSize, fileSize);
     }
 
     /**
@@ -1074,8 +1078,8 @@ public class DataExportWorker {
 
     // ── Inner types ───────────────────────────────────────────────────────────
 
-    private record ExportFileItem(FileView fileView, String exportPathId, boolean sourceMissing, long sortSize,
-            Long displaySize) {
+    private record ExportFileItem(FileView fileView, String progressTrackerRowId, boolean sourceMissing, long sortSize,
+            Long fileSize) {
     }
 
     private record ExportResult(ItemStatus status, ExportFileItem item, String displayName, String failureReason) {
@@ -1125,8 +1129,8 @@ public class DataExportWorker {
             return exportDir;
         }
 
-        private String exportPathId() {
-            return item.exportPathId();
+        private String progressTrackerRowId() {
+            return item.progressTrackerRowId();
         }
 
         private IOException storageException() {

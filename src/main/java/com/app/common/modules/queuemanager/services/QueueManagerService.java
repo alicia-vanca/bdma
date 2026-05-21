@@ -39,66 +39,88 @@ public class QueueManagerService {
     /**
      * Add device to sync queue using the full context required by queue actions.
      *
-     * @param syncContext sync request context containing camera and hardware identifiers
+     * @param syncContext sync request context containing camera and hardware
+     *                    identifiers
      */
     public void addDeviceToSyncTracker(SyncContext syncContext) {
         syncTracker.addDevice(syncContext);
     }
 
     /**
-     * Add file to device's sync list.
+     * Adds a sync file leaf row under a device root row.
+     *
+     * @param rootRowId camera id of the sync device root row
+     * @param fileName  display name shown for the file row
+     * @param rowId     sync leaf row id; this is the full local save path
      */
-    public void addFileToSyncTracker(String hardwareId, String fileName, String filePath) {
-        syncTracker.addFileToDevice(hardwareId, fileName, filePath);
+    public void addFileToSyncTracker(String rootRowId, String fileName, String rowId) {
+        syncTracker.addFileToDevice(rootRowId, fileName, rowId);
     }
 
     /**
-     * Mark file as skipped during sync.
+     * Marks a sync file leaf row as skipped.
+     *
+     * @param rootRowId camera id of the sync device root row
+     * @param rowId     sync leaf row id; this is the full local save path
      */
-    public void markSyncFileSkipped(String hardwareId, String filePath) {
-        syncTracker.markFileSkipped(hardwareId, filePath);
+    public void markSyncFileSkipped(String rootRowId, String rowId) {
+        syncTracker.markFileSkipped(rootRowId, rowId);
     }
 
     /**
-     * Mark file as currently syncing.
+     * Marks a sync file leaf row as currently processing.
+     *
+     * @param rootRowId camera id of the sync device root row
+     * @param rowId     sync leaf row id; this is the full local save path
      */
-    public void markSyncFileProcessing(String hardwareId, String filePath) {
-        syncTracker.markFileProcessing(hardwareId, filePath);
+    public void markSyncFileProcessing(String rootRowId, String rowId) {
+        syncTracker.markFileProcessing(rootRowId, rowId);
     }
 
     /**
-     * Update sync file progress.
+     * Updates progress for a sync file leaf row.
+     *
+     * @param rootRowId camera id of the sync device root row
+     * @param rowId     sync leaf row id; this is the full local save path
+     * @param progress  completion percentage from 0 to 100
      */
-    public void updateSyncFileProgress(String hardwareId, String filePath, int progress) {
-        syncTracker.updateFileProgress(hardwareId, filePath, progress);
+    public void updateSyncFileProgress(String rootRowId, String rowId, int progress) {
+        syncTracker.updateFileProgress(rootRowId, rowId, progress);
     }
 
     /**
-     * Mark sync file as completed.
+     * Marks a sync file leaf row as completed.
+     *
+     * @param rootRowId camera id of the sync device root row
+     * @param rowId     sync leaf row id; this is the full local save path
      */
-    public void markSyncFileCompleted(String hardwareId, String filePath) {
-        syncTracker.markFileCompleted(hardwareId, filePath);
+    public void markSyncFileCompleted(String rootRowId, String rowId) {
+        syncTracker.markFileCompleted(rootRowId, rowId);
     }
 
     /**
-     * Mark sync file as failed.
+     * Marks a sync file leaf row as failed.
+     *
+     * @param rootRowId    camera id of the sync device root row
+     * @param rowId        sync leaf row id; this is the full local save path
+     * @param errorMessage reason displayed in the queue UI
      */
-    public void markSyncFileFailed(String hardwareId, String filePath, String errorMessage) {
-        syncTracker.markFileFailed(hardwareId, filePath, errorMessage);
+    public void markSyncFileFailed(String rootRowId, String rowId, String errorMessage) {
+        syncTracker.markFileFailed(rootRowId, rowId, errorMessage);
     }
 
     /**
      * Mark device sync as processing.
      */
-    public void markDeviceSyncProcessing(String hardwareId) {
-        syncTracker.markDeviceProcessing(hardwareId);
+    public void markDeviceSyncProcessing(String rootRowId) {
+        syncTracker.markDeviceProcessing(rootRowId);
     }
 
     /**
      * Mark device sync as completed.
      */
-    public void markDeviceSyncCompleted(String hardwareId, int total, int passed, int failed) {
-        syncTracker.markDeviceCompleted(hardwareId, total, passed, failed);
+    public void markDeviceSyncCompleted(String rootRowId, int total, int passed, int failed) {
+        syncTracker.markDeviceCompleted(rootRowId, total, passed, failed);
     }
 
     /**
@@ -111,15 +133,15 @@ public class QueueManagerService {
     /**
      * Get specific device from sync queue.
      */
-    public DeviceQueueItem getTrackingSyncDevice(String hardwareId) {
-        return syncTracker.getDevice(hardwareId);
+    public DeviceQueueItem getTrackingSyncDevice(String rootRowId) {
+        return syncTracker.getDevice(rootRowId);
     }
 
     /**
      * Get all files for a device in sync queue.
      */
-    public List<FileQueueItem> getTrackingSyncFiles(String hardwareId) {
-        return syncTracker.getDeviceFiles(hardwareId);
+    public List<FileQueueItem> getTrackingSyncFiles(String rootRowId) {
+        return syncTracker.getDeviceFiles(rootRowId);
     }
 
     // ── Backup Operations ────────────────────────────────────────────────────
@@ -183,20 +205,6 @@ public class QueueManagerService {
     // ── Export Operations ────────────────────────────────────────────────────
 
     /**
-     * Add file to export queue.
-     */
-    public void addFileToExportTracker(String exportPathId, String fileName) {
-        exportTracker.addFile(exportPathId, fileName);
-    }
-
-    /**
-     * Add file to export queue with size metadata used for directory ordering.
-     */
-    public void addFileToExportTracker(String exportPathId, String fileName, Long fileSize) {
-        exportTracker.addFile(exportPathId, fileName, fileSize);
-    }
-
-    /**
      * Add file to export queue with separate display and sort sizes.
      */
     public void addFileToExportTracker(String exportPathId, String fileName, Long fileSize, Long sortSize) {
@@ -247,14 +255,6 @@ public class QueueManagerService {
     }
 
     /**
-     * Mark export file as skipped (e.g. user chose to skip a conflict).
-     * The reason is stored as an i18n key and shown in the queue UI.
-     */
-    public void markExportFileSkipped(String exportPathId, String reason) {
-        exportTracker.markSkipped(exportPathId, reason);
-    }
-
-    /**
      * Move an export file entry when the export directory changes after storage
      * recovery.
      */
@@ -265,8 +265,8 @@ public class QueueManagerService {
     /**
      * Mark an export directory as finished with worker-provided aggregate counts.
      */
-    public void markExportDirectoryFinished(Path exportDir, int total, int passed, int failed, Runnable retryAction) {
-        exportTracker.markDirectoryFinished(exportDir, total, passed, failed, retryAction);
+    public void markExportDirectoryFinished(Path exportDir, int total, int passed, int failed) {
+        exportTracker.markDirectoryFinished(exportDir, total, passed, failed);
     }
 
     /**
@@ -277,17 +277,17 @@ public class QueueManagerService {
     }
 
     /**
-     * Get all files in export queue.
-     */
-    public List<FileQueueItem> getAllTrackingExportFiles() {
-        return exportTracker.getAllFiles();
-    }
-
-    /**
      * Get export destination directories with aggregate counts.
      */
     public List<ExportDirectoryQueueItem> getAllTrackingExportDirectories() {
         return exportTracker.getAllDirectories();
+    }
+
+    /**
+     * Get a specific export file.
+     */
+    public FileQueueItem getTrackingExportFile(String exportPathId) {
+        return exportTracker.getFile(exportPathId);
     }
 
     // ── General Operations ───────────────────────────────────────────────────

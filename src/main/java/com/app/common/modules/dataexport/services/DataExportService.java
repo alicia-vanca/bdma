@@ -78,13 +78,12 @@ public class DataExportService {
     }
 
     /**
-     * Stops all pending exports and resets the worker for the next session.
-     * Called on logout.
+     * Requeues only failed files under the given export root row.
+     *
+     * @param rootRowId export directory path used as the queue root row id
      */
-    public void resetForLogout() {
-        worker.cancelAndCleanup();
-        worker.resetExecutor();
-        log.info("Export worker reset for logout");
+    public void retryFailedDirectoryFiles(String rootRowId) {
+        worker.retryFailedDirectoryFiles(Path.of(rootRowId));
     }
 
     // ── Directory resolution ──────────────────────────────────────────────────
