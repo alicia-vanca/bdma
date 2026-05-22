@@ -650,6 +650,8 @@ public class MediaViewerController {
         mediaPlayer.setOnEndOfMedia(() -> {
             btnPlayPause.setText("▶");
             videoSlider.setValue(0);
+            mediaPlayer.seek(Duration.ZERO);
+            mediaPlayer.pause();
         });
 
         mediaPlayer.setOnError(() ->
