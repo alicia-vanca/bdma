@@ -230,6 +230,10 @@ public class AdminLayoutController extends BaseLayoutController {
             showNoticeError(I18n.get("device.validation.failed"));
             return;
         }
+        if (!session.isAdmin()) {
+            showContactAdminToSaveDeviceDialog(summary.getValidationResult());
+            return;
+        }
         showSaveDeviceConfirmation(summary.getValidationResult());
     }
 
@@ -451,6 +455,18 @@ public class AdminLayoutController extends BaseLayoutController {
             refreshDashboardIfActive();
             showSaveDeviceConfirmation(result);
         }
+    }
+
+    private void showContactAdminToSaveDeviceDialog(DeviceValidationResult result) {
+        Alert info = AlertHelper.createInformation(
+                I18n.get("device.save.contact_admin.title"),
+                I18n.get("device.save.contact_admin.header"),
+                I18n.get("device.save.contact_admin.content",
+                        result.getCameraId(),
+                        result.getMatchedModelName()));
+        ButtonType closeButton = new ButtonType(I18n.get("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        AlertHelper.setButtons(info, closeButton);
+        info.showAndWait();
     }
 
     private void showSaveDeviceConfirmation(DeviceValidationResult result) {
