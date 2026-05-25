@@ -1,10 +1,16 @@
 package com.app.admin.settingsdialog.controllers;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -15,18 +21,23 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.sqlite.mc.SQLiteMCWxAES256Config;
 
 import com.app.MainApp;
 import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
+import com.app.common.configs.AppContext;
+import com.app.common.configs.AppRuntimeInitializer;
 import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.AppDataPaths;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.Language;
 import com.app.common.definitions.enums.Theme;
 import com.app.common.events.ThemeChangedEvent;
+import com.app.common.exceptions.AppException;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.NoticeStackRenderer;
@@ -40,6 +51,7 @@ import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.repositories.RestoreFailureRepository;
 import com.app.common.services.DriveResolverService;
+import com.app.common.services.PatchCryptoService;
 import com.app.common.services.UserSettingService;
 
 import javafx.application.Platform;
@@ -53,6 +65,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import lombok.Setter;
 
@@ -68,6 +81,7 @@ public class AdminSettingsDialogController {
     private static final String I18N_SETTING_STORAGE_CHOOSE = "setting.storage.btn.choose";
 
     private final AdminSettingsDialogService adminSettingsService;
+    private final PatchCryptoService patchCryptoService;
     private final Session session;
     private final UserSettingService userSettingService;
     private final AppUpdateController appUpdateController;
@@ -145,6 +159,12 @@ public class AdminSettingsDialogController {
     private Button btnRetryFailedRestore;
     @FXML
     private Label lblDriveConflictWarning;
+    @FXML
+    private Label lblPatchTitle;
+    @FXML
+    private Button btnEncryptPatch;
+    @FXML
+    private Button btnApplyPatch;
 
     private NoticeStackRenderer noticeRenderer;
     @Setter
@@ -152,7 +172,7 @@ public class AdminSettingsDialogController {
     private ScheduledExecutorService progressScheduler;
 
     public AdminSettingsDialogController(
-            AdminSettingsDialogService adminSettingsService,
+            AdminSettingsDialogService adminSettingsService, PatchCryptoService patchCryptoService,
             Session session,
             UserSettingService userSettingService,
             AppUpdateController appUpdateController,
@@ -164,6 +184,7 @@ public class AdminSettingsDialogController {
             DataBackupQueue dataBackupQueue,
             RestoreFailureRepository restoreFailureRepository) {
         this.adminSettingsService = adminSettingsService;
+        this.patchCryptoService = patchCryptoService;
         this.session = session;
         this.userSettingService = userSettingService;
         this.appUpdateController = appUpdateController;
@@ -213,6 +234,10 @@ public class AdminSettingsDialogController {
         lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.checkbox"));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
         btnRetryFailedRestore.setText(I18n.get("setting.storage.btn.retry"));
+
+        lblPatchTitle.setText(I18n.get("setting.patch.title"));
+        btnEncryptPatch.setText(I18n.get("setting.patch.btn.encrypt"));
+        btnApplyPatch.setText(I18n.get("setting.patch.btn.apply"));
     }
 
     // Bind each pair of segment buttons to equal widths within their row.
@@ -673,5 +698,81 @@ public class AdminSettingsDialogController {
             return;
         }
         adminSettingsService.getFolderPath(folderType).ifPresent(textField::setText);
+    }
+
+    @FXML
+    public void onEncryptPatch() {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(I18n.get("setting.patch.chooser.encrypt.title"));
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("SQL files", "*.sql"));
+        Stage stage = (Stage) panel.getScene().getWindow();
+        File selected = chooser.showOpenDialog(stage);
+        if (selected == null) return;
+
+        try {
+            patchCryptoService.encrypt(selected.toPath());
+            showNotice(I18n.get("setting.patch.encrypt.success"), true);
+        } catch (Exception e) {
+            log.error("Failed to encrypt patch file", e);
+            showNotice(I18n.get("setting.patch.encrypt.error"), false);
+        }
+    }
+
+    @FXML
+    public void onApplyPatch() {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(I18n.get("setting.patch.chooser.apply.title"));
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Encrypted patch files", "*.sql.enc"));
+        Stage stage = (Stage) panel.getScene().getWindow();
+        File selected = chooser.showOpenDialog(stage);
+        if (selected == null) return;
+
+        try {
+            List<String> statements = patchCryptoService.decryptAndValidate(selected.toPath());
+            applyPatchToDatabase(statements);
+            Files.deleteIfExists(selected.toPath());
+            showNotice(I18n.get("setting.patch.apply.success"), true);
+        } catch (Exception e) {
+            log.error("Failed to apply patch file", e);
+            showNotice(I18n.get("setting.patch.apply.error"), false);
+        }
+    }
+
+    private void applyPatchToDatabase(List<String> statements) {
+        String dbUrl = "jdbc:sqlite:" + AppDataPaths.dataFile().getAbsolutePath();
+        Properties connProps = buildDbConnectionProperties();
+
+        try (Connection conn = DriverManager.getConnection(dbUrl, connProps)) {
+            executeInTransaction(conn, statements);
+        } catch (SQLException e) {
+            throw new AppException("Cannot connect to database: " + e.getMessage(), e);
+        }
+    }
+
+    private void executeInTransaction(Connection conn, List<String> statements) throws SQLException {
+        conn.setAutoCommit(false);
+        try (Statement stmt = conn.createStatement()) {
+            for (String sql : statements) {
+                stmt.addBatch(sql);
+            }
+            stmt.executeBatch();
+            conn.commit();
+        } catch (SQLException e) {
+            conn.rollback();
+            throw new AppException("Patch execution failed — all changes rolled back: " + e.getMessage(), e);
+        }
+    }
+
+    private Properties buildDbConnectionProperties() {
+        byte[] dbKey = AppContext.getDbKey();
+        if (!AppContext.isDbEncryptionEnabled() || dbKey == null) {
+            return new Properties();
+        }
+        return SQLiteMCWxAES256Config.getDefault()
+                .withKey(AppRuntimeInitializer.toRawKey(dbKey))
+                .build()
+                .toProperties();
     }
 }

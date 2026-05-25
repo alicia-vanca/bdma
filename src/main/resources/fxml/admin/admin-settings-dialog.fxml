@@ -108,6 +108,16 @@
                 </VBox>
             </content>
         </ScrollPane>
+        <Separator styleClass="settings-sep"/>
+        <VBox spacing="6" styleClass="settings-card">
+            <Label fx:id="lblPatchTitle" styleClass="settings-field-label"/>
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <Button fx:id="btnEncryptPatch" onAction="#onEncryptPatch"
+                        maxWidth="1.7976931348623157E308" styleClass="btn-secondary" HBox.hgrow="ALWAYS"/>
+                <Button fx:id="btnApplyPatch" onAction="#onApplyPatch"
+                        maxWidth="1.7976931348623157E308" styleClass="btn-secondary" HBox.hgrow="ALWAYS"/>
+            </HBox>
+        </VBox>
     </VBox>
     <VBox fx:id="noticeContainer" spacing="8" alignment="BOTTOM_CENTER" fillWidth="false" mouseTransparent="true"
           styleClass="notice-container-dialog" StackPane.alignment="BOTTOM_CENTER"/>
