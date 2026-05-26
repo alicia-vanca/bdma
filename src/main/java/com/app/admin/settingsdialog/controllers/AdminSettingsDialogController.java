@@ -134,6 +134,8 @@ public class AdminSettingsDialogController {
     @FXML
     private Label lblStartWithWindowsTitle;
     @FXML
+    private Label lsbCheckVersion;
+    @FXML
     private VBox noticeContainer;
     @FXML
     private Button btnRestore;
@@ -211,6 +213,7 @@ public class AdminSettingsDialogController {
 
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.checkbox"));
+        lsbCheckVersion.setText(I18n.get("setting.startWithWindows.checkversion",getVersionCurrent()));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
         btnRetryFailedRestore.setText(I18n.get("setting.storage.btn.retry"));
     }
@@ -673,5 +676,15 @@ public class AdminSettingsDialogController {
             return;
         }
         adminSettingsService.getFolderPath(folderType).ifPresent(textField::setText);
+    }
+    private String getVersionCurrent(){
+        String version = getClass()
+                .getPackage()
+                .getImplementationVersion();
+
+        if (version == null) {
+            version = "Not version";
+        }
+        return version;
     }
 }

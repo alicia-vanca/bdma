@@ -71,6 +71,9 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.control.ContentDisplay;
 
 @Component
 public class AdminLayoutController extends BaseLayoutController {
@@ -140,6 +143,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private Label lblBackupStorageTitle;
     @FXML
     private Label lblBackupStoragePercent;
+    @FXML
+    private ImageView nteIcon;
 
     private DashboardController currentDashboardController;
     private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
@@ -207,9 +212,20 @@ public class AdminLayoutController extends BaseLayoutController {
         appNoticeService.bindNoticeContainer(noticeContainer);
 
         deviceMiniStatus.setOnProgressChanged(this::refreshDashboardIfActive);
-
+        setIconNte();
         openDefaultTab();
         refreshStorageStatus();
+    }
+    public void setIconNte(){
+        Image image = new Image(
+                getClass()
+                        .getResource("/image/NTE_Logo.png")
+                        .toExternalForm()
+        );
+        nteIcon.setImage(image);
+        nteIcon.setFitWidth(150);
+        nteIcon.setFitHeight(150);
+        nteIcon.setPreserveRatio(true);
     }
 
     @FXML

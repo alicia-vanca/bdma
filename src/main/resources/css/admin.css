@@ -10,6 +10,7 @@
 .header-shell {
   -fx-background-color: -sidebar-bg;
   -fx-padding: 8 23;
+  fx-alignment: center;
 }
 
 .top-bar {
@@ -33,7 +34,7 @@
 }
 
 .greeting-label {
-  -fx-font-size: 13px;
+  -fx-font-size: 14px;
   -fx-font-weight: 600;
 }
 
@@ -54,11 +55,11 @@
 
 /* ── TAB BUTTONS ────────────────────────────────────────────────── */
 .menu-tab-btn {
-  -fx-font-size: 13px;
+  -fx-font-size: 14px;
   -fx-background-color: transparent;
   -fx-text-fill: -text-color;
   -fx-background-radius: 6;
-  -fx-padding: 5 14;
+  -fx-padding: 7 14;
   -fx-min-width: 140;
   -fx-pref-width: 140;
   -fx-max-width: 140;
@@ -66,7 +67,6 @@
   -fx-max-height: 28;
   -fx-alignment: CENTER;
 }
-
 /* ── NOTICE OVERLAY ─────────────────────────────────────────────── */
 .notice-container {
   -fx-padding: 0 0 30 0;
@@ -301,4 +301,7 @@
 
 .file-list-pane {
   -fx-padding: 0 0 0 16;
+}
+.table-view{
+    -fx-font-size:14;
 }

@@ -63,8 +63,8 @@
     <VBox HBox.hgrow="ALWAYS">
 
         <HBox styleClass="media-viewer-toolbar" alignment="CENTER_LEFT" spacing="6">
-            <Button fx:id="btnPrev" text="◀" onAction="#onPrev" styleClass="btn-secondary"/>
-            <Button fx:id="btnNext" text="▶" onAction="#onNext" styleClass="btn-secondary"/>
+            <Button fx:id="btnPrev" text="◀" onAction="#onPrev" styleClass="icon-btn-pre-next"/>
+            <Button fx:id="btnNext" text="▶" onAction="#onNext" styleClass="icon-btn-pre-next"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Button fx:id="btnZoomIn" text="＋" onAction="#onZoomIn" styleClass="icon-btn"/>
             <Button fx:id="btnZoomOut" text="－" onAction="#onZoomOut" styleClass="icon-btn"/>
