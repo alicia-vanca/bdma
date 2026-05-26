@@ -301,7 +301,6 @@ public class DataBackupWorker implements Runnable {
      */
     private void waitForSyncToComplete() throws InterruptedException {
         while (isSyncActive() && !shutdownRequested) {
-            log.debug("Sync active, backup paused. Waiting...");
             Thread.sleep(5000);
         }
     }

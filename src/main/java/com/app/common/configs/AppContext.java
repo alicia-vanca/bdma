@@ -12,6 +12,8 @@ public final class AppContext {
     @Getter
     private static String deviceId;
     @Getter
+    private static String deviceName;
+    @Getter
     private static String version;
     // Raw 32-byte key derived from device ID via PBKDF2
     // Used to open the encrypted SQLite DB
@@ -21,6 +23,10 @@ public final class AppContext {
 
     public static void setDeviceId(String deviceId) {
         AppContext.deviceId = deviceId;
+    }
+
+    public static void setDeviceName(String deviceName) {
+        AppContext.deviceName = deviceName;
     }
 
     public static void setVersion(String version) {

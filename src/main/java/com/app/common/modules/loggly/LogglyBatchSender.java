@@ -1,4 +1,4 @@
-package com.app.common.configs;
+package com.app.common.modules.loggly;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -37,6 +38,7 @@ import okhttp3.Response;
  * Past files are marked complete once fully synchronized.
  */
 @Component
+@ConditionalOnProperty(name = "loggly.batch.enabled", havingValue = "true")
 public class LogglyBatchSender {
 
     private static final Logger log = LoggerFactory.getLogger(LogglyBatchSender.class);
@@ -266,7 +268,8 @@ public class LogglyBatchSender {
     }
 
     private long countLines(File file) {
-        if (!file.exists()) return 0L;
+        if (!file.exists())
+            return 0L;
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
             long count = 0;
