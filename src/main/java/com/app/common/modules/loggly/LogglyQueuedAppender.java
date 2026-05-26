@@ -88,6 +88,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
 
     private final Object fileLock = new Object();
     private final AtomicBoolean draining = new AtomicBoolean(false);
+    private final AtomicBoolean drainRequested = new AtomicBoolean(false);
 
     private String endpointUrl;
     private long retryIntervalMillis = DEFAULT_RETRY_INTERVAL_MILLIS;
@@ -100,9 +101,17 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     private Path internalLogFile;
     private byte[] signingKey;
     private volatile boolean signingKeyDerived = false;
+    private volatile boolean stopping = false;
+
+    private enum DrainResult {
+        EMPTY,
+        SENT_ALL,
+        FAILED
+    }
 
     @Override
     public void start() {
+        stopping = false;
         if (endpointUrl == null || endpointUrl.isBlank()) {
             addError("endpointUrl must be configured for LogglyQueuedAppender");
             return;
@@ -133,7 +142,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
                 TimeUnit.MILLISECONDS);
 
         super.start();
-        drainQueueSafely();
+        requestDrain();
     }
 
     /**
@@ -162,7 +171,12 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     @Override
     public void stop() {
         if (retryExecutor != null) {
-            retryExecutor.shutdownNow();
+            stopping = true;
+            // Do not accept new drain requests and stop the scheduled sender
+            retryExecutor.shutdown();
+            // Let processing queue finish, then attempt to drain any remaining events, stop
+            // on failure or all finished
+            drainUntilEmptyOrFailed();
         }
         if (layout != null) {
             layout.stop();
@@ -191,13 +205,39 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
             return;
         }
 
-        drainQueueSafely();
+        requestDrain();
     }
 
+    private void requestDrain() {
+        if (stopping || retryExecutor == null || retryExecutor.isShutdown()) {
+            return;
+        }
+        if (!drainRequested.compareAndSet(false, true)) {
+            return;
+        }
+
+        try {
+            retryExecutor.execute(() -> {
+                try {
+                    drainQueueSafely();
+                } finally {
+                    drainRequested.set(false);
+                }
+            });
+        } catch (RuntimeException e) {
+            drainRequested.set(false);
+            addWarn("Loggly queue drain request was rejected: " + e.getMessage());
+        }
+    }
+
+    // Called reflectively by Logback from logback-spring.xml.
+    @SuppressWarnings("unused")
     public void setEndpointUrl(String endpointUrl) {
         this.endpointUrl = endpointUrl;
     }
 
+    // Called reflectively by Logback from logback-spring.xml.
+    @SuppressWarnings("unused")
     public void setRetryIntervalMillis(long retryIntervalMillis) {
         if (retryIntervalMillis > 0) {
             this.retryIntervalMillis = retryIntervalMillis;
@@ -273,10 +313,35 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         }
     }
 
-    private void drainQueue() throws IOException {
+    private void drainUntilEmptyOrFailed() {
+        if (!isStarted()) {
+            return;
+        }
+
+        while (true) {
+            if (!draining.compareAndSet(false, true)) {
+                Thread.yield();
+            } else {
+                DrainResult result = DrainResult.FAILED;
+                try {
+                    result = drainQueue();
+                } catch (Exception e) {
+                    addWarn("Final Loggly queue drain failed", e);
+                } finally {
+                    draining.set(false);
+                }
+
+                if (result == DrainResult.EMPTY || result == DrainResult.FAILED) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private DrainResult drainQueue() throws IOException {
         synchronized (fileLock) {
             if (!hasContent(queueFile)) {
-                return;
+                return DrainResult.EMPTY;
             }
             Files.move(queueFile, sendingFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             Files.createFile(queueFile);
@@ -285,7 +350,9 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         boolean fullySent = sendQueuedLines();
         if (fullySent) {
             Files.deleteIfExists(sendingFile);
+            return DrainResult.SENT_ALL;
         }
+        return DrainResult.FAILED;
     }
 
     /**
@@ -357,10 +424,10 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
             if (response.isSuccessful()) {
                 return true;
             }
-            addWarn("Loggly send failed with HTTP " + response.code());
+            addWarn("Loggly send failed with HTTP " + response.code() + " log:" + eventJson);
             return false;
         } catch (IOException e) {
-            addWarn("Loggly send failed: " + e.getMessage());
+            addWarn("Loggly send failed: " + e.getMessage() + " log:" + eventJson);
             return false;
         }
     }
@@ -405,7 +472,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
             }
             return markIntegrity(queuedJson, false).toString();
         } catch (Exception e) {
-            addWarn("Invalid Loggly queue line detected: " + e.getMessage());
+            addWarn("Invalid Loggly queue line detected: " + e.getMessage() + " line:" + queuedLine);
             JSONObject fallback = new JSONObject();
             fallback.put(LOG_INTEGRITY_VERIFIED_FIELD, false);
             return fallback.toString();
@@ -420,7 +487,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         try {
             payload = new JSONObject(payloadJson);
         } catch (Exception e) {
-            addWarn("Invalid signed Loggly queue payload JSON: " + e.getMessage());
+            addWarn("Invalid signed Loggly queue payload JSON: " + e.getMessage() + " envelope:" + envelope);
             JSONObject fallback = new JSONObject();
             fallback.put(LOG_INTEGRITY_VERIFIED_FIELD, false);
             return fallback.toString();
@@ -434,7 +501,8 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
                     expectedSignature.getBytes(StandardCharsets.UTF_8));
             return markIntegrity(payload, verified).toString();
         } catch (Exception e) {
-            addWarn("Loggly queue signature verification failed: " + e.getMessage());
+            addWarn("Loggly queue signature verification failed: " + e.getMessage() + " envelope:"
+                    + envelope);
             return markIntegrity(payload, false).toString();
         }
     }

@@ -31,6 +31,8 @@
     </appender>
 
     <appender name="ASYNC_LOGLY" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <maxFlushTime>0</maxFlushTime>
         <appender-ref ref="LOGLY" />
     </appender>
 
