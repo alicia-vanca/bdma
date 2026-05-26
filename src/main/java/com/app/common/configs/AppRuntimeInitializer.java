@@ -13,6 +13,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -98,20 +100,37 @@ public final class AppRuntimeInitializer {
         log.info("App started - version: {}", AppContext.getVersion());
     }
 
-    // Resolves and stores device ID and version early for logging purpose.
+    // Resolves and stores device ID, device name, and version early for logging
+    // purpose.
     static void resolveAppIdentity() {
         if (AppContext.getDeviceId() != null) {
             return;
         }
         DeviceIdManager deviceIdManager = new DeviceIdManager();
         AppContext.setDeviceId(deviceIdManager.getDeviceId());
+        AppContext.setDeviceName(resolveDeviceName());
 
         String version = AppRuntimeInitializer.class.getPackage().getImplementationVersion();
         if (version == null) {
             version = System.getProperty("app.version", "dev");
         }
         AppContext.setVersion(version);
-        log.info("Machine-based device ID and app version resolved");
+    }
+
+    // Resolve a stable, human-readable computer name for local and remote log
+    // correlation.
+    private static String resolveDeviceName() {
+        String computerName = System.getenv("COMPUTERNAME");
+        if (computerName != null && !computerName.isBlank()) {
+            return computerName;
+        }
+
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            log.warn("Failed to resolve device name", e);
+            return "";
+        }
     }
 
     // Derive a 32-byte database key from the persisted device ID. The device ID
@@ -120,7 +139,7 @@ public final class AppRuntimeInitializer {
     private static byte[] deriveDbKey() {
         char[] deviceIdChars = AppContext.getDeviceId().toCharArray();
         byte[] deviceIdSalt = AppContext.getDeviceId().getBytes(StandardCharsets.UTF_8);
-         PBEKeySpec spec = null;
+        PBEKeySpec spec = null;
         try {
             SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
             spec = new PBEKeySpec(deviceIdChars, deriveDbKeySalt(deviceIdSalt), DB_KEY_ITERATIONS,
