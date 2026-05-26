@@ -86,14 +86,14 @@
                         </HBox>
                         <HBox spacing="8" alignment="CENTER_LEFT">
                             <CheckBox fx:id="chkAskEveryTimeExport" onAction="#onToggleAskEveryTimeExport"/>
-                            <Label fx:id="lblAskEveryTimeExportTitle"/>
+                            <Label fx:id="lblAskEveryTimeExportTitle" onMouseClicked="#onClickAskEveryTimeExportLabel"/>
                         </HBox>
                     </VBox>
                     <Separator styleClass="settings-sep"/>
                     <VBox spacing="4" styleClass="settings-card">
                         <HBox alignment="CENTER_LEFT" spacing="8">
                             <CheckBox fx:id="chkAutoDelete" onAction="#onToggleAutoDelete"/>
-                            <Label fx:id="lblAutoDeleteTitle"/>
+                            <Label fx:id="lblAutoDeleteTitle" onMouseClicked="#onClickAutoDelete"/>
                         </HBox>
                         <Label fx:id="lblAutoDeleteDescription" wrapText="true" styleClass="settings-note"/>
                     </VBox>
@@ -101,16 +101,14 @@
                     <VBox spacing="4" styleClass="settings-card">
                         <HBox alignment="CENTER_LEFT" spacing="8">
                             <CheckBox fx:id="chkStartWithWindows" onAction="#onToggleStartWithWindows"/>
-                            <Label fx:id="lblStartWithWindowsTitle"/>
+                            <Label fx:id="lblStartWithWindowsTitle" onMouseClicked="#onClickStartWithWindows"/>
                         </HBox>
                         <Label fx:id="lblStartWithWindowsDescription" wrapText="true" styleClass="settings-note"/>
                     </VBox>
                 </VBox>
             </content>
         </ScrollPane>
-        <Separator styleClass="settings-sep"/>
         <VBox spacing="6" styleClass="settings-card">
-            <Label fx:id="lblPatchTitle" styleClass="settings-field-label"/>
             <HBox spacing="8" alignment="CENTER_LEFT">
                 <Button fx:id="btnEncryptPatch" onAction="#onEncryptPatch"
                         maxWidth="1.7976931348623157E308" styleClass="btn-secondary" HBox.hgrow="ALWAYS"/>

@@ -7,16 +7,17 @@
     -fx-alignment: CENTER-LEFT;
     -fx-border-color: transparent -border-color transparent transparent;
     -fx-padding: 0 12;
+    -fx-font-size: 16px;
 }
 
 /* Keep row and header checkboxes the same compact size in the selection column. */
 .col-select {
     -fx-padding: 0 0;
-    -fx-font-size: 15px;
+    -fx-font-size: 16px;
 }
 
 .col-select .check-box {
-    -fx-font-size: 15px;
+    -fx-font-size: 16px;
 }
 
 .table-view .column-header-background,
@@ -37,12 +38,6 @@
     -fx-border-color: -border-color;
     -fx-table-cell-border-color: -border-color;
     -fx-table-header-border-color: -border-color;
-}
-
-.table-view .table-cell {
-    -fx-alignment: CENTER-LEFT;
-    -fx-border-color: transparent -border-color transparent transparent;
-    -fx-padding: 0 12;
 }
 
 .table-row-cell {
