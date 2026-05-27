@@ -62,15 +62,15 @@
     <Separator orientation="VERTICAL"/>
     <VBox HBox.hgrow="ALWAYS">
 
-        <HBox styleClass="media-viewer-toolbar" alignment="CENTER_LEFT" spacing="6">
-            <Button fx:id="btnPrev" text="◀" onAction="#onPrev" styleClass="icon-btn-pre-next"/>
-            <Button fx:id="btnNext" text="▶" onAction="#onNext" styleClass="icon-btn-pre-next"/>
+        <HBox styleClass="media-viewer-toolbar" alignment="CENTER_LEFT" spacing="8">
+            <Button fx:id="btnPrev" text="◀" onAction="#onPrev" styleClass="icon-btn-control"/>
+            <Button fx:id="btnNext" text="▶" onAction="#onNext" styleClass="icon-btn-control"/>
             <Region HBox.hgrow="ALWAYS"/>
-            <Button fx:id="btnZoomIn" text="＋" onAction="#onZoomIn" styleClass="icon-btn"/>
-            <Button fx:id="btnZoomOut" text="－" onAction="#onZoomOut" styleClass="icon-btn"/>
-            <Button fx:id="btnFit" text="⊡" onAction="#onFit" styleClass="icon-btn"/>
-            <Button fx:id="btnRotateL" text="↺" onAction="#onRotateLeft" styleClass="icon-btn"/>
-            <Button fx:id="btnRotateR" text="↻" onAction="#onRotateRight" styleClass="icon-btn"/>
+            <Button fx:id="btnZoomIn" text="＋" onAction="#onZoomIn" styleClass="icon-btn-control"/>
+            <Button fx:id="btnZoomOut" text="－" onAction="#onZoomOut" styleClass="icon-btn-control"/>
+            <Button fx:id="btnFit" text="⊡" onAction="#onFit" styleClass="icon-btn-control"/>
+            <Button fx:id="btnRotateL" text="↺" onAction="#onRotateLeft" styleClass="icon-btn-control"/>
+            <Button fx:id="btnRotateR" text="↻" onAction="#onRotateRight" styleClass="icon-btn-control"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Label fx:id="lblCounter" styleClass="media-viewer-counter"/>
         </HBox>

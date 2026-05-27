@@ -67,7 +67,7 @@
 
 .message-error {
   -fx-text-fill: -danger;
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
 }
 
 .peek-btn {

@@ -46,8 +46,6 @@
                         <VBox spacing="8" styleClass="settings-split-right" GridPane.columnIndex="1"
                               GridPane.valignment="CENTER">
                             <Button fx:id="btnInfo" maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
-                            <Button fx:id="btnUpdate" maxWidth="1.7976931348623157E308"
-                                    styleClass="settings-action-btn"/>
                         </VBox>
                     </GridPane>
                     <Separator styleClass="settings-sep"/>
@@ -59,6 +57,12 @@
                                     styleClass="btn-secondary"/>
                         </HBox>
                         <CheckBox fx:id="chkAskEveryTimeExport" onAction="#onToggleAskEveryTimeExport"/>
+                        <HBox spacing="8" alignment="CENTER_LEFT">
+                            <Label fx:id="lsbCheckVersion"  styleClass="settings-note"/>
+                            <Region HBox.hgrow="ALWAYS" />
+                            <Button fx:id="btnUpdate" maxWidth="1.7976931348623157E308"
+                                    styleClass="settings-action-btn"/>
+                        </HBox>
                     </VBox>
                 </VBox>
             </content>

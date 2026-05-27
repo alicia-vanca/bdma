@@ -69,6 +69,8 @@ public class UserSettingsDialogController {
     @FXML
     private Button btnUpdate;
     @FXML
+    private Label lsbCheckVersion;
+    @FXML
     private Label lblExportFolderTitle;
     @FXML
     private TextField txtExportPath;
@@ -118,6 +120,7 @@ public class UserSettingsDialogController {
         lblExportFolderTitle.setText(I18n.get("setting.storage.export.title"));
         btnChooseExportFolder.setText(I18n.get("setting.storage.btn.choose"));
         chkAskEveryTimeExport.setText(I18n.get("setting.export.mode.ask.checkbox"));
+        lsbCheckVersion.setText(I18n.get("setting.startWithWindows.checkversion",getVersionCurrent()));
     }
 
     // Keep user settings limited to per-user preferences and safe self-service
@@ -302,5 +305,15 @@ public class UserSettingsDialogController {
                 txtExportPath.setText(settingsService.getExportFolderForUser(session.getCurrentUserId()));
             }
         });
+    }
+    private String getVersionCurrent(){
+        String version = getClass()
+                .getPackage()
+                .getImplementationVersion();
+
+        if (version == null) {
+            version = "Not version";
+        }
+        return version;
     }
 }

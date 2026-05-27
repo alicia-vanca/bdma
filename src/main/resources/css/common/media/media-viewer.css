@@ -35,13 +35,13 @@
 }
 
 .media-viewer-filename {
-    -fx-font-size: 12px;
+    -fx-font-size: 15px;
     -fx-font-weight: 600;
     -fx-text-fill: -text-color;
 }
 
 .media-viewer-meta {
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
     -fx-text-fill: -text-color;
     -fx-opacity: 0.7;
 }
@@ -141,7 +141,7 @@
 .video-speed-combo {
     -fx-pref-width: 75px;
     -fx-pref-height: 28px;
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
 }
 
 .video-ctrl-btn {
