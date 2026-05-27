@@ -717,7 +717,7 @@ public class AdminSettingsDialogController {
         }
         adminSettingsService.getFolderPath(folderType).ifPresent(textField::setText);
     }
-    private String getVersionCurrent(){
+    private String getVersionCurrent() {
         String version = getClass()
                 .getPackage()
                 .getImplementationVersion();
@@ -726,6 +726,7 @@ public class AdminSettingsDialogController {
             version = "Not version";
         }
         return version;
+    }
 
     @FXML
     public void onEncryptPatch() {
