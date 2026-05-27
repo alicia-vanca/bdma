@@ -5,8 +5,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -23,7 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.app.common.exceptions.AppException;
-import com.app.common.repositories.PatchApplyRecordRepository;
+import com.app.common.repositories.PatchApplyRepository;
 
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
@@ -79,10 +77,10 @@ public class PatchCryptoService {
     @Value("${patch.master.key}")
     private String masterKeyHex;
 
-    private final PatchApplyRecordRepository applyRecordRepository;
+    private final PatchApplyRepository applyRecordRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public PatchCryptoService(PatchApplyRecordRepository applyRecordRepository) {
+    public PatchCryptoService(PatchApplyRepository applyRecordRepository) {
         this.applyRecordRepository = applyRecordRepository;
     }
 
@@ -104,7 +102,7 @@ public class PatchCryptoService {
         List<String> statements = parseSqlStatements(sql);
         validateSqlStatements(statements);
 
-        UUID patchId = generatePatchId(plaintext);
+        UUID patchId = UUID.randomUUID();
         byte[] iv = generateIv();
         byte[] key = loadMasterKey();
         byte[] ciphertext;
@@ -402,23 +400,6 @@ public class PatchCryptoService {
             Files.write(path, data);
         } catch (IOException e) {
             throw new AppException("Cannot write output file: " + path, e);
-        }
-    }
-
-    private UUID generatePatchId(byte[] content) {
-        try {
-            MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
-            byte[] hash = sha1.digest(content);
-            // Dùng 16 byte đầu của SHA-1 để tạo UUID v5
-            ByteBuffer bb = ByteBuffer.wrap(Arrays.copyOf(hash, 16));
-            long msb = bb.getLong();
-            long lsb = bb.getLong();
-            // Set version 5 và variant bits
-            msb = (msb & 0xFFFFFFFFFFFF0FFFL) | 0x0000000000005000L;
-            lsb = (lsb & 0x3FFFFFFFFFFFFFFFL) | 0x8000000000000000L;
-            return new UUID(msb, lsb);
-        } catch (NoSuchAlgorithmException e) {
-            throw new AppException("Failed to generate patch ID", e);
         }
     }
 }

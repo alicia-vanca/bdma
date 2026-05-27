@@ -9,8 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.app.common.exceptions.AppException;
-import com.app.common.models.PatchApplyRecord;
-import com.app.common.repositories.PatchApplyRecordRepository;
+import com.app.common.models.PatchApply;
+import com.app.common.repositories.PatchApplyRepository;
 import com.app.common.services.PatchCryptoService.DecryptResult;
 
 /**
@@ -22,11 +22,11 @@ import com.app.common.services.PatchCryptoService.DecryptResult;
 public class PatchApplyService {
 
     private final PatchCryptoService         cryptoService;
-    private final PatchApplyRecordRepository applyRecordRepository;
+    private final PatchApplyRepository applyRecordRepository;
     private final JdbcTemplate               jdbcTemplate;
 
     public PatchApplyService(PatchCryptoService cryptoService,
-                             PatchApplyRecordRepository applyRecordRepository,
+                             PatchApplyRepository applyRecordRepository,
                              JdbcTemplate jdbcTemplate) {
         this.cryptoService        = cryptoService;
         this.applyRecordRepository = applyRecordRepository;
@@ -52,7 +52,7 @@ public class PatchApplyService {
         // 3. Record successful apply — layer-2 duplicate guard via DB UNIQUE constraint
         try {
             applyRecordRepository.save(
-                    new PatchApplyRecord(result.patchId(), encFile.getFileName().toString()));
+                    new PatchApply(result.patchId(), encFile.getFileName().toString()));
         } catch (DataIntegrityViolationException e) {
             throw new AppException(
                     "Patch [" + result.patchId() + "] was applied concurrently by another process. "

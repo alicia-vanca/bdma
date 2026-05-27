@@ -6,34 +6,34 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import com.app.common.exceptions.RepositoryException;
-import com.app.common.models.PatchApplyRecord;
+import com.app.common.models.PatchApply;
 
 @Repository
-public class PatchApplyRecordRepository {
+public class PatchApplyRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public PatchApplyRecordRepository(JdbcTemplate jdbcTemplate) {
+    public PatchApplyRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
     public boolean existsByPatchId(UUID patchId) {
-        String sql = "SELECT COUNT(*) FROM patch_apply_record WHERE patch_id = ?";
+        String sql = "SELECT COUNT(*) FROM patch_apply WHERE patch_id = ?";
         Integer count = jdbcTemplate.queryForObject(sql, Integer.class, patchId.toString());
         return count != null && count > 0;
     }
 
-    public void save(PatchApplyRecord patchApplyRecord) {
+    public void save(PatchApply patchApply) {
         String sql = """
-                INSERT INTO patch_apply_record (patch_id, file_name, applied_at)
+                INSERT INTO patch_apply (patch_id, file_name, applied_at)
                 VALUES (?, ?, datetime('now', 'localtime'))
                 """;
         try {
             jdbcTemplate.update(sql,
-                    patchApplyRecord.getPatchId().toString(),
-                    patchApplyRecord.getFileName());
+                    patchApply.getPatchId().toString(),
+                    patchApply.getFileName());
         } catch (Exception e) {
-            throw new RepositoryException("save failed: " + patchApplyRecord.getPatchId(), e);
+            throw new RepositoryException("save failed: " + patchApply.getPatchId(), e);
         }
     }
 }

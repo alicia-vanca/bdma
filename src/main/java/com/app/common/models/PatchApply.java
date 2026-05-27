@@ -7,14 +7,14 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class PatchApplyRecord {
+public class PatchApply {
 
     private Long id;
     private UUID patchId;
     private String fileName;
     private String appliedAt;
 
-    public PatchApplyRecord(UUID patchId, String fileName) {
+    public PatchApply(UUID patchId, String fileName) {
         this.patchId  = patchId;
         this.fileName = fileName;
     }
