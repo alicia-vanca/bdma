@@ -1,0 +1,13 @@
+.form {
+    -fx-background-color: -card-bg;
+}
+
+/* TEXT */
+.title {
+    -fx-text-fill: -text-color;
+}
+
+/* ERROR */
+.error {
+    -fx-text-fill: -danger;
+}

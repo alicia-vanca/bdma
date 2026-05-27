@@ -23,7 +23,7 @@ repositories {
 
 javafx {
     version = '21'
-    modules = ['javafx.controls', 'javafx.fxml', 'javafx.media']
+    modules = ['javafx.controls', 'javafx.fxml']
 }
 
 dependencies {
@@ -34,11 +34,8 @@ dependencies {
     // ✅ JDBC (nhẹ hơn JPA)
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
 
-    // ✅ SQLite (fork with SQLite3MultipleCiphers encryption support)
-    implementation 'io.github.willena:sqlite-jdbc:3.49.1.0'
-
-    // ✅ Bean Validation (Jakarta Validation + Hibernate Validator)
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // ✅ SQLite
+    implementation 'org.xerial:sqlite-jdbc:3.46.0.0'
 
     // ✅ Flyway (optional - nếu bạn dùng migration)
     implementation 'org.flywaydb:flyway-core:10.15.0'
@@ -59,10 +56,6 @@ dependencies {
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-    implementation 'com.drewnoakes:metadata-extractor:2.19.0'
-    implementation 'com.googlecode.mp4parser:isoparser:1.1.22'
-    implementation 'com.github.jsqlparser:jsqlparser:4.9'
 }
 
 application {

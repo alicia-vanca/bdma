@@ -1,13 +1,7 @@
-/* label text color → đã cover bởi theme-dark/light.css .label rule */
-/* Chỉ giữ layout-specific overrides */
-
-.user-info-grid {
-  -fx-padding: 4 0;
-  /* subtle top/bottom breathing room */
+.content {
+    -fx-background-color: -card-bg;
 }
 
-/* Key labels (cột trái) */
-.user-info-grid .label:nth-child(odd) {
-  -fx-font-weight: 600;
-  -fx-opacity: 0.7;
+.label {
+    -fx-text-fill: -text-color;
 }
