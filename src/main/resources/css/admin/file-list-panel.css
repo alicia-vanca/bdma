@@ -3,12 +3,6 @@
     -fx-font-size: 13px;
 }
 
-.table-view .table-cell {
-    -fx-alignment: CENTER-LEFT;
-    -fx-border-color: transparent -border-color transparent transparent;
-    -fx-padding: 0 12;
-}
-
 /* Keep row and header checkboxes the same compact size in the selection column. */
 .col-select {
     -fx-padding: 0 0;
@@ -43,6 +37,7 @@
     -fx-alignment: CENTER-LEFT;
     -fx-border-color: transparent -border-color transparent transparent;
     -fx-padding: 0 12;
+    -fx-font-size: 16px;
 }
 
 .table-row-cell {
