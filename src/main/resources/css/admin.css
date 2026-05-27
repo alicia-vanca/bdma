@@ -10,6 +10,7 @@
 .header-shell {
   -fx-background-color: -sidebar-bg;
   -fx-padding: 8 23;
+  fx-alignment: center;
 }
 
 .top-bar {
@@ -58,7 +59,7 @@
   -fx-background-color: transparent;
   -fx-text-fill: -text-color;
   -fx-background-radius: 6;
-  -fx-padding: 5 14;
+  -fx-padding: 7 12;
   -fx-min-width: 140;
   -fx-pref-width: 140;
   -fx-max-width: 140;
@@ -66,7 +67,6 @@
   -fx-max-height: 28;
   -fx-alignment: CENTER;
 }
-
 /* ── NOTICE OVERLAY ─────────────────────────────────────────────── */
 .notice-container {
   -fx-padding: 0 0 30 0;

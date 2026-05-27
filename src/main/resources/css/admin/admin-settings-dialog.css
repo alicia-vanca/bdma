@@ -87,7 +87,7 @@
 }
 
 .settings-note {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
   -fx-opacity: 0.75;
 }
 
@@ -102,7 +102,7 @@
 }
 
 .settings-warning {
-  -fx-font-size: 12px;
+  -fx-font-size: 13px;
   -fx-text-fill: -warning-color;
 }
 

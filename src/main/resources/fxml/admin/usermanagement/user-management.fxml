@@ -23,7 +23,7 @@
             <Region HBox.hgrow="ALWAYS"/>
             <Button text="%user.add" onAction="#onAdd" styleClass="btn-primary"/>
         </HBox>
-        <TableView fx:id="table" VBox.vgrow="ALWAYS" fixedCellSize="40">
+        <TableView fx:id="table" VBox.vgrow="ALWAYS" fixedCellSize="40" styleClass="table-view">
             <columnResizePolicy>
                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
             </columnResizePolicy>

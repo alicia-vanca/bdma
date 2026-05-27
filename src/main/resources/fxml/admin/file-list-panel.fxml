@@ -13,7 +13,7 @@
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.layout.controllers.FileListController"
       stylesheets="@/css/admin/file-list-panel.css"
-      style="-fx-font-size: 18px;" spacing="12" VBox.vgrow="ALWAYS">
+      spacing="12" VBox.vgrow="ALWAYS">
     <HBox spacing="8" alignment="CENTER_LEFT" styleClass="filter-bar">
         <HBox spacing="4" alignment="CENTER_LEFT">
             <DatePicker fx:id="dateFromPicker" promptText="%filter.dateFrom"/>

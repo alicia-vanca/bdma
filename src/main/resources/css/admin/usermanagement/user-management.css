@@ -4,6 +4,7 @@
   -fx-border-color: -border-color;
   -fx-table-cell-border-color: -border-color;
   -fx-table-header-border-color: -border-color;
+  -fx-font-size: 13px;
 }
 
 .table-view .column-header,
