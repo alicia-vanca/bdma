@@ -305,7 +305,6 @@ public class FileListController {
 
                     FileView fileView = getTableRow() == null ? null : getTableRow().getItem();
                     if (fileView == null) {
-                        log.debug("Ignoring file selection click because row item is unavailable");
                         event.consume();
                         return;
                     }
@@ -344,8 +343,6 @@ public class FileListController {
         boolean shouldSelect = isFileUnselected(targetKey);
         setFileSelected(targetKey, fileView, shouldSelect);
         selectionAnchorKey = targetKey;
-        log.debug("File checkbox click: key={}, selected={}, ctrl={}, shift={}, selectedCount={}",
-                targetKey, shouldSelect, controlDown, shiftDown, getSelectedCount());
         refreshSelectionUi();
     }
 
@@ -357,14 +354,12 @@ public class FileListController {
     private void applyShiftSelection(String targetKey) {
         List<FileView> pageItems = fileTable.getItems();
         if (pageItems == null || pageItems.isEmpty()) {
-            log.debug("Ignoring shift selection because the current page is empty");
             return;
         }
 
         int targetIndex = findPageIndexBySelectionKey(targetKey);
         int anchorIndex = selectionAnchorKey == null ? -1 : findPageIndexBySelectionKey(selectionAnchorKey);
         if (targetIndex < 0) {
-            log.debug("Ignoring shift selection because target key was not found on page: {}", targetKey);
             return;
         }
         if (anchorIndex < 0) {
@@ -379,9 +374,6 @@ public class FileListController {
             setFileSelected(selectionKey(pageFileView), pageFileView, shouldSelect);
         }
         selectionAnchorKey = targetKey;
-        log.debug(
-                "File checkbox shift selection: anchorIndex={}, targetIndex={}, from={}, to={}, selected={}, selectedCount={}",
-                anchorIndex, targetIndex, from, to, shouldSelect, getSelectedCount());
         refreshSelectionUi();
     }
 
@@ -461,8 +453,6 @@ public class FileListController {
 
         boolean shouldSelect = selectAllCheckBox.isSelected();
         applySelectionToCurrentPage(shouldSelect);
-        log.debug("File checkbox select-all: selected={}, pageSize={}, selectedCount={}",
-                shouldSelect, fileTable.getItems().size(), getSelectedCount());
 
         refreshSelectionUi();
     }
@@ -1029,7 +1019,6 @@ public class FileListController {
         cachedFileViews.clear();
         verificationExecutor.shutdownNow();
         fileVerificationCache.clear();
-        log.debug("FileListController cleanup: executor shutdown, cache cleared");
     }
 
     private String shortenFileName(String fileName) {
@@ -1057,7 +1046,8 @@ public class FileListController {
             row.setOnMouseClicked(event -> {
                 if (event.getClickCount() == 2 && !row.isEmpty()) {
                     FileView clicked = row.getItem();
-                    if (!mediaViewerService.isViewable(clicked.type())) return;
+                    if (!mediaViewerService.isViewable(clicked.type()))
+                        return;
 
                     Stage owner = (Stage) fileTable.getScene().getWindow();
                     mediaViewerService.open(filteredFiles, clicked, owner);

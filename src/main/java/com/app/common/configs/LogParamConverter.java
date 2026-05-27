@@ -4,10 +4,9 @@ import ch.qos.logback.classic.pattern.ClassicConverter;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 
 /**
- * Logback converter that reads device ID or app version directly from the
- * static AppContext, making them available on every thread without MDC
- * initialization.
- * Usage in pattern: %appCtx{deviceId} or %appCtx{version}
+ * Logback converter that reads app identity values directly from the static
+ * AppContext, making them available on every thread without MDC initialization.
+ * Usage in pattern: %appCtx{deviceId}, %appCtx{deviceName}, or %appCtx{version}
  */
 public class LogParamConverter extends ClassicConverter {
 
@@ -24,6 +23,9 @@ public class LogParamConverter extends ClassicConverter {
             case "deviceId":
                 String id = AppContext.getDeviceId();
                 return id != null ? id : "";
+            case "deviceName":
+                String name = AppContext.getDeviceName();
+                return name != null ? name : "";
             default:
                 return "";
         }
