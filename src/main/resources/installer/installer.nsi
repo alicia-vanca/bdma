@@ -48,12 +48,13 @@ Var RadioUninstallDelete
 Var UserChoice
 Var IsInstalled
 
-; ── Trang chọn action (chỉ hiện khi đã cài) ─────────────────────
+; ── Action selection page (only shown when already installed) ────
 Page custom ShowActionDialog ShowActionDialogLeave
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW InstFilesPageShow
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-; ── Detect đã cài chưa ──────────────────────────────────────────
+; ── Check if already installed ──────────────────────────────────
 Function .onInit
   ReadRegStr $IsInstalled HKLM "Software\BDMA" "InstallDir"
   ${If} $IsInstalled == ""
@@ -73,29 +74,40 @@ Function .onInit
     StrCpy $UserChoice "1"
 FunctionEnd
 
-; ── Dialog 3 lựa chọn ───────────────────────────────────────────
+; ── Override instfiles page header based on action ──────────────
+Function InstFilesPageShow
+  ${If} $UserChoice == "2"
+    !insertmacro MUI_HEADER_TEXT "Uninstall BDMA" "Please wait while BDMA is being uninstalled..."
+  ${ElseIf} $UserChoice == "3"
+    !insertmacro MUI_HEADER_TEXT "Uninstall BDMA" "Please wait while BDMA and its data are being removed..."
+  ${Else}
+    !insertmacro MUI_HEADER_TEXT "Install BDMA" "Please wait while BDMA is being installed..."
+  ${EndIf}
+FunctionEnd
+
+; ── 3-option dialog ─────────────────────────────────────────────
 Function ShowActionDialog
   ${If} $IsInstalled == "0"
-    Abort ; Chưa cài → bỏ qua trang này, install thẳng
+    Abort ; Not installed → skip this page and go straight to install
   ${EndIf}
 
-  !insertmacro MUI_HEADER_TEXT "BDMA đã được cài đặt" "Vui lòng chọn hành động"
+  !insertmacro MUI_HEADER_TEXT "BDMA is already installed" "Please choose an action"
   GetDlgItem $0 $HWNDPARENT 1
-  SendMessage $0 ${WM_SETTEXT} 0 "STR:Tiếp tục"
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:Continue"
 
   nsDialogs::Create 1018
   Pop $Dialog
 
-  ${NSD_CreateLabel} 0 0 100% 24u "BDMA đã được cài đặt trên máy của bạn. Bạn muốn làm gì?"
+  ${NSD_CreateLabel} 0 0 100% 24u "BDMA is already installed on your machine. What would you like to do?"
 
-  ${NSD_CreateRadioButton} 10u 34u 100% 14u "Cài đặt lại / Cập nhật"
+  ${NSD_CreateRadioButton} 10u 34u 100% 14u "Reinstall / Update"
   Pop $RadioInstall
   ${NSD_SetState} $RadioInstall ${BST_CHECKED}
 
-  ${NSD_CreateRadioButton} 10u 52u 100% 14u "Gỡ cài đặt"
+  ${NSD_CreateRadioButton} 10u 52u 100% 14u "Uninstall"
   Pop $RadioUninstall
 
-  ${NSD_CreateRadioButton} 10u 70u 100% 14u "Gỡ cài đặt và xóa toàn bộ dữ liệu"
+  ${NSD_CreateRadioButton} 10u 70u 100% 14u "Uninstall and delete all data"
   Pop $RadioUninstallDelete
 
   nsDialogs::Show
@@ -107,23 +119,23 @@ Function ShowActionDialogLeave
 
   ${If} $0 == ${BST_CHECKED}
     StrCpy $UserChoice "1"
-    SendMessage $1 ${WM_SETTEXT} 0 "STR:Cài đặt"
+    SendMessage $1 ${WM_SETTEXT} 0 "STR:Install"
     Goto done
   ${EndIf}
 
   ${NSD_GetState} $RadioUninstall $0
   ${If} $0 == ${BST_CHECKED}
     StrCpy $UserChoice "2"
-    SendMessage $1 ${WM_SETTEXT} 0 "STR:Gỡ cài đặt"
+    SendMessage $1 ${WM_SETTEXT} 0 "STR:Uninstall"
     Goto done
   ${EndIf}
 
   StrCpy $UserChoice "3"
-  SendMessage $1 ${WM_SETTEXT} 0 "STR:Gỡ cài đặt"
+  SendMessage $1 ${WM_SETTEXT} 0 "STR:Uninstall"
   done:
 FunctionEnd
 
-; ── Đảm bảo app đã đóng trước khi gỡ ───────────────────────────
+; ── Ensure app is closed before uninstalling ────────────────────
 Function EnsureAppClosed
   nsExec::ExecToStack '$SYSDIR\cmd.exe /C tasklist /FI "IMAGENAME eq BDMA.exe" /NH | find /I "BDMA.exe"'
   Pop $0 ; exit code
@@ -131,7 +143,7 @@ Function EnsureAppClosed
 
   ${If} $0 == 0
     MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION \
-      "BDMA đang chạy. Nhấn OK để đóng ứng dụng và tiếp tục gỡ cài đặt." \
+      "BDMA is currently running. Click OK to close the application and continue uninstalling." \
       IDOK kill IDCANCEL cancel
     cancel:
       Abort
@@ -141,7 +153,7 @@ Function EnsureAppClosed
   ${EndIf}
 FunctionEnd
 
-; ── Section chính ───────────────────────────────────────────────
+; ── Main section ────────────────────────────────────────────────
 Section "Main" SecMain
   ${If} $UserChoice == "2"
     Call DoUninstall
@@ -186,12 +198,12 @@ Section "Main" SecMain
   CreateShortcut "$DESKTOP\BDMA.lnk" "$INSTDIR\BDMA.exe"
   CreateDirectory "$SMPROGRAMS\BDMA"
   CreateShortcut "$SMPROGRAMS\BDMA\BDMA.lnk" "$INSTDIR\BDMA.exe"
-  CreateShortcut "$SMPROGRAMS\BDMA\Gỡ cài đặt.lnk" "$INSTDIR\BDMA-Setup.exe"
+  CreateShortcut "$SMPROGRAMS\BDMA\Uninstall.lnk" "$INSTDIR\BDMA-Setup.exe"
 
   ; Disable AutoPlay to prevent Windows popup when body camera connected
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun" 0xFF
 
-  MessageBox MB_OK "Cài đặt BDMA thành công!"
+  MessageBox MB_OK "BDMA has been installed successfully!"
 SectionEnd
 
 ; ── Uninstall ───────────────────────────────────────────────────
@@ -204,7 +216,7 @@ Function DoUninstall
 
   Delete "$DESKTOP\BDMA.lnk"
   Delete "$SMPROGRAMS\BDMA\BDMA.lnk"
-  Delete "$SMPROGRAMS\BDMA\Gỡ cài đặt.lnk"
+  Delete "$SMPROGRAMS\BDMA\Uninstall.lnk"
   RMDir "$SMPROGRAMS\BDMA"
 
   DeleteRegKey HKLM "Software\BDMA"
@@ -223,10 +235,10 @@ Function DoUninstall
   FileClose $1
   Exec '"$SYSDIR\cmd.exe" /C start "" /min "$0"'
 
-  MessageBox MB_OK "Gỡ cài đặt BDMA thành công!"
+  MessageBox MB_OK "BDMA has been uninstalled successfully!"
 FunctionEnd
 
-; ── Xóa data ────────────────────────────────────────────────────
+; ── Delete app data ─────────────────────────────────────────────
 Function DeleteData
   StrCpy $0 "${APP_DATA_DIR}" 4 -4
   ${If} $0 != "bdma"

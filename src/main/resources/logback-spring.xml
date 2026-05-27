@@ -2,11 +2,11 @@
     <conversionRule conversionWord="appCtx"
         converterClass="com.app.common.configs.LogParamConverter" />
 
-    <property name="APP_DIR" value="${user.home}/AppData/Local/bdma"/>
-    <property name="LOG_DIR" value="${APP_DIR}/logs"/>
+    <property name="APP_DIR" value="${user.home}/AppData/Local/bdma" />
+    <property name="LOG_DIR" value="${APP_DIR}/logs" />
 
     <property name="LOG_PATTERN"
-        value="%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} device=%appCtx{deviceId} version=%appCtx{version} message:%n%msg%n%n" />
+        value="%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} deviceId=%appCtx{deviceId} deviceName=%appCtx{deviceName} version=%appCtx{version} message:%n%msg%n%n" />
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/app.log</file>
@@ -21,34 +21,26 @@
         </rollingPolicy>
     </appender>
 
-    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <filter class="ch.qos.logback.classic.filter.LevelFilter">
-            <level>ERROR</level>
-            <onMatch>ACCEPT</onMatch>
-            <onMismatch>DENY</onMismatch>
-        </filter>
-
-        <encoder>
-            <pattern>${LOG_PATTERN}</pattern>
-        </encoder>
-
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_DIR}/error-%d{yyyy-MM-dd}.log</fileNamePattern>
-            <maxHistory>14</maxHistory>
-        </rollingPolicy>
+    <appender name="LOGLY" class="com.app.common.modules.loggly.LogglyQueuedAppender">
+        <endpointUrl>https://logs-01.loggly.com/inputs/${LOGGLY_TOKEN}/tag/java-app</endpointUrl>
+        <retryIntervalMillis>5000</retryIntervalMillis>
     </appender>
 
     <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
-        <appender-ref ref="FILE"/>
+        <appender-ref ref="FILE" />
     </appender>
 
-    <appender name="ASYNC_ERROR" class="ch.qos.logback.classic.AsyncAppender">
-        <appender-ref ref="ERROR_FILE"/>
+    <appender name="ASYNC_LOGLY" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <maxFlushTime>0</maxFlushTime>
+        <appender-ref ref="LOGLY" />
     </appender>
+
+    <logger name="com.app" level="DEBUG" />
 
     <root level="INFO">
-        <appender-ref ref="ASYNC_FILE"/>
-        <appender-ref ref="ASYNC_ERROR"/>
+        <appender-ref ref="ASYNC_FILE" />
+        <appender-ref ref="ASYNC_LOGLY" />
     </root>
 
 </configuration>
