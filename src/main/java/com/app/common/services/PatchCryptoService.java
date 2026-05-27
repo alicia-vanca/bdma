@@ -21,7 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.app.common.exceptions.AppException;
-import com.app.common.repositories.PatchApplyRepository;
+import com.app.common.repositories.PatchApplyLogRepository;
 
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
@@ -77,11 +77,11 @@ public class PatchCryptoService {
     @Value("${patch.master.key}")
     private String masterKeyHex;
 
-    private final PatchApplyRepository applyRecordRepository;
+    private final PatchApplyLogRepository patchApplyLogRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public PatchCryptoService(PatchApplyRepository applyRecordRepository) {
-        this.applyRecordRepository = applyRecordRepository;
+    public PatchCryptoService(PatchApplyLogRepository patchApplyLogRepository) {
+        this.patchApplyLogRepository = patchApplyLogRepository;
     }
 
     // =========================================================================
@@ -144,7 +144,7 @@ public class PatchCryptoService {
         UUID patchId = bytesToUuid(raw);
 
         // Guard against duplicate apply BEFORE decryption
-        if (applyRecordRepository.existsByPatchId(patchId)) {
+        if (patchApplyLogRepository.existsByPatchId(patchId)) {
             throw new AppException(
                     "Patch [" + patchId + "] has already been applied. Aborting to prevent duplicate execution.");
         }

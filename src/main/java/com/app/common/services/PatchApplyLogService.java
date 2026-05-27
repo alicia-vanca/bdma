@@ -9,8 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.app.common.exceptions.AppException;
-import com.app.common.models.PatchApply;
-import com.app.common.repositories.PatchApplyRepository;
+import com.app.common.models.PatchApplyLog;
+import com.app.common.repositories.PatchApplyLogRepository;
 import com.app.common.services.PatchCryptoService.DecryptResult;
 
 /**
@@ -19,14 +19,14 @@ import com.app.common.services.PatchCryptoService.DecryptResult;
  * <p>Duplicate patch execution is protected by a pre-check and a DB unique constraint.
  */
 @Service
-public class PatchApplyService {
+public class PatchApplyLogService {
 
     private final PatchCryptoService         cryptoService;
-    private final PatchApplyRepository applyRecordRepository;
+    private final PatchApplyLogRepository applyRecordRepository;
     private final JdbcTemplate               jdbcTemplate;
 
-    public PatchApplyService(PatchCryptoService cryptoService,
-                             PatchApplyRepository applyRecordRepository,
+    public PatchApplyLogService(PatchCryptoService cryptoService,
+                             PatchApplyLogRepository applyRecordRepository,
                              JdbcTemplate jdbcTemplate) {
         this.cryptoService        = cryptoService;
         this.applyRecordRepository = applyRecordRepository;
@@ -52,7 +52,7 @@ public class PatchApplyService {
         // 3. Record successful apply — layer-2 duplicate guard via DB UNIQUE constraint
         try {
             applyRecordRepository.save(
-                    new PatchApply(result.patchId(), encFile.getFileName().toString()));
+                    new PatchApplyLog(result.patchId(), encFile.getFileName().toString()));
         } catch (DataIntegrityViolationException e) {
             throw new AppException(
                     "Patch [" + result.patchId() + "] was applied concurrently by another process. "

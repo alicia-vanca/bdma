@@ -42,7 +42,7 @@ import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.repositories.RestoreFailureRepository;
 import com.app.common.services.DriveResolverService;
-import com.app.common.services.PatchApplyService;
+import com.app.common.services.PatchApplyLogService;
 import com.app.common.services.PatchCryptoService;
 import com.app.common.services.UserSettingService;
 
@@ -77,7 +77,7 @@ public class AdminSettingsDialogController {
 
     private final AdminSettingsDialogService adminSettingsService;
     private final PatchCryptoService patchCryptoService;
-    private final PatchApplyService patchApplyService;
+    private final PatchApplyLogService patchApplyLogService;
     private final Session session;
     private final UserSettingService userSettingService;
     private final AppUpdateController appUpdateController;
@@ -168,7 +168,7 @@ public class AdminSettingsDialogController {
     public AdminSettingsDialogController(
             AdminSettingsDialogService adminSettingsService,
             PatchCryptoService patchCryptoService,
-            PatchApplyService patchApplyService,
+            PatchApplyLogService patchApplyLogService,
             Session session,
             UserSettingService userSettingService,
             AppUpdateController appUpdateController,
@@ -181,7 +181,7 @@ public class AdminSettingsDialogController {
             RestoreFailureRepository restoreFailureRepository) {
         this.adminSettingsService = adminSettingsService;
         this.patchCryptoService = patchCryptoService;
-        this.patchApplyService = patchApplyService;
+        this.patchApplyLogService = patchApplyLogService;
         this.session = session;
         this.userSettingService = userSettingService;
         this.appUpdateController = appUpdateController;
@@ -745,7 +745,7 @@ public class AdminSettingsDialogController {
         if (selected == null) return;
 
         try {
-            patchApplyService.apply(selected.toPath());
+            patchApplyLogService.apply(selected.toPath());
             Files.deleteIfExists(selected.toPath());
             showNotice(I18n.get("setting.patch.apply.success"), true);
         } catch (Exception e) {

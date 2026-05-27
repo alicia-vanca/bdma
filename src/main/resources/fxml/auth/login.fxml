@@ -18,7 +18,7 @@
         <VBox spacing="10">
             <TextField fx:id="username" promptText="%login.username" maxWidth="1.7976931348623157E308"/>
             <StackPane>
-                <TextField editable="false" mouseTransparent="true" styleClass="input"/>
+                <TextField editable="false" mouseTransparent="true" focusTraversable="false" styleClass="input"/>
 
                 <HBox alignment="CENTER_LEFT" style="-fx-background-color: transparent;">
                     <PasswordField fx:id="password" promptText="%login.password"
