@@ -9,6 +9,7 @@ build/
 .kotlin
 
 ### IntelliJ IDEA ###
+.idea/
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
@@ -41,7 +42,12 @@ bin/
 
 ### VS Code ###
 .vscode/
+
+### AI/Agent Instruction Files ###
+AGENTS.md
+TODO.md
 .github/copilot-instructions.md
+.github/instructions/code-style.instructions.md
 
 ### Mac OS ###
 .DS_Store

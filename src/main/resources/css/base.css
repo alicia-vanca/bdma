@@ -1,62 +1,212 @@
 .root {
-    -fx-font-family: "Segoe UI";
+  -fx-font-family: "Segoe UI";
+  -fx-font-size: 13px;
 }
 
 /* COMMON LAYOUT */
+.content-shell {
+  -fx-background-color: transparent;
+  -fx-padding: 10;
+}
+
 .content {
-    -fx-background-radius: 12;
-    -fx-padding: 20;
+  -fx-background-color: -card-bg;
+  -fx-border-color: -border-color;
+  -fx-border-width: 1;
+  -fx-border-radius: 8;
+  -fx-background-radius: 8;
+  -fx-padding: 10;
 }
 
 /* TEXT */
 .title {
-    -fx-font-size: 20px;
-    -fx-font-weight: bold;
+  -fx-font-size: 16px;
+  -fx-font-weight: bold;
 }
 
 /* INPUT */
 .input {
-    -fx-background-radius: 6;
-    -fx-border-radius: 6;
-    -fx-padding: 8;
-    -fx-pref-height: 34;
-    -fx-min-height: 34;
+  -fx-background-radius: 6;
+  -fx-border-radius: 6;
+  -fx-padding: 8;
+  -fx-pref-height: 34;
+  -fx-min-height: 34;
 }
 
 /* BUTTON */
 .btn-primary,
 .btn-secondary {
-    -fx-pref-height: 34;
-    -fx-padding: 0 16;
-    -fx-alignment: CENTER;
-    -fx-background-radius: 6;
+  -fx-pref-height: 34;
+  -fx-padding: 0 16;
+  -fx-alignment: CENTER;
+  -fx-background-radius: 6;
+}
+.btn-primary-small {
+  -fx-padding: 1 12;
+  -fx-alignment: CENTER;
+  -fx-text-fill: white;
+  -fx-background-color: -primary;
+  -fx-background-radius: 6;
 }
 
+.btn-primary-small:hover {
+  -fx-background-color: -primary-hover;
+}
+
+.btn-primary-small:disabled {
+  -fx-opacity: 1;
+  -fx-text-fill: #94a3b8;
+  -fx-background-color: #e2e8f0;
+}
+
+/* COMBO BOX */
 .combo-box {
-    -fx-background-radius: 6;
-    -fx-border-radius: 6;
-    -fx-pref-height: 34;
-    -fx-min-height: 34;
-    /* KHÔNG set padding cho ComboBox — nó tự quản lý nội bộ */
+  -fx-background-radius: 6;
+  -fx-border-radius: 6;
+  -fx-pref-height: 34;
+  -fx-min-height: 34;
 }
 
-/* TABLE */
+/* TABLE cell padding */
 .table-cell {
-    -fx-padding: 8;
+  -fx-padding: 6 12;
 }
 
 /* FORM */
 .form {
-    -fx-padding: 20;
-    -fx-spacing: 12;
-    -fx-background-radius: 10;
+  -fx-padding: 20;
+  -fx-spacing: 14;
+}
+
+/* ICON BUTTON */
+.icon-btn {
+  -fx-background-color: transparent;
+  -fx-text-fill: -text-color;
+  -fx-border-color: -border-color;
+  -fx-border-width:2;
+  -fx-border-radius: 6;
+  -fx-background-radius: 6;
+  -fx-padding: 4 8;
+  -fx-font-size: 18px;
+  -fx-cursor: hand;
+}
+
+.icon-btn:hover {
+  -fx-background-color: -table-hover;
+}
+.icon-btn-control{
+  -fx-background-color: transparent;
+  -fx-text-fill: -text-color;
+  -fx-border-color: -border-color;
+  -fx-border-width:2;
+  -fx-border-radius: 6;
+  -fx-background-radius: 6;
+  -fx-padding: 4 8;
+  -fx-font-size: 23px;
+  -fx-cursor: hand;
+}
+.icon-btn-control:hover {
+  -fx-background-color: -table-hover;
+}
+
+/* SETTINGS POPUP */
+.settings-popup-panel {
+  -fx-background-color: -card-bg;
+  -fx-border-color: -border-color;
+  -fx-border-width: 1;
+  -fx-spacing: 12;
+  -fx-padding: 20;
+  -fx-min-width: 420;
+  -fx-pref-width: 420;
+  -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.22), 18, 0.2, 0, 5);
+}
+
+.settings-popup-panel .settings-segment-row {
+  -fx-spacing: 10;
+}
+
+/* DIALOG CONTAINER */
+.dialog-container {
+  -fx-background-color: -card-bg;
+  -fx-border-color: -border-color;
+  -fx-border-width: 1;
+  -fx-padding: 20;
+  -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.22), 18, 0.2, 0, 5);
+}
+
+/* SPACERS */
+.popup-spacer {
+  -fx-pref-height: 16;
+}
+
+.popup-header-spacer {
+  -fx-pref-height: 10;
+}
+
+/* SETTINGS */
+.settings-title {
+  -fx-font-size: 16px;
+  -fx-font-weight: 700;
+  -fx-text-fill: -text-color;
+}
+
+.settings-section-label {
+  -fx-font-size: 13px;
+  -fx-font-weight: 600;
+  -fx-text-fill: -text-color;
+}
+
+.settings-segment-row {
+  -fx-alignment: CENTER_LEFT;
+}
+
+.settings-segment-btn {
+  -fx-background-color: transparent;
+  -fx-text-fill: -text-color;
+  -fx-border-color: -border-color;
+  -fx-border-radius: 6;
+  -fx-background-radius: 6;
+  -fx-padding: 6 12;
+  -fx-alignment: CENTER;
+  -fx-cursor: hand;
+}
+
+.settings-segment-btn:hover {
+  -fx-background-color: -table-hover;
+}
+
+.settings-segment-btn.active-button {
+  -fx-background-color: -primary;
+  -fx-text-fill: white;
+  -fx-border-color: -primary;
+}
+
+.settings-action-btn {
+  -fx-background-color: transparent;
+  -fx-text-fill: -text-color;
+  -fx-border-color: -border-color;
+  -fx-border-radius: 6;
+  -fx-background-radius: 6;
+  -fx-padding: 6 12;
+  -fx-alignment: CENTER;
+  -fx-cursor: hand;
+}
+
+.settings-action-btn:hover {
+  -fx-background-color: -table-hover;
+}
+
+.settings-actions-column {
+  -fx-fill-width: true;
 }
 
 /* MESSAGE */
 .label.message-success {
-    -fx-text-fill: #27ae60;
+  -fx-text-fill: #27ae60;
 }
 
 .label.message-error {
-    -fx-text-fill: #c0392b;
+  -fx-text-fill: #c0392b;
+  -fx-min-height: 24;
+  -fx-padding: 2 0 0 0;
 }
