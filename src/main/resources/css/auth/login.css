@@ -39,12 +39,6 @@
   -fx-border-radius: 6;
 }
 
-.login-card .text-field:focused,
-.login-card .password-field:focused {
-  -fx-background-color: -input-focus-bg;
-  -fx-border-color: -primary;
-}
-
 .login-card .stack-pane {
   -fx-pref-height: 38;
   -fx-min-height: 38;

@@ -180,7 +180,7 @@ public final class AppRuntimeInitializer {
         return hex.toString();
     }
 
-    static String toRawKey(byte[] bytes) {
+    public static String toRawKey(byte[] bytes) {
         return "raw:" + toHexString(bytes);
     }
 
