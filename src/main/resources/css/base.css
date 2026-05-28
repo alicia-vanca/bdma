@@ -88,11 +88,13 @@
   -fx-background-radius: 6;
   -fx-padding: 4 8;
   -fx-font-size: 18px;
+  -fx-background-insets: 1.5;
   -fx-cursor: hand;
 }
 
 .icon-btn:hover {
   -fx-background-color: -table-hover;
+  -fx-background-insets: 1.5;
 }
 .icon-btn-control{
   -fx-background-color: transparent;
@@ -103,12 +105,12 @@
   -fx-background-radius: 6;
   -fx-padding: 4 8;
   -fx-font-size: 23px;
-  -fx-background-insets: 2px;
+  -fx-background-insets: 1.5;
   -fx-cursor: hand;
 }
 .icon-btn-control:hover {
   -fx-background-color: -table-hover;
-  -fx-background-insets: 2px;
+  -fx-background-insets: 1.5;
 }
 
 /* SETTINGS POPUP */
