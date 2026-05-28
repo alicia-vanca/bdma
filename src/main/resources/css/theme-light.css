@@ -520,3 +520,14 @@
   -fx-background-color: -primary;
   -fx-text-fill: white;
 }
+.icon-btn-control{
+  -fx-background-color: transparent;
+  -fx-text-fill: -text-color;
+  -fx-border-color: #cbd5e1;
+  -fx-border-width:2;
+  -fx-border-radius: 6;
+  -fx-background-radius: 6;
+  -fx-padding: 4 8;
+  -fx-font-size: 23px;
+  -fx-cursor: hand;
+}

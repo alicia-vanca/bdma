@@ -57,6 +57,7 @@
                                     styleClass="btn-secondary"/>
                         </HBox>
                         <CheckBox fx:id="chkAskEveryTimeExport" onAction="#onToggleAskEveryTimeExport"/>
+                        <Separator styleClass="settings-sep"/>
                         <HBox spacing="8" alignment="CENTER_LEFT">
                             <Label fx:id="lsbCheckVersion"  styleClass="settings-note"/>
                             <Region HBox.hgrow="ALWAYS" />
