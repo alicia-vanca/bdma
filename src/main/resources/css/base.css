@@ -103,12 +103,10 @@
   -fx-background-radius: 6;
   -fx-padding: 4 8;
   -fx-font-size: 23px;
-  -fx-background-insets: 2px;
   -fx-cursor: hand;
 }
 .icon-btn-control:hover {
   -fx-background-color: -table-hover;
-  -fx-background-insets: 2px;
 }
 
 /* SETTINGS POPUP */
