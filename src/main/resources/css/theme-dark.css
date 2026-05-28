@@ -520,3 +520,6 @@
     -fx-background-color: -primary;
     -fx-text-fill: white;
 }
+.icon-btn-control{
+    -fx-border-color: -border-color;
+}
