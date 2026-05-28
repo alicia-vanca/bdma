@@ -16,7 +16,7 @@
         fx:controller="com.app.user.settingsdialog.controllers.UserSettingsDialogController"
         styleClass="form,dialog-container,settings-dialog-container">
     <VBox fx:id="panel" styleClass="settings-dialog-body">
-        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+        <ScrollPane fitToWidth="true" fitToHeight="true" hbarPolicy="NEVER" vbarPolicy="NEVER"
                     styleClass="settings-dialog-scroll" VBox.vgrow="ALWAYS">
             <content>
                 <VBox spacing="0" fillWidth="true">
