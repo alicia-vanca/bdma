@@ -102,6 +102,7 @@
                             <Label fx:id="lblStartWithWindowsTitle" onMouseClicked="#onClickStartWithWindows"/>
                         </HBox>
                         <Label fx:id="lblStartWithWindowsDescription" wrapText="true" styleClass="settings-note"/>
+                        <Separator styleClass="settings-sep"/>
                         <HBox spacing="8" alignment="CENTER_LEFT">
                             <Label fx:id="lsbCheckVersion"  styleClass="settings-note"/>
                             <Region HBox.hgrow="ALWAYS" />
@@ -109,6 +110,7 @@
                                     styleClass="settings-action-btn"/>
                         </HBox>
                     </VBox>
+                    <Separator styleClass="settings-sep"/>
                 </VBox>
             </content>
         </ScrollPane>
