@@ -34,6 +34,9 @@ dependencies {
     // ✅ JDBC (nhẹ hơn JPA)
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
 
+    //Spring AOP
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+
     // ✅ SQLite (fork with SQLite3MultipleCiphers encryption support)
     implementation 'io.github.willena:sqlite-jdbc:3.49.1.0'
 
