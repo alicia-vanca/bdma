@@ -29,7 +29,8 @@ public class ValidatedDeviceRepository {
         device.setId(rs.getLong("id"));
         device.setDeviceName(rs.getString("device_name"));
         device.setHardwareId(rs.getString("hardware_id"));
-        device.setWhitelistId(rs.getString("whitelist_id"));
+        long whitelistId = rs.getLong("whitelist_id");
+        device.setWhitelistId(rs.wasNull() ? null : whitelistId);
         device.setValidatedAt(rs.getString("validated_at"));
         device.setLastSeenAt(rs.getString("last_seen_at"));
         device.setCameraId(rs.getString("camera_id"));
@@ -45,9 +46,10 @@ public class ValidatedDeviceRepository {
         }
     }
 
-    public ValidatedDevice saveOrUpdate(String cameraId, String hardwareId, String whitelistId) {
+    public ValidatedDevice saveOrUpdate(String cameraId, String hardwareId, Long whitelistId) {
         return jdbcTemplate.queryForObject(
-                "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) " +
+                "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) "
+                        +
                         "VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), ?) " +
                         "ON CONFLICT (camera_id) DO UPDATE SET " +
                         "hardware_id = excluded.hardware_id, " +
@@ -63,10 +65,10 @@ public class ValidatedDeviceRepository {
 
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) " +
+                    "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) "
+                            +
                             "VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), ?)",
-                    Statement.RETURN_GENERATED_KEYS
-            );
+                    Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, validatedDevice.getDeviceName());
             ps.setObject(2, validatedDevice.getHardwareId());
             ps.setObject(3, validatedDevice.getWhitelistId());

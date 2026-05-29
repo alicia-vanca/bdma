@@ -1,0 +1,191 @@
+.patch-create-shell {
+    -fx-spacing: 12px;
+}
+
+.patch-editor-shell {
+    -fx-spacing: 10px;
+}
+
+.patch-builder-panel {
+    -fx-pref-width: 500px;
+    -fx-min-width: 200px;
+    -fx-max-width: 500px;
+    -fx-spacing: 10px;
+    -fx-padding: 14px 0 14px 14px;
+    -fx-background-color: -card-bg;
+    -fx-background-radius: 10px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 10px;
+}
+
+.patch-builder-header {
+    -fx-spacing: 8px;
+    -fx-padding: 0 14px 0 0;
+}
+
+.patch-builder-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: 700;
+}
+
+.patch-builder-toggle,
+.patch-builder-rail,
+.patch-builder-rule-remove {
+    -fx-min-width: 27px;
+    -fx-pref-width: 27px;
+    -fx-max-width: 27px;
+    -fx-min-height: 27px;
+    -fx-pref-height: 27px;
+    -fx-max-height: 27px;
+    -fx-alignment: CENTER;
+    -fx-content-display: TEXT_ONLY;
+    -fx-background-radius: 6px;
+    -fx-border-radius: 6px;
+    -fx-font-size: 18px;
+    -fx-font-weight: 400;
+    -fx-padding: 0;
+}
+
+.patch-builder-toggle,
+.patch-builder-rail {
+    -fx-background-color: -input-bg;
+    -fx-border-color: -border-color;
+    -fx-text-fill: -text-color;
+}
+
+.patch-builder-toggle:hover,
+.patch-builder-rail:hover {
+    -fx-background-color: -input-focus-bg;
+    -fx-border-color: -primary;
+}
+
+.patch-builder-rail {
+    -fx-min-height: 100%;
+}
+
+.patch-builder-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-padding: 0 12px 0 0;
+}
+
+.patch-builder-content {
+    -fx-padding: 0px 2px 0px 0px;
+}
+
+.patch-builder-form {
+    -fx-max-width: Infinity;
+}
+
+.patch-builder-field-group,
+.patch-builder-inline-field-group {
+    -fx-max-width: Infinity;
+}
+
+.patch-builder-inline-field-group {
+    -fx-alignment: CENTER_LEFT;
+}
+
+.patch-builder-inline-field-group .radio-button {
+    -fx-text-fill: -text-color;
+}
+
+.patch-builder-field-label {
+    -fx-font-weight: 700;
+}
+
+.patch-builder-separator {
+    -fx-padding: 2px 0;
+}
+
+.patch-builder-separator .line {
+    -fx-border-color: -border-color;
+    -fx-border-width: 1px 0 0 0;
+}
+
+.patch-builder-preview {
+    -fx-font-family: "Consolas";
+    -fx-font-size: 12px;
+    -fx-pref-row-count: 9;
+}
+
+.patch-builder-preview,
+.patch-create-editor {
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+    -fx-text-fill: -text-color;
+    -fx-prompt-text-fill: -prompt-text-color;
+    -fx-highlight-fill: -primary;
+    -fx-highlight-text-fill: white;
+    -fx-background-color: -input-bg;
+    -fx-background-radius: 10px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 10px;
+    -fx-border-width: 1px;
+    -fx-border-insets: 0;
+    -fx-padding: 4px;
+}
+
+.patch-builder-preview .scroll-pane,
+.patch-create-editor .scroll-pane,
+.patch-builder-preview .scroll-pane .viewport,
+.patch-create-editor .scroll-pane .viewport,
+.patch-builder-preview .scroll-pane .content,
+.patch-create-editor .scroll-pane .content {
+    -fx-background-color: -input-bg;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+}
+
+.patch-builder-status,
+.patch-validation-status {
+    -fx-font-weight: 700;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+    -fx-max-width: Infinity;
+}
+
+.patch-builder-rules,
+.patch-builder-rule-row,
+.patch-builder-actions {
+    -fx-max-width: Infinity;
+}
+
+.patch-builder-rule-remove {
+    -fx-background-color: #c0392b;
+    -fx-border-color: #c0392b;
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+}
+
+.patch-builder-rule-remove:hover {
+    -fx-background-color: #a93226;
+    -fx-border-color: #a93226;
+}
+
+.patch-create-editor {
+    -fx-font-family: "Consolas";
+    -fx-font-size: 13px;
+}
+
+.patch-create-actions {
+    -fx-padding: 0;
+}
+
+.patch-builder-status.status-success,
+.patch-validation-status.status-success {
+    -fx-text-fill: #2ecc71;
+}
+
+.patch-builder-status.status-error,
+.patch-validation-status.status-error {
+    -fx-text-fill: #e74c3c;
+}
+
+.patch-create-actions .button {
+    -fx-min-width: 150px;
+}
+
+#btnPackTypedPatch {
+    -fx-min-width: 170px;
+}

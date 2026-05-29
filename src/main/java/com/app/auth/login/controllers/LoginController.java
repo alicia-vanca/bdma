@@ -11,6 +11,8 @@ import com.app.MainApp;
 import com.app.auth.login.services.LoginService;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
+import com.app.common.definitions.enums.LoginResult;
+import com.app.common.definitions.enums.Role;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.helpers.CssLoader;
 import com.app.common.helpers.SpringContextHolder;
@@ -234,6 +236,12 @@ public class LoginController {
         }
 
         UserService.LoginResponse response = userService.loginWithStatus(usernameText, passwordText);
+
+        if (response.result() == LoginResult.SUCCESS && response.user().getRole() == Role.DEV) {
+            session.setPendingDevUser(response.user());
+            MainApp.showTotp();
+            return;
+        }
 
         switch (response.result()) {
             case SUCCESS:

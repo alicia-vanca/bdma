@@ -42,7 +42,6 @@
                 <Button fx:id="btnPeekPassword" styleClass="peek-btn"/>
             </HBox>
         </StackPane>
-
         <Label fx:id="lblPasswordConfirmCaption" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
         <StackPane GridPane.rowIndex="3" GridPane.columnIndex="1">
             <TextField editable="false" mouseTransparent="true" styleClass="input"/>
@@ -58,7 +57,7 @@
         </StackPane>
     </GridPane>
     <Label fx:id="lblError" visible="false" styleClass="message-error"/>
-    <HBox spacing="12" alignment="CENTER_RIGHT">
+    <HBox spacing="12" alignment="CENTER">
         <Button text="%common.cancel" onAction="#onCancel" styleClass="btn-secondary"/>
         <Button text="%common.save" onAction="#onSave" styleClass="btn-primary"/>
     </HBox>

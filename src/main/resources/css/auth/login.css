@@ -59,6 +59,36 @@
   -fx-background-color: -primary-hover;
 }
 
+.totp-row {
+  -fx-pref-width: 263;
+  -fx-max-width: 263;
+}
+
+.login-card .totp-digit {
+  -fx-pref-width: 38;
+  -fx-min-width: 38;
+  -fx-max-width: 38;
+  -fx-font-size: 15px;
+  -fx-font-weight: 600;
+  -fx-padding: 0;
+}
+
+.totp-back-btn {
+  -fx-background-color: transparent;
+  -fx-border-color: -border-color;
+  -fx-text-fill: -text-color;
+  -fx-background-radius: 6;
+  -fx-border-radius: 6;
+  -fx-pref-height: 38;
+  -fx-font-size: 13px;
+  -fx-font-weight: 600;
+  -fx-cursor: hand;
+}
+
+.totp-back-btn:hover {
+  -fx-background-color: -input-focus-bg;
+}
+
 .message-error {
   -fx-text-fill: -danger;
   -fx-font-size: 13px;

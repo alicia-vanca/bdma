@@ -23,7 +23,7 @@ public class ModelWhitelistRepository {
 
     private ModelWhitelist mapWhitelistRow(ResultSet rs, int rowNum) throws SQLException {
         ModelWhitelist whitelist = new ModelWhitelist();
-        whitelist.setId(rs.getString("id"));
+        whitelist.setId(rs.getLong("id"));
         whitelist.setModelName(rs.getString("model_name"));
         whitelist.setActive(rs.getInt("is_active") == 1);
         whitelist.setCreatedAt(rs.getString("created_at"));
@@ -34,7 +34,7 @@ public class ModelWhitelistRepository {
     private ModelWhitelistRule mapRuleRow(ResultSet rs, int rowNum) throws SQLException {
         ModelWhitelistRule rule = new ModelWhitelistRule();
         rule.setId(rs.getLong("id"));
-        rule.setWhitelistId(rs.getString("whitelist_id"));
+        rule.setWhitelistId(rs.getLong("whitelist_id"));
         rule.setPropKey(rs.getString("prop_key"));
         rule.setExpectedValue(rs.getString("expected_value"));
         return rule;
@@ -49,7 +49,7 @@ public class ModelWhitelistRepository {
             return whitelists;
         }
 
-        Map<String, ModelWhitelist> byId = new LinkedHashMap<>();
+        Map<Long, ModelWhitelist> byId = new LinkedHashMap<>();
         for (ModelWhitelist whitelist : whitelists) {
             byId.put(whitelist.getId(), whitelist);
         }

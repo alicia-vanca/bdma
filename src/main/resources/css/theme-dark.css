@@ -6,6 +6,7 @@
     /* ── TEXT ── */
     -text-color: #f1f5f9;
     -text-inverse: #0f172a;
+    -prompt-text-color: #64748b;
 
     /* ── PRIMARY ── */
     -primary: #3b82f6;
@@ -237,7 +238,7 @@
 /* TEXT INPUT */
 .text-input {
     -fx-text-fill: -text-color;
-    -fx-prompt-text-fill: #64748b;
+    -fx-prompt-text-fill: -prompt-text-color;
     -fx-highlight-fill: -primary;
     -fx-highlight-text-fill: white;
 }
@@ -356,6 +357,7 @@
 .table-view {
     -fx-background-color: -table-bg;
     -fx-border-color: -border-color;
+    -fx-padding: 0;
 }
 
 .table-view .column-header-background,
@@ -365,12 +367,16 @@
 
 .table-view .column-header {
     -fx-background-color: transparent;
-    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-border-color: transparent -border-color -border-color transparent;
 }
 
 .table-view .column-header .label {
     -fx-text-fill: -text-color;
     -fx-font-weight: bold;
+}
+
+.table-view .table-cell {
+    -fx-border-color: transparent -border-color transparent transparent;
 }
 
 .table-row-cell {
@@ -471,8 +477,8 @@
 }
 
 .device-cell-camera-id {
-     -fx-text-fill: #f1f5f9;
- }
+    -fx-text-fill: #f1f5f9;
+}
 
 .device-cell-connected {
     -fx-text-fill: #4ade80;

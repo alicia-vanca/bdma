@@ -1,5 +1,6 @@
 package com.app.common.repositories;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,5 +36,26 @@ public class PatchApplyLogRepository {
         } catch (Exception e) {
             throw new RepositoryException("save failed: " + patchApplyLog.getPatchId(), e);
         }
+    }
+
+    /**
+     * Lists applied patches newest-first for the developer import patch page.
+     *
+     * @return applied patch log rows
+     */
+    public List<PatchApplyLog> findAllNewestFirst() {
+        String sql = """
+                SELECT id, patch_id, file_name, applied_at
+                FROM patch_apply_log
+                ORDER BY applied_at DESC, id DESC
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            PatchApplyLog log = new PatchApplyLog(
+                    UUID.fromString(rs.getString("patch_id")),
+                    rs.getString("file_name"));
+            log.setId(rs.getLong("id"));
+            log.setAppliedAt(rs.getString("applied_at"));
+            return log;
+        });
     }
 }

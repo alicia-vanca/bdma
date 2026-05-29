@@ -1,7 +1,6 @@
 package com.app.admin.settingsdialog.controllers;
 
 import java.io.File;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
@@ -13,8 +12,8 @@ import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -42,8 +41,6 @@ import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.repositories.RestoreFailureRepository;
 import com.app.common.services.DriveResolverService;
-import com.app.common.services.PatchApplyLogService;
-import com.app.common.services.PatchCryptoService;
 import com.app.common.services.UserSettingService;
 
 import javafx.application.Platform;
@@ -58,10 +55,10 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
-import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import lombok.Setter;
 
+@Primary
 @Component
 public class AdminSettingsDialogController {
 
@@ -72,12 +69,8 @@ public class AdminSettingsDialogController {
     private static final String I18N_SETTING_STORAGE_PROGRESS = "setting.storage.progress";
     private static final String I18N_SETTING_STORAGE_FINAL = "setting.storage.final";
     private static final String I18N_SETTING_STORAGE_CHOOSE = "setting.storage.btn.choose";
-    @Value("${app.dev-mode:false}")
-    private boolean devMode;
 
     private final AdminSettingsDialogService adminSettingsService;
-    private final PatchCryptoService patchCryptoService;
-    private final PatchApplyLogService patchApplyLogService;
     private final Session session;
     private final UserSettingService userSettingService;
     private final AppUpdateController appUpdateController;
@@ -157,10 +150,6 @@ public class AdminSettingsDialogController {
     private Button btnRetryFailedRestore;
     @FXML
     private Label lblDriveConflictWarning;
-    @FXML
-    private Button btnEncryptPatch;
-    @FXML
-    private Button btnApplyPatch;
 
     private NoticeStackRenderer noticeRenderer;
     @Setter
@@ -169,8 +158,6 @@ public class AdminSettingsDialogController {
 
     public AdminSettingsDialogController(
             AdminSettingsDialogService adminSettingsService,
-            PatchCryptoService patchCryptoService,
-            PatchApplyLogService patchApplyLogService,
             Session session,
             UserSettingService userSettingService,
             AppUpdateController appUpdateController,
@@ -182,8 +169,6 @@ public class AdminSettingsDialogController {
             DataBackupQueue dataBackupQueue,
             RestoreFailureRepository restoreFailureRepository) {
         this.adminSettingsService = adminSettingsService;
-        this.patchCryptoService = patchCryptoService;
-        this.patchApplyLogService = patchApplyLogService;
         this.session = session;
         this.userSettingService = userSettingService;
         this.appUpdateController = appUpdateController;
@@ -204,10 +189,6 @@ public class AdminSettingsDialogController {
         setupSegmentButtons();
         setupActionButtons();
         loadAdminSettings();
-        btnEncryptPatch.setVisible(devMode);
-        btnEncryptPatch.setManaged(devMode);
-        btnApplyPatch.setVisible(devMode);
-        btnApplyPatch.setManaged(devMode);
     }
 
     private void refreshLocalizedText() {
@@ -238,9 +219,6 @@ public class AdminSettingsDialogController {
         lsbCheckVersion.setText(I18n.get("setting.startWithWindows.checkversion",getVersionCurrent()));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
         btnRetryFailedRestore.setText(I18n.get("setting.storage.btn.retry"));
-
-        btnEncryptPatch.setText(I18n.get("setting.patch.btn.encrypt"));
-        btnApplyPatch.setText(I18n.get("setting.patch.btn.apply"));
     }
 
     // Bind each pair of segment buttons to equal widths within their row.
@@ -303,7 +281,7 @@ public class AdminSettingsDialogController {
             String saved = adminSettingsService.getLastRestoreProgress();
             if (saved != null && !saved.isBlank()) {
                 String[] parts = saved.split(",");
-                Object[] args = new Object[]{
+                Object[] args = new Object[] {
                         Integer.parseInt(parts[0]),
                         Integer.parseInt(parts[1]),
                         Integer.parseInt(parts[2]),
@@ -514,7 +492,7 @@ public class AdminSettingsDialogController {
 
     // ── Dialogs ───────────────────────────────────────────────────────────────
 
-    private void openUserInfo() {
+    protected void openUserInfo() {
         DialogHelper.Dialog<UserEditFormController> dialog = DialogHelper.createDialog(
                 ViewPaths.USER_ACCOUNT_DIALOG,
                 I18n.get("user.account.title"));
@@ -717,6 +695,7 @@ public class AdminSettingsDialogController {
         }
         adminSettingsService.getFolderPath(folderType).ifPresent(textField::setText);
     }
+
     private String getVersionCurrent() {
         String version = getClass()
                 .getPackage()
@@ -726,44 +705,5 @@ public class AdminSettingsDialogController {
             version = "Not version";
         }
         return version;
-    }
-
-    @FXML
-    public void onEncryptPatch() {
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle(I18n.get("setting.patch.chooser.encrypt.title"));
-        chooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("SQL files", "*.sql"));
-        Stage stage = (Stage) panel.getScene().getWindow();
-        File selected = chooser.showOpenDialog(stage);
-        if (selected == null) return;
-
-        try {
-            patchCryptoService.encrypt(selected.toPath());
-            showNotice(I18n.get("setting.patch.encrypt.success"), true);
-        } catch (Exception e) {
-            log.error("Failed to encrypt patch file", e);
-            showNotice(I18n.get("setting.patch.encrypt.error"), false);
-        }
-    }
-
-    @FXML
-    public void onApplyPatch() {
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle(I18n.get("setting.patch.chooser.apply.title"));
-        chooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("Encrypted patch files", "*.sql.enc"));
-        Stage stage = (Stage) panel.getScene().getWindow();
-        File selected = chooser.showOpenDialog(stage);
-        if (selected == null) return;
-
-        try {
-            patchApplyLogService.apply(selected.toPath());
-            Files.deleteIfExists(selected.toPath());
-            showNotice(I18n.get("setting.patch.apply.success"), true);
-        } catch (Exception e) {
-            log.error("Failed to apply patch file", e);
-            showNotice(I18n.get("setting.patch.apply.error"), false);
-        }
     }
 }

@@ -21,6 +21,7 @@ import com.app.admin.layout.services.StorageUnavailableEventHandler;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.admin.settingsdialog.services.RestoreService;
+import com.app.auth.totp.services.DevOtpGuardService;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.dtos.DeviceSummary;
@@ -53,12 +54,14 @@ import com.app.common.services.DeviceMiniStatus;
 import com.app.common.services.DeviceTracker;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.utils.FileUtil;
+import com.app.dev.settingsdialog.controllers.DevSettingsDialogController;
 import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
 import com.app.user.userdetail.controllers.UserInfoController;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -66,14 +69,13 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.control.ContentDisplay;
 
 @Component
 public class AdminLayoutController extends BaseLayoutController {
@@ -89,9 +91,12 @@ public class AdminLayoutController extends BaseLayoutController {
     private static final String STYLE_CLASS_WARNING = "-fx-text-fill: -warning-color;";
 
     // I18n keys
+    private static final String I18N_SETTINGS_TITLE = "settings.title";
     private static final String I18N_DEVICE_SYNC_QUEUED = "device.sync.queued";
     private static final String I18N_DEVICE_SYNC_QUEUE_FAILED = "device.sync.queue_failed";
     private static final String I18N_STATUS_STORAGE_DRIVE_NOT_FOUND = "status.storage.drive.not_found";
+    private static final String I18N_COMMON_YES = "common.yes";
+    private static final String I18N_COMMON_NO = "common.no";
 
     private final AppUpdateController appUpdateController;
     private final Session session;
@@ -110,6 +115,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
     private final DataExportRunner exportRunner;
     private final MediaViewerService mediaViewerService;
+    private final DevOtpGuardService devOtpGuardService;
 
     @FXML
     private StackPane contentArea;
@@ -122,7 +128,13 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private Button btnUser;
     @FXML
+    private Button btnImportPatch;
+    @FXML
+    private Button btnCreatePatch;
+    @FXML
     private VBox noticeContainer;
+    @FXML
+    private HBox statusBar;
     @FXML
     private HBox warningStrip;
     @FXML
@@ -169,7 +181,8 @@ public class AdminLayoutController extends BaseLayoutController {
             AdminSettingsDialogService adminSettingsService,
             StorageUnavailableEventHandler storageUnavailableEventHandler,
             DataExportRunner exportRunner,
-            MediaViewerService mediaViewerService) {
+            MediaViewerService mediaViewerService,
+            DevOtpGuardService devOtpGuardService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.session = session;
@@ -188,6 +201,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
         this.exportRunner = exportRunner;
         this.mediaViewerService = mediaViewerService;
+        this.devOtpGuardService = devOtpGuardService;
     }
 
     @Override
@@ -197,11 +211,16 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @Override
     protected List<Button> getMenuButtons() {
+        if (session.isDev()) {
+            return List.of(btnImportPatch, btnCreatePatch);
+        }
         return List.of(btnDashboard, btnUser);
     }
 
     @FXML
     public void initialize() {
+        configureRoleVisibility();
+
         // Keep header buttons responsive while update checks are running.
         appUpdateController.setOnCheckStart(() -> btnSettings.setDisable(true));
         appUpdateController.setOnCheckEnd(() -> btnSettings.setDisable(false));
@@ -212,24 +231,50 @@ public class AdminLayoutController extends BaseLayoutController {
         appNoticeService.bindNoticeContainer(noticeContainer);
 
         deviceMiniStatus.setOnProgressChanged(this::refreshDashboardIfActive);
+
+        devOtpGuardService.start(this::logout);
         setIconNte();
         openDefaultTab();
-        refreshStorageStatus();
+        if (!session.isDev()) {
+            refreshStorageStatus();
+        }
     }
-    public void setIconNte(){
+
+    public void setIconNte() {
         Image image = new Image(
                 getClass()
                         .getResource("/image/NTE_Logo.png")
-                        .toExternalForm()
-        );
+                        .toExternalForm());
         nteIcon.setImage(image);
         nteIcon.setFitWidth(150);
         nteIcon.setFitHeight(150);
         nteIcon.setPreserveRatio(true);
     }
 
+    private void configureRoleVisibility() {
+        boolean isDev = session.isDev();
+        setVisibleManaged(btnDashboard, !isDev);
+        setVisibleManaged(btnUser, !isDev);
+        setVisibleManaged(btnImportPatch, isDev);
+        setVisibleManaged(btnCreatePatch, isDev);
+        setVisibleManaged(btnSettings, true);
+        setVisibleManaged(statusBar, !isDev);
+    }
+
+    private void setVisibleManaged(Node node, boolean visible) {
+        if (node == null) {
+            return;
+        }
+        node.setVisible(visible);
+        node.setManaged(visible);
+    }
+
     @FXML
     public void goDashboard() {
+        if (session.isDev()) {
+            goImportPatch();
+            return;
+        }
         var result = loadViewWithController(ViewPaths.ADMIN_DASHBOARD, DashboardController.class);
         if (result != null) {
             currentDashboardController = result.controller();
@@ -267,6 +312,10 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     private void goUser() {
+        if (session.isDev()) {
+            goImportPatch();
+            return;
+        }
         if (currentDashboardController != null) {
             currentDashboardController.resetFileSelectionState();
         }
@@ -280,7 +329,36 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @FXML
+    private void goImportPatch() {
+        if (!session.isDev()) {
+            goDashboard();
+            return;
+        }
+        currentDashboardController = null;
+        setContent(loadView(ViewPaths.IMPORT_PATCH_PAGE));
+        setActiveButton(getMenuButtons(), btnImportPatch);
+    }
+
+    @FXML
+    private void goCreatePatch() {
+        if (!session.isDev()) {
+            goDashboard();
+            return;
+        }
+        if (!session.isCreatePatchUnlocked()) {
+            boolean unlocked = devOtpGuardService.promptCreatePatchUnlock();
+            if (!unlocked) {
+                return;
+            }
+        }
+        currentDashboardController = null;
+        setContent(loadView(ViewPaths.CREATE_PATCH_PAGE));
+        setActiveButton(getMenuButtons(), btnCreatePatch);
+    }
+
+    @FXML
     public void logout() {
+        devOtpGuardService.stop();
         mediaViewerService.close();
         log.info("User {} is logging out", session.getUser().getUsername());
         if (currentDashboardController != null) {
@@ -306,30 +384,43 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     private void openSettingsPopup() {
+        if (session.isDev()) {
+            openDevSettingsDialog();
+            return;
+        }
         if (!session.isAdmin()) {
             openUserSettingsDialog();
             return;
         }
 
+        openAdminSettingsDialog();
+    }
+
+    private void openAdminSettingsDialog() {
         DialogHelper.Dialog<AdminSettingsDialogController> dialog = DialogHelper.createDialog(
                 ViewPaths.ADMIN_SETTINGS_DIALOG,
-                "⚙ " + I18n.get("settings.title"));
+                "⚙ " + I18n.get(I18N_SETTINGS_TITLE));
         dialog.controller().setOnLanguageChangedAction(this::reloadUI);
-        Stage stage = dialog.stage();
-        stage.setResizable(false);
-        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
-        stage.setMinWidth(650);
-        stage.setMaxHeight(screen.getHeight() * 0.80);
-        stage.setMaxWidth(screen.getWidth() * 0.50);
-        stage.showAndWait();
+        configureSettingsDialogStage(dialog.stage());
     }
 
     private void openUserSettingsDialog() {
         DialogHelper.Dialog<UserSettingsDialogController> dialog = DialogHelper.createDialog(
                 ViewPaths.USER_SETTINGS_DIALOG,
-                "⚙ " + I18n.get("settings.title"));
+                "⚙ " + I18n.get(I18N_SETTINGS_TITLE));
         dialog.controller().setOnLanguageChangedAction(this::reloadUI);
-        Stage stage = dialog.stage();
+        configureSettingsDialogStage(dialog.stage());
+    }
+
+    private void openDevSettingsDialog() {
+        DialogHelper.Dialog<DevSettingsDialogController> dialog = DialogHelper.createDialog(
+                ViewPaths.DEV_SETTINGS_DIALOG,
+                "⚙ " + I18n.get(I18N_SETTINGS_TITLE));
+        dialog.controller().setOnLanguageChangedAction(this::reloadUI);
+        configureSettingsDialogStage(dialog.stage());
+    }
+
+    private void configureSettingsDialogStage(Stage stage) {
         stage.setResizable(false);
         Rectangle2D screen = Screen.getPrimary().getVisualBounds();
         stage.setMinWidth(650);
@@ -500,8 +591,8 @@ public class AdminLayoutController extends BaseLayoutController {
                         cameraId,
                         result.getMatchedModelName()));
 
-        ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
-        ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
+        ButtonType yesButton = new ButtonType(I18n.get(I18N_COMMON_YES), ButtonBar.ButtonData.YES);
+        ButtonType noButton = new ButtonType(I18n.get(I18N_COMMON_NO), ButtonBar.ButtonData.NO);
         AlertHelper.setButtons(confirm, yesButton, noButton);
 
         registerAlert(result.getHardwareId(), confirm);
@@ -542,8 +633,8 @@ public class AdminLayoutController extends BaseLayoutController {
                 I18n.get("device.sync.header", deviceName),
                 I18n.get(contentKey));
 
-        ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
-        ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
+        ButtonType yesButton = new ButtonType(I18n.get(I18N_COMMON_YES), ButtonBar.ButtonData.YES);
+        ButtonType noButton = new ButtonType(I18n.get(I18N_COMMON_NO), ButtonBar.ButtonData.NO);
         AlertHelper.setButtons(confirm, yesButton, noButton);
 
         registerAlert(hardwareId, confirm);
@@ -637,6 +728,10 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private void openDefaultTab() {
+        if (session.isDev()) {
+            goImportPatch();
+            return;
+        }
         goDashboard();
     }
 
@@ -646,6 +741,8 @@ public class AdminLayoutController extends BaseLayoutController {
         // restore the correct active-button highlight after a language change reload.
         return switch (fxml) {
             case ViewPaths.USER_LIST, ViewPaths.USER_INFO -> btnUser;
+            case ViewPaths.IMPORT_PATCH_PAGE -> btnImportPatch;
+            case ViewPaths.CREATE_PATCH_PAGE -> btnCreatePatch;
             default -> null;
         };
     }
@@ -677,6 +774,9 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     public void refreshStorageStatus() {
+        if (session.isDev()) {
+            return;
+        }
         Platform.runLater(() -> {
             File dataDir = folderManagerService.getSyncDir();
             File backupDir = folderManagerService.getBackupDir();

@@ -52,7 +52,7 @@ public class DeviceValidationService {
         return validate(adbSerial);
     }
 
-    public ValidatedDevice saveValidatedDevice(String cameraId, String hardwareId, String whitelistId) {
+    public ValidatedDevice saveValidatedDevice(String cameraId, String hardwareId, Long whitelistId) {
         return validatedDeviceRepository.saveOrUpdate(cameraId, hardwareId, whitelistId);
     }
 

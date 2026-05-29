@@ -58,27 +58,35 @@ public class DataSyncRunner {
             trackerThread = null;
         }
 
-        // Request graceful shutdown without blocking UI
-        if (syncThread != null) {
-            worker.requestShutdown();
-            Thread shutdownThread = syncThread;
-            syncThread = null;
+        if (syncThread == null) {
+            tracker.stopTrackingAndResetState();
+            shuttingDown = false;
+            notifyAll();
+            return;
+        }
 
-            // Clean up in background to avoid blocking logout UI
-            new Thread(() -> {
-                try {
-                    shutdownThread.join(5000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                // Force interrupt if still running after timeout
-                if (shutdownThread.isAlive()) {
-                    shutdownThread.interrupt();
-                }
+        // Request graceful shutdown without blocking UI
+        worker.requestShutdown();
+        Thread shutdownThread = syncThread;
+        syncThread = null;
+
+        // Clean up in background to avoid blocking logout UI
+        new Thread(() -> {
+            try {
+                shutdownThread.join(5000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            // Force interrupt if still running after timeout
+            if (shutdownThread.isAlive()) {
+                shutdownThread.interrupt();
+            }
+            synchronized (this) {
                 tracker.stopTrackingAndResetState();
                 shuttingDown = false;
-            }, "sync-shutdown").start();
-        }
+                notifyAll();
+            }
+        }, "sync-shutdown").start();
     }
 
     // Stop the tracker and worker threads when Spring context closes.

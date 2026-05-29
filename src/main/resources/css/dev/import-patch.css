@@ -1,0 +1,12 @@
+.patch-import-toolbar {
+    -fx-padding: 0;
+}
+
+.patch-import-toolbar .button {
+    -fx-min-width: 150px;
+}
+
+.patch-import-empty {
+    -fx-opacity: 0.72;
+    -fx-font-size: 14px;
+}

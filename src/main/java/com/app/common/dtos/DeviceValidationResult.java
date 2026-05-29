@@ -11,7 +11,7 @@ public class DeviceValidationResult {
     private boolean valid;
     private String hardwareId;
     private String message;
-    private String matchedWhitelistId;
+    private Long matchedWhitelistId;
     private String matchedModelName;
     private String cameraId;
     private boolean alreadySaved;
@@ -22,7 +22,7 @@ public class DeviceValidationResult {
     }
 
     public static DeviceValidationResult valid(String hardwareId,
-            String whitelistId,
+            Long whitelistId,
             String modelName,
             String cameraId,
             boolean alreadySaved,
