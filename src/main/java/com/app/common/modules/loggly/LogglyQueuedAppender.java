@@ -73,6 +73,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json");
     private static final String QUEUE_FILE_NAME = "loggly-queue.ndjson";
     private static final String SENDING_FILE_NAME = "loggly-queue.sending";
+    private static final String SENDING_CHECKPOINT_FILE_NAME = "loggly-queue.sending.checkpoint";
     private static final String MERGED_FILE_NAME = "loggly-queue.merged";
     private static final String INTERNAL_LOG_FILE_NAME = "loggly-internal.log";
     private static final String LOG_SIGNING_CONTEXT = "bdma-log-event-signing-v1";
@@ -85,6 +86,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     private static final long DEFAULT_RETRY_INTERVAL_MILLIS = 5_000L;
     private static final int DEFAULT_CONNECT_TIMEOUT_SECONDS = 10;
     private static final int DEFAULT_READ_TIMEOUT_SECONDS = 10;
+    private static final AtomicBoolean springReady = new AtomicBoolean(false);
 
     private final Object fileLock = new Object();
     private final AtomicBoolean draining = new AtomicBoolean(false);
@@ -97,6 +99,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     private ScheduledExecutorService retryExecutor;
     private Path queueFile;
     private Path sendingFile;
+    private Path sendingCheckpointFile;
     private Path mergedFile;
     private Path internalLogFile;
     private byte[] signingKey;
@@ -107,6 +110,14 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         EMPTY,
         SENT_ALL,
         FAILED
+    }
+
+    /**
+     * Marks the app as stable enough for Loggly network delivery. Before this,
+     * Loggly appenders only append events to the local queue.
+     */
+    public static void setSpringReady(boolean ready) {
+        springReady.set(ready);
     }
 
     @Override
@@ -142,7 +153,9 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
                 TimeUnit.MILLISECONDS);
 
         super.start();
-        requestDrain();
+        if (springReady.get()) {
+            requestDrain();
+        }
     }
 
     /**
@@ -172,11 +185,13 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     public void stop() {
         if (retryExecutor != null) {
             stopping = true;
-            // Do not accept new drain requests and stop the scheduled sender
+            // Do not accept new drain requests and stop the scheduled sender.
             retryExecutor.shutdown();
-            // Let processing queue finish, then attempt to drain any remaining events, stop
-            // on failure or all finished
-            drainUntilEmptyOrFailed();
+            if (springReady.get()) {
+                // Runtime shutdown may flush remaining queued events; pre-ready reloads only
+                // enqueue.
+                drainUntilEmptyOrFailed();
+            }
         }
         if (layout != null) {
             layout.stop();
@@ -205,11 +220,13 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
             return;
         }
 
-        requestDrain();
+        if (springReady.get()) {
+            requestDrain();
+        }
     }
 
     private void requestDrain() {
-        if (stopping || retryExecutor == null || retryExecutor.isShutdown()) {
+        if (!springReady.get() || stopping || retryExecutor == null || retryExecutor.isShutdown()) {
             return;
         }
         if (!drainRequested.compareAndSet(false, true)) {
@@ -273,6 +290,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         Files.createDirectories(logDir);
         queueFile = logDir.resolve(QUEUE_FILE_NAME);
         sendingFile = logDir.resolve(SENDING_FILE_NAME);
+        sendingCheckpointFile = logDir.resolve(SENDING_CHECKPOINT_FILE_NAME);
         mergedFile = logDir.resolve(MERGED_FILE_NAME);
         internalLogFile = logDir.resolve(INTERNAL_LOG_FILE_NAME);
         if (!Files.exists(queueFile)) {
@@ -286,9 +304,33 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
 
     private void recoverInterruptedDrain() throws IOException {
         if (Files.exists(sendingFile)) {
-            mergeFilesPreservingOrder(sendingFile, queueFile, mergedFile);
+            mergeUnsentSendingLinesWithQueue();
             Files.move(mergedFile, queueFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             Files.deleteIfExists(sendingFile);
+            Files.deleteIfExists(sendingCheckpointFile);
+        }
+    }
+
+    private void mergeUnsentSendingLinesWithQueue() throws IOException {
+        Files.deleteIfExists(mergedFile);
+        long sentLines = readSendingCheckpoint();
+        try (BufferedWriter writer = Files.newBufferedWriter(mergedFile, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            copyFileLinesSkipping(sendingFile, writer, sentLines);
+            copyFileLines(queueFile, writer);
+        }
+    }
+
+    private long readSendingCheckpoint() {
+        if (!Files.exists(sendingCheckpointFile)) {
+            return 0L;
+        }
+        try {
+            String value = Files.readString(sendingCheckpointFile, StandardCharsets.UTF_8).trim();
+            return Math.max(0L, Long.parseLong(value));
+        } catch (IOException | NumberFormatException e) {
+            addWarn("Invalid Loggly sending checkpoint ignored: " + e.getMessage());
+            return 0L;
         }
     }
 
@@ -300,7 +342,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     }
 
     private void drainQueueSafely() {
-        if (!isStarted() || !draining.compareAndSet(false, true)) {
+        if (!springReady.get() || !isStarted() || !draining.compareAndSet(false, true)) {
             return;
         }
 
@@ -314,7 +356,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
     }
 
     private void drainUntilEmptyOrFailed() {
-        if (!isStarted()) {
+        if (!springReady.get() || !isStarted()) {
             return;
         }
 
@@ -350,6 +392,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         boolean fullySent = sendQueuedLines();
         if (fullySent) {
             Files.deleteIfExists(sendingFile);
+            Files.deleteIfExists(sendingCheckpointFile);
             return DrainResult.SENT_ALL;
         }
         return DrainResult.FAILED;
@@ -360,7 +403,10 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
      * line and the remaining lines back ahead of newly queued events.
      */
     private boolean sendQueuedLines() throws IOException {
+        long sentLines = readSendingCheckpoint();
         try (BufferedReader reader = Files.newBufferedReader(sendingFile, StandardCharsets.UTF_8)) {
+            skipSentLines(reader, sentLines);
+
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.isBlank()) {
@@ -371,9 +417,26 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
                     restoreFailedAndRemainingLines(line, reader);
                     return false;
                 }
+
+                sentLines++;
+                writeSendingCheckpoint(sentLines);
             }
         }
         return true;
+    }
+
+    private void skipSentLines(BufferedReader reader, long linesToSkip) throws IOException {
+        for (long skipped = 0L; skipped < linesToSkip; skipped++) {
+            String skippedLine = reader.readLine();
+            if (skippedLine == null) {
+                return;
+            }
+        }
+    }
+
+    private void writeSendingCheckpoint(long sentLines) throws IOException {
+        Files.writeString(sendingCheckpointFile, Long.toString(sentLines), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
     private void restoreFailedAndRemainingLines(String failedLine, BufferedReader reader) throws IOException {
@@ -388,6 +451,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
             }
             Files.move(mergedFile, queueFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             Files.deleteIfExists(sendingFile);
+            Files.deleteIfExists(sendingCheckpointFile);
         }
     }
 
@@ -396,6 +460,23 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         while ((line = reader.readLine()) != null) {
             writer.write(line);
             writer.newLine();
+        }
+    }
+
+    private void copyFileLinesSkipping(Path sourceFile, BufferedWriter writer, long linesToSkip) throws IOException {
+        if (!hasContent(sourceFile)) {
+            return;
+        }
+        try (BufferedReader reader = Files.newBufferedReader(sourceFile, StandardCharsets.UTF_8)) {
+            String line;
+            long currentLine = 0L;
+            while ((line = reader.readLine()) != null) {
+                if (currentLine++ < linesToSkip) {
+                    continue;
+                }
+                writer.write(line);
+                writer.newLine();
+            }
         }
     }
 
@@ -551,15 +632,6 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException ignored) {
             // Do not report diagnostic-file failures through logging; that can recurse.
-        }
-    }
-
-    private void mergeFilesPreservingOrder(Path firstFile, Path secondFile, Path targetFile) throws IOException {
-        Files.deleteIfExists(targetFile);
-        try (BufferedWriter writer = Files.newBufferedWriter(targetFile, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-            copyFileLines(firstFile, writer);
-            copyFileLines(secondFile, writer);
         }
     }
 }

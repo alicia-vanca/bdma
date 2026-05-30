@@ -42,25 +42,32 @@ public class DataBackupRunner {
     public synchronized void resetForLogout() {
         shuttingDown = true;
 
-        if (backupThread != null) {
-            worker.requestShutdown();
-            Thread shutdownThread = backupThread;
-            backupThread = null;
-
-            // Clean up in background to avoid blocking logout UI
-            new Thread(() -> {
-                try {
-                    shutdownThread.join(5000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                // Force interrupt if still running after timeout
-                if (shutdownThread.isAlive()) {
-                    shutdownThread.interrupt();
-                }
-                shuttingDown = false;
-            }, "backup-shutdown").start();
+        if (backupThread == null) {
+            shuttingDown = false;
+            notifyAll();
+            return;
         }
+
+        worker.requestShutdown();
+        Thread shutdownThread = backupThread;
+        backupThread = null;
+
+        // Clean up in background to avoid blocking logout UI
+        new Thread(() -> {
+            try {
+                shutdownThread.join(5000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            // Force interrupt if still running after timeout
+            if (shutdownThread.isAlive()) {
+                shutdownThread.interrupt();
+            }
+            synchronized (this) {
+                shuttingDown = false;
+                notifyAll();
+            }
+        }, "backup-shutdown").start();
     }
 
     @PreDestroy

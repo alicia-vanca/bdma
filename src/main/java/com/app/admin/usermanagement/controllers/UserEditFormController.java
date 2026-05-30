@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+
 import com.app.admin.usermanagement.validation.PasswordValidation;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.Role;
@@ -88,7 +90,10 @@ public class UserEditFormController {
 
     @FXML
     public void initialize() {
-        cbRole.setItems(FXCollections.observableArrayList(Role.values()));
+        cbRole.setItems(FXCollections.observableArrayList(
+                Arrays.stream(Role.values())
+                        .filter(role -> role != Role.DEV)
+                        .toList()));
         resetForm();
 
         // Setup password peek functionality
@@ -296,7 +301,13 @@ public class UserEditFormController {
             return;
         }
 
-        // 2) username exists check
+        // 2) reserved username check against hidden DEV accounts in the user table.
+        if (userService.isReservedUsername(username)) {
+            showError(I18n.get("user.username.reserved"));
+            return;
+        }
+
+        // 3) username exists check
         if (userService.usernameExists(username)) {
             showError(I18n.get("user.username.exists"));
             return;

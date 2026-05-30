@@ -30,8 +30,9 @@ public class DialogHelper {
     public record Dialog<T>(Stage stage, T controller) {
     }
 
-    // Track all open dialog scenes and their controllers for theme updates
+    // Track all open dialog scenes and their FXML paths for theme updates.
     private static final List<Scene> openDialogScenes = new CopyOnWriteArrayList<>();
+    private static final List<String> openDialogFxmlPaths = new CopyOnWriteArrayList<>();
     private static final List<Object> openDialogControllers = new CopyOnWriteArrayList<>();
 
     public static <T> Dialog<T> createDialog(String fxml, String title) {
@@ -55,19 +56,19 @@ public class DialogHelper {
         stage.initModality(modality);
         stage.setOnShowing(e -> ThemeManager.apply(scene));
 
-        // Register this dialog's scene and controller for theme updates
+        // Register this dialog's scene, source FXML, and controller for theme updates.
         openDialogScenes.add(scene);
+        openDialogFxmlPaths.add(fxml);
         openDialogControllers.add(loadedView.controller());
-        log.info("Registered dialog scene for theme updates: {} (total: {})", fxml, openDialogScenes.size());
 
-        // Remove scene and controller when dialog closes
+        // Remove scene and controller when dialog closes.
         stage.addEventHandler(WindowEvent.WINDOW_HIDDEN, e -> {
             int index = openDialogScenes.indexOf(scene);
             if (index >= 0) {
                 openDialogScenes.remove(index);
+                openDialogFxmlPaths.remove(index);
                 openDialogControllers.remove(index);
             }
-            log.info("Removed dialog scene: {} (remaining: {})", fxml, openDialogScenes.size());
         });
 
         // Provide consistent keyboard dismissal for all modal popups opened by
@@ -94,12 +95,15 @@ public class DialogHelper {
     @EventListener
     public void onThemeChanged(ThemeChangedEvent event) {
         // Copy lists to avoid ConcurrentModificationException if a dialog closes during
-        // iteration
+        // iteration.
         List<Scene> scenes = new ArrayList<>(openDialogScenes);
+        List<String> fxmlPaths = new ArrayList<>(openDialogFxmlPaths);
         List<Object> controllers = new ArrayList<>(openDialogControllers);
 
-        // Update CSS for all dialog scenes
-        scenes.forEach(ThemeManager::apply);
+        // Reapply each dialog's source stylesheet after theme CSS changes.
+        for (int i = 0; i < scenes.size(); i++) {
+            CssLoader.applyDialog(scenes.get(i), fxmlPaths.get(i));
+        }
 
         // Call onThemeChanged on controllers that have the method
         for (Object controller : controllers) {

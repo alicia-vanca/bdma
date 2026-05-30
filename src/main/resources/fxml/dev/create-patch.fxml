@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.Region?>
+<StackPane fx:id="root" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.dev.patchmanager.controllers.CreatePatchController"
+           styleClass="content-shell">
+    <HBox styleClass="patch-create-shell">
+        <VBox fx:id="patchBuilderPanel" styleClass="patch-builder-panel" HBox.hgrow="NEVER">
+            <HBox alignment="CENTER_LEFT" styleClass="patch-builder-header">
+                <Label text="%setting.patch.builder.title" styleClass="patch-builder-title" HBox.hgrow="ALWAYS"/>
+                <Region HBox.hgrow="ALWAYS" />
+                <Button fx:id="btnTogglePatchBuilder" text="˂" onAction="#onTogglePatchBuilder"
+                        styleClass="patch-builder-toggle"/>
+            </HBox>
+            <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="patch-builder-scroll" VBox.vgrow="ALWAYS">
+                <VBox spacing="12" styleClass="patch-builder-content">
+                    <GridPane fx:id="patchBuilderForm" hgap="10" vgap="10" styleClass="patch-builder-form"/>
+                    <TextArea fx:id="txtPatchBuilderPreview" editable="false" wrapText="true"
+                              promptText="%setting.patch.builder.preview" styleClass="patch-builder-preview"/>
+                    <Label fx:id="lblPatchBuilderStatus" visible="false" managed="true"
+                           styleClass="patch-builder-status"/>
+                    <HBox spacing="10" alignment="CENTER" styleClass="patch-builder-actions">
+                        <Button text="%setting.patch.builder.clear" onAction="#onClearPatchBuilder"
+                                styleClass="btn-secondary"/>
+                        <Button text="%setting.patch.builder.addStatement" onAction="#onAddPatchStatement"
+                                styleClass="btn-primary"/>
+                    </HBox>
+                </VBox>
+            </ScrollPane>
+        </VBox>
+        <Button fx:id="btnExpandPatchBuilder" text="˃" onAction="#onTogglePatchBuilder"
+                visible="false" managed="false" styleClass="patch-builder-rail"/>
+        <VBox styleClass="patch-editor-shell" HBox.hgrow="ALWAYS">
+            <TextArea fx:id="txtPatchSql" promptText="%setting.patch.sql.prompt" wrapText="true"
+                      styleClass="patch-create-editor" VBox.vgrow="ALWAYS"/>
+            <Label fx:id="lblPatchValidationStatus" visible="false" managed="false"
+                   styleClass="patch-validation-status"/>
+            <HBox spacing="10" alignment="CENTER" styleClass="patch-create-actions">
+                <Button fx:id="btnLoadPatchSql" text="%setting.patch.btn.loadSql" onAction="#onLoadPatchSql"
+                        styleClass="btn-secondary"/>
+                <Button fx:id="btnPackTypedPatch" text="%setting.patch.btn.create" onAction="#onPackTypedPatch"
+                        styleClass="btn-primary"/>
+            </HBox>
+        </VBox>
+    </HBox>
+    <VBox fx:id="noticeContainer" spacing="8" alignment="BOTTOM_CENTER" fillWidth="false" mouseTransparent="true"
+          styleClass="notice-container-dialog" StackPane.alignment="BOTTOM_CENTER"/>
+</StackPane>

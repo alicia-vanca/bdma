@@ -29,6 +29,8 @@
                         <Button fx:id="btnDashboard" text="%menu.dashboard" onAction="#goDashboard"
                                 styleClass="menu-tab-btn"/>
                         <Button fx:id="btnUser" text="%menu.user" onAction="#goUser" styleClass="menu-tab-btn"/>
+                        <Button fx:id="btnImportPatch" text="%menu.dev.importPatch" onAction="#goImportPatch" styleClass="menu-tab-btn"/>
+                        <Button fx:id="btnCreatePatch" text="%menu.dev.createPatch" onAction="#goCreatePatch" styleClass="menu-tab-btn"/>
                     </HBox>
                     <Region HBox.hgrow="ALWAYS"/>
                     <HBox spacing="12" alignment="CENTER_RIGHT" styleClass="top-right-actions">
@@ -47,7 +49,7 @@
             </StackPane>
         </center>
         <bottom>
-            <HBox styleClass="status-bar" alignment="CENTER_LEFT" spacing="10">
+            <HBox fx:id="statusBar" styleClass="status-bar" alignment="CENTER_LEFT" spacing="10">
                 <HBox alignment="CENTER_LEFT" spacing="10" HBox.hgrow="ALWAYS" styleClass="status-storage-row"
                       prefWidth="350" minWidth="300">
                     <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS" minWidth="120">
