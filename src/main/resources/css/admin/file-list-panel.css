@@ -17,7 +17,6 @@
 .table-view .filler,
 .table-view .column-header {
     -fx-background-color: -table-bg;
-    -fx-border-color: -border-color;
     -fx-pref-height: 36;
     -fx-min-height: 36;
 }

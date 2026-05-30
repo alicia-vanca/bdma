@@ -29,35 +29,42 @@ public class CssLoader {
     public static void applyLogin(Scene scene) {
         scene.getStylesheets().removeIf(s -> s.contains("admin.css")
                 || s.contains("/css/admin/")
+                || s.contains("/css/dev/")
                 || s.contains("/css/user/"));
         addIfAbsent(scene, "/css/auth/login.css");
     }
 
     public static void applyModule(Scene scene, String fxml) {
         String moduleCss = resolveCssPath(fxml);
-        if (moduleCss == null) return;
+        if (moduleCss == null)
+            return;
 
-        String baseExt  = toExternalForm("/css/base.css");
+        String baseExt = toExternalForm("/css/base.css");
         String adminExt = toExternalForm("/css/admin.css");
         String themeExt = toExternalForm(ThemeManager.cssPathForTheme(ThemeManager.getTheme()));
         String moduleExt = toExternalForm(moduleCss);
 
-        // Clear tất cả module CSS cũ
-        scene.getStylesheets().removeIf(s ->
-                s.contains("/css/admin/") || s.contains("/css/user/"));
+        // Clear all module CSS before applying the current module stylesheet.
+        scene.getStylesheets()
+                .removeIf(s -> s.contains("/css/admin/") || s.contains("/css/dev/") || s.contains("/css/user/"));
 
-        // Rebuild đúng thứ tự: base → theme → admin → module
+        // Rebuild in stable order: base → theme → admin → module.
         List<String> ordered = new ArrayList<>();
-        if (baseExt   != null) ordered.add(baseExt);
-        if (themeExt  != null) ordered.add(themeExt);
-        if (adminExt  != null) ordered.add(adminExt);
-        if (moduleExt != null) ordered.add(moduleExt);
+        if (baseExt != null)
+            ordered.add(baseExt);
+        if (themeExt != null)
+            ordered.add(themeExt);
+        if (adminExt != null)
+            ordered.add(adminExt);
+        if (moduleExt != null)
+            ordered.add(moduleExt);
 
         // Set lại toàn bộ theo thứ tự đúng
         scene.getStylesheets().setAll(ordered);
     }
 
     public static void applyDialog(Scene scene, String fxml) {
+        scene.getStylesheets().removeIf(s -> s.contains("theme-"));
         applyBase(scene);
         addIfAbsent(scene, ThemeManager.cssPathForTheme(ThemeManager.getTheme()));
         addIfAbsent(scene, resolveCssPath(fxml));

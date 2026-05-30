@@ -1,9 +1,6 @@
 /* TABLE */
 .table-view {
   -fx-background-color: -table-bg;
-  -fx-border-color: -border-color;
-  -fx-table-cell-border-color: -border-color;
-  -fx-table-header-border-color: -border-color;
   -fx-font-size: 13px;
 }
 
@@ -11,19 +8,13 @@
 .table-view .filler,
 .table-view .column-header-background {
   -fx-background-color: -table-bg;
-  -fx-border-color: -border-color;
   -fx-pref-height: 40;
   -fx-min-height: 40;
 }
 
 .table-view .table-cell {
   -fx-alignment: CENTER-LEFT;
-  -fx-border-color: transparent -border-color transparent transparent;
   -fx-padding: 0 12;
-}
-
-.table-view .column-header {
-  -fx-border-color: transparent -border-color -border-color transparent;
 }
 
 .table-view .column-header .label {

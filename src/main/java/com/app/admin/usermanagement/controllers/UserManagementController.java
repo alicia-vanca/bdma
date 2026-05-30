@@ -246,7 +246,9 @@ public class UserManagementController {
     // ── Data ────────────────────────────────────────────────────────────────
 
     private void loadData() {
-        allUsers = userService.findAll();
+        allUsers = userService.findAll().stream()
+                .filter(user -> user.getRole() != Role.DEV)
+                .toList();
         filteredUsers = new ArrayList<>(allUsers);
         setupPagination();
     }
@@ -462,9 +464,8 @@ public class UserManagementController {
             if (page == currentPageIndex) {
                 btn.getStyleClass().add("btn-page-active");
             }
-            int target = page;
             btn.setOnAction(e -> {
-                currentPageIndex = target;
+                currentPageIndex = page;
                 setupPagination();
             });
             pageButtonsBox.getChildren().add(btn);

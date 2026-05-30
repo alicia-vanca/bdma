@@ -24,6 +24,7 @@ import com.app.common.helpers.SpringContextHolder;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
+import com.app.common.modules.loggly.LogglyQueuedAppender;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.services.DeviceTracker;
 import com.app.common.utils.StageUtil;
@@ -83,6 +84,7 @@ public class MainApp extends Application {
         SpringApplication application = new SpringApplication(SpringBootApp.class);
         application.setDefaultProperties(loadBundledApplicationProperties());
         springContext = application.run();
+        LogglyQueuedAppender.setSpringReady(true);
 
         GlobalExceptionHandler handler = springContext.getBean(GlobalExceptionHandler.class);
         Thread.setDefaultUncaughtExceptionHandler(handler);
@@ -140,6 +142,14 @@ public class MainApp extends Application {
         loadAndNavigate(ViewPaths.LOGIN, "BDMA", 480, 420);
     }
 
+    public static void showTotp() {
+        primaryStage.setMaximized(false);
+        primaryStage.setResizable(false);
+        primaryStage.setMinWidth(0);
+        primaryStage.setMinHeight(0);
+        loadAndNavigate(ViewPaths.TOTP, "BDMA", 480, 360);
+    }
+
     public static void showAdmin() {
         primaryStage.setResizable(true);
         primaryStage.setMinWidth(800);
@@ -155,7 +165,7 @@ public class MainApp extends Application {
 
             Parent root = (Parent) result.node();
 
-            if (ViewPaths.LOGIN.equals(fxml)) {
+            if (ViewPaths.LOGIN.equals(fxml) || ViewPaths.TOTP.equals(fxml)) {
                 NavigationHelper.goToLogin(root);
             } else {
                 NavigationHelper.goToAdmin(root);

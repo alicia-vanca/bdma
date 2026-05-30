@@ -118,6 +118,25 @@ public class UserService {
     }
 
     /**
+     * Treat every DEV account username as reserved for normal user creation.
+     * DEV users are installed by migration and hidden from user management.
+     *
+     * @param username the candidate username to compare against DEV accounts
+     * @return true when the normalized username belongs to a DEV account
+     */
+    public boolean isReservedUsername(String username) {
+        String normalized = normalizeUsername(username);
+        if (normalized == null || normalized.isBlank()) {
+            return false;
+        }
+
+        return userRepository.findByRole(Role.DEV).stream()
+                .map(User::getUsername)
+                .map(this::normalizeUsername)
+                .anyMatch(normalized::equals);
+    }
+
+    /**
      * Create a new user with validation. Username is normalized and password is
      * hashed.
      *
@@ -135,6 +154,10 @@ public class UserService {
 
         if (isInvalidUsername(username)) {
             throw new ValidationException(I18n.get("user.username.invalid"));
+        }
+
+        if (isReservedUsername(username)) {
+            throw new ValidationException(I18n.get("user.username.reserved"));
         }
 
         if (user.getPassword() == null || user.getPassword().isBlank()) {

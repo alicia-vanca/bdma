@@ -10,7 +10,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ModelWhitelist {
-    private String id;
+    private Long id;
     private String modelName;
     private boolean active;
     private String createdAt;

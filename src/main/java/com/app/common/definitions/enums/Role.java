@@ -4,7 +4,8 @@ import com.app.common.modules.i18n.I18n;
 
 public enum Role {
     ADMIN("user.role.admin"),
-    USER("user.role.user");
+    USER("user.role.user"),
+    DEV("user.role.dev");
 
     private final String messageKey;
 
@@ -25,6 +26,7 @@ public enum Role {
         return switch (this) {
             case ADMIN -> "Administrator";
             case USER -> "User";
+            case DEV -> "Developer";
         };
     }
 

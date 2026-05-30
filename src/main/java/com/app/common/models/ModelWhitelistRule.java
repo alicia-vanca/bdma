@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ModelWhitelistRule {
     private Long id;
-    private String whitelistId;
+    private Long whitelistId;
     private String propKey;
     private String expectedValue;
 }

@@ -1,4 +1,4 @@
-package com.app.common.services;
+package com.app.dev.patchmanager.services;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.app.common.exceptions.AppException;
+import com.app.common.modules.i18n.I18n;
 import com.app.common.repositories.PatchApplyLogRepository;
 
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
@@ -31,7 +32,8 @@ import net.sf.jsqlparser.statement.update.Update;
 /**
  * AES-256-GCM patch encryption for SQL files.
  *
- * <p>Encrypted files include magic, a UUID, IV, and ciphertext/tag.
+ * <p>
+ * Encrypted files include magic, a UUID, IV, and ciphertext/tag.
  * The patch UUID is authenticated to prevent header tampering.
  * Only INSERT and UPDATE statements are accepted.
  */
@@ -45,7 +47,7 @@ public class PatchCryptoService {
     /**
      * Magic bytes identifying a v2 BDP patch file.
      */
-    private static final byte[] MAGIC = {0x42, 0x44, 0x50, 0x02}; // "BDP\x02"
+    private static final byte[] MAGIC = { 0x42, 0x44, 0x50, 0x02 }; // "BDP\x02"
 
     private static final int MAGIC_LENGTH = 4;
     private static final int PATCH_ID_LENGTH = 16;
@@ -57,7 +59,6 @@ public class PatchCryptoService {
     private static final long MAX_FILE_BYTES = 10L * 1024 * 1024; // 10 MB guard
 
     private static final String ALGORITHM = "AES/GCM/NoPadding";
-    private static final String ENC_EXTENSION = ".enc";
     private static final int STMT_PREVIEW_LEN = 120;
 
     /**
@@ -89,39 +90,18 @@ public class PatchCryptoService {
     // =========================================================================
 
     /**
-     * Encrypts a plaintext SQL file and writes the encrypted output.
+     * Encrypts SQL text directly to an encrypted patch file without creating a
+     * plaintext file.
      *
-     * @param sqlFile plaintext {@code .sql} file
+     * @param sql     plaintext SQL text
+     * @param outFile encrypted output file
+     * @param patchId stable patch identifier written into the encrypted header
      */
-    public void encrypt(Path sqlFile) {
-        validateInputFile(sqlFile);
-
-        byte[] plaintext = readFile(sqlFile);
-
-        String sql = new String(plaintext, StandardCharsets.UTF_8);
-        List<String> statements = parseSqlStatements(sql);
-        validateSqlStatements(statements);
-
-        UUID patchId = UUID.randomUUID();
-        byte[] iv = generateIv();
-        byte[] key = loadMasterKey();
-        byte[] ciphertext;
-        try {
-            byte[] aad = buildHeaderAad(patchId, iv);
-            ciphertext = doEncrypt(plaintext, key, iv, aad);
-        } finally {
-            clearKey(key);
+    public void encryptSql(String sql, Path outFile, UUID patchId) {
+        if (sql == null) {
+            throw new AppException(I18n.get("setting.patch.validation.empty"));
         }
-
-        // Layout: [magic 4B][patchId 16B][iv 12B][ciphertext+tag NB]
-        ByteBuffer buf = ByteBuffer.allocate(HEADER_LENGTH + ciphertext.length);
-        buf.put(MAGIC);
-        buf.put(uuidToBytes(patchId));
-        buf.put(iv);
-        buf.put(ciphertext);
-
-        Path outFile = toEncryptedPath(sqlFile);
-        writeFile(outFile, buf.array());
+        encryptPlaintext(sql.getBytes(StandardCharsets.UTF_8), outFile, patchId);
     }
 
     /**
@@ -179,7 +159,7 @@ public class PatchCryptoService {
 
     /**
      * Carries the patch UUID and the validated SQL statements returned by
-     * {@link #decryptAndValidate(Path)}.  The caller is responsible for
+     * {@link #decryptAndValidate(Path)}. The caller is responsible for
      * persisting a {@code PatchApplyRecord} after successful execution.
      */
     public record DecryptResult(UUID patchId, List<String> statements) {
@@ -188,6 +168,18 @@ public class PatchCryptoService {
     // =========================================================================
     // SQL parsing and validation
     // =========================================================================
+
+    /**
+     * Validates editable patch SQL before packing it into an encrypted patch.
+     *
+     * @param sql plaintext SQL containing only INSERT or UPDATE statements
+     * @return parsed SQL statements ready for display or execution
+     */
+    public List<String> validateSql(String sql) {
+        List<String> statements = parseSqlStatements(sql);
+        validateSqlStatements(statements);
+        return statements;
+    }
 
     /**
      * Parses SQL text reliably using JSQLParser.
@@ -203,13 +195,14 @@ public class PatchCryptoService {
                 }
             }
             if (result.isEmpty()) {
-                throw new AppException("Patch file contains no valid SQL statements.");
+                throw new AppException(I18n.get("setting.patch.validation.empty"));
             }
             return result;
         } catch (AppException e) {
             throw e;
         } catch (Exception e) {
-            throw new AppException("Could not parse patch file SQL statements.", e);
+            throw new AppException(I18n.get("setting.patch.validation.statementParse", findFirstProblemStatement(sql)),
+                    e);
         }
     }
 
@@ -222,16 +215,32 @@ public class PatchCryptoService {
             try {
                 parsed = CCJSqlParserUtil.parse(stmtSql);
             } catch (Exception e) {
-                throw new AppException(
-                        "Could not parse SQL statement in patch file: " + summarize(stmtSql), e);
+                throw new AppException(I18n.get("setting.patch.validation.statementParse", summarize(stmtSql)), e);
             }
 
             if (!(parsed instanceof Insert) && !(parsed instanceof Update)) {
-                throw new AppException(
-                        "Only INSERT and UPDATE are allowed in patch files. Rejected: "
-                                + summarize(stmtSql));
+                throw new AppException(I18n.get("setting.patch.validation.onlyInsertUpdate", summarize(stmtSql)));
             }
         }
+    }
+
+    /**
+     * JSQLParser aborts full-script parsing before exposing the bad fragment.
+     * Split on semicolons as a fallback so users can see the first unparsable part.
+     */
+    private String findFirstProblemStatement(String sql) {
+        for (String candidate : sql.split(";")) {
+            String trimmed = candidate.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                CCJSqlParserUtil.parse(trimmed);
+            } catch (Exception e) {
+                return summarize(trimmed);
+            }
+        }
+        return summarize(sql);
     }
 
     private String summarize(String stmt) {
@@ -244,6 +253,29 @@ public class PatchCryptoService {
     // =========================================================================
     // Crypto helpers
     // =========================================================================
+
+    private void encryptPlaintext(byte[] plaintext, Path outFile, UUID patchId) {
+        validateSql(new String(plaintext, StandardCharsets.UTF_8));
+
+        byte[] iv = generateIv();
+        byte[] key = loadMasterKey();
+        byte[] ciphertext;
+        try {
+            byte[] aad = buildHeaderAad(patchId, iv);
+            ciphertext = doEncrypt(plaintext, key, iv, aad);
+        } finally {
+            clearKey(key);
+        }
+
+        // Layout: [magic 4B][patchId 16B][iv 12B][ciphertext+tag NB]
+        ByteBuffer buf = ByteBuffer.allocate(HEADER_LENGTH + ciphertext.length);
+        buf.put(MAGIC);
+        buf.put(uuidToBytes(patchId));
+        buf.put(iv);
+        buf.put(ciphertext);
+
+        writeFile(outFile, buf.array());
+    }
 
     private byte[] doEncrypt(byte[] plaintext, byte[] key, byte[] iv, byte[] aad) {
         try {
@@ -264,7 +296,7 @@ public class PatchCryptoService {
             return cipher.doFinal(ciphertext);
         } catch (AEADBadTagException e) {
             throw new AppException(
-                    "Decryption failed: file is corrupted or was encrypted with a different key — " + encFile, e);
+                    "Decryption failed: file is corrupted or was encrypted with a different key ΓÇö " + encFile, e);
         } catch (Exception e) {
             throw new AppException("Decryption failed: " + encFile, e);
         }
@@ -290,10 +322,14 @@ public class PatchCryptoService {
 
     /**
      * Decodes the master key from its hex representation.
-     * The caller MUST call {@link #clearKey(byte[])} on the returned array in a finally block.
+     * The caller MUST call {@link #clearKey(byte[])} on the returned array in a
+     * finally block.
      *
-     * <p>The key is sourced from the {@code patch.master.key} Spring property, which should be
-     * bound to the {@code PATCH_MASTER_KEY} environment variable (or Vault/KMS secret).
+     * <p>
+     * The key is sourced from the {@code patch.master.key} Spring property, which
+     * should be
+     * bound to the {@code PATCH_MASTER_KEY} environment variable (or Vault/KMS
+     * secret).
      * Generate once with: {@code openssl rand -hex 32}
      */
     private byte[] loadMasterKey() {
@@ -319,7 +355,8 @@ public class PatchCryptoService {
     }
 
     /**
-     * Overwrites a key buffer with zeros to minimise time the secret lives in heap memory.
+     * Overwrites a key buffer with zeros to minimize time the secret lives in heap
+     * memory.
      */
     private void clearKey(byte[] key) {
         if (key != null) {
@@ -328,7 +365,7 @@ public class PatchCryptoService {
     }
 
     // =========================================================================
-    // UUID ↔ bytes helpers
+    // UUID Γåö bytes helpers
     // =========================================================================
 
     private byte[] uuidToBytes(UUID uuid) {
@@ -384,15 +421,6 @@ public class PatchCryptoService {
                         "File is not a valid BDP patch (invalid magic bytes): " + file);
             }
         }
-    }
-
-    /**
-     * Derives the output path for encryption: {@code foo.sql → foo.sql.enc}.
-     * Intentionally does NOT strip {@code .enc} from the input — encryption always
-     * appends, preventing accidental overwrite of a plaintext file.
-     */
-    private Path toEncryptedPath(Path sqlFile) {
-        return sqlFile.resolveSibling(sqlFile.getFileName().toString() + ENC_EXTENSION);
     }
 
     private void writeFile(Path path, byte[] data) {

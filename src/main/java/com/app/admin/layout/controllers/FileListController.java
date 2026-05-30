@@ -312,7 +312,7 @@ public class FileListController {
                     // Keep the checkbox visual state controlled by the selection model.
                     // JavaFX reuses table cells while scrolling, so allowing the CheckBox
                     // to toggle itself can leave recycled cells visually out of sync.
-                    handleSelectionClick(fileView, event.isShiftDown(), event.isControlDown());
+                    handleSelectionClick(fileView, event.isShiftDown());
                     event.consume();
                 });
             }
@@ -333,7 +333,7 @@ public class FileListController {
         };
     }
 
-    private void handleSelectionClick(FileView fileView, boolean shiftDown, boolean controlDown) {
+    private void handleSelectionClick(FileView fileView, boolean shiftDown) {
         String targetKey = selectionKey(fileView);
         if (shiftDown) {
             applyShiftSelection(targetKey);
