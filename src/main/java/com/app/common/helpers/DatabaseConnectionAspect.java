@@ -54,12 +54,9 @@ public class DatabaseConnectionAspect {
                     if (!isDatabaseAlive) {
                         // Display the alert on the JavaFX Platform.runLater UI and restart the app.
                         Platform.runLater(() -> {
-                            Alert alert = new Alert(Alert.AlertType.ERROR);
-                            alert.setTitle(I18n.get("helper.db.disconnect"));
-                            alert.setHeaderText(I18n.get("helper.db.lost"));
-                            alert.setContentText(I18n.get("helper.db.alert"));
-                            alert.setGraphic(null);
-                            alert.showAndWait();
+//                            Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
+//                                    I18n.get("helper.db.disconnect"),I18n.get("helper.db.lost"),I18n.get("helper.db.alert"));
+//                            confirm.showAndWait();
                             restartApplication();
                         });
                     }
