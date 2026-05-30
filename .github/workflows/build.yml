@@ -47,6 +47,7 @@ jobs:
           APP_VERSION: ${{ env.APP_VERSION }}
           LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
           PATCH_MASTER_KEY: ${{ secrets.PATCH_MASTER_KEY }}
+          TOTP_SECRET: ${{ secrets.TOTP_SECRET }}
         run: ./gradlew clean shadowJar
 
       - name: Prepare package folder
@@ -59,6 +60,7 @@ jobs:
         env:
           LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
           PATCH_MASTER_KEY: ${{ secrets.PATCH_MASTER_KEY }}
+          TOTP_SECRET: ${{ secrets.TOTP_SECRET }}
         run: |
           $version = "${{ env.APP_VERSION }}"
           $modulePath = "$env:JAVA_HOME\jmods;C:\javafx-jmods"
@@ -74,7 +76,7 @@ jobs:
             --dest build\dist `
             --module-path "$modulePath" `
             --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,java.sql,java.logging,javafx.media" `
-            --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN -DPATCH_MASTER_KEY=$env:PATCH_MASTER_KEY" `
+            --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN -DPATCH_MASTER_KEY=$env:PATCH_MASTER_KEY -DTOTP_SECRET=$env:TOTP_SECRET" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
       - name: Install NSIS
