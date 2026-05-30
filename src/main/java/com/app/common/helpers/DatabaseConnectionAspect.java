@@ -3,8 +3,6 @@ package com.app.common.helpers;
 import com.app.common.modules.i18n.I18n;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
-import javafx.stage.StageStyle;
-// Các import CHUẨN của Spring AOP
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -14,8 +12,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.sql.SQLException;
-import org.sqlite.SQLiteException;
-import org.sqlite.SQLiteErrorCode;
 
 import javax.sql.DataSource;
 import java.sql.DatabaseMetaData;
@@ -54,9 +50,9 @@ public class DatabaseConnectionAspect {
                     if (!isDatabaseAlive) {
                         // Display the alert on the JavaFX Platform.runLater UI and restart the app.
                         Platform.runLater(() -> {
-//                            Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
-//                                    I18n.get("helper.db.disconnect"),I18n.get("helper.db.lost"),I18n.get("helper.db.alert"));
-//                            confirm.showAndWait();
+                            Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
+                                    I18n.get("helper.db.disconnect"),I18n.get("helper.db.lost"),I18n.get("helper.db.alert"));
+                            confirm.showAndWait();
                             restartApplication();
                         });
                     }
