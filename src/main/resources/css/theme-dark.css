@@ -529,3 +529,7 @@
 .icon-btn-control{
     -fx-border-color: -border-color;
 }
+.separator .line{
+    -fx-border-color: #475569;
+    -fx-border-width: 0.5;
+}
