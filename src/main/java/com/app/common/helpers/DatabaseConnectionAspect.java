@@ -30,6 +30,7 @@ public class DatabaseConnectionAspect {
     private static final AtomicBoolean isAlertShowing = new AtomicBoolean(false);
     @Autowired
     private DataSource dataSource;
+
     // Scan all repositories in the directory. com.app.common.repositories
     @Around("execution(* com.app.common.repositories.*.*(..))")
     public Object handleDatabaseException(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -41,21 +42,20 @@ public class DatabaseConnectionAspect {
             if (rootCause instanceof org.sqlite.SQLiteException) {
                 org.sqlite.SQLiteException sqliteEx = (org.sqlite.SQLiteException) rootCause;
                 String errMsgSqlite = sqliteEx.getMessage().toLowerCase();
-                logger.error("Detected connection error to SQL: {}", errMsgSqlite);
                 boolean isDatabaseAlive = checkDatabaseConnection();
                 if (!isDatabaseAlive) {
                     if (isAlertShowing.compareAndSet(false, true)) {
-                        // Display the alert on the JavaFX Platform.runLater UI and restart the app.
-                        Platform.runLater(() -> {
-                            Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
-                                    I18n.get("helper.db.disconnect"), I18n.get("helper.db.lost"), I18n.get("helper.db.alert"));
-                            confirm.showAndWait();
-                            restartApplication();
-                        });
+                        // Display the alert and restart the app.
+
+                        logger.error("DB not found: {}", errMsgSqlite);
+                        Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
+                                I18n.get("helper.db.disconnect"), I18n.get("helper.db.lost"), I18n.get("helper.db.alert"));
+                        confirm.showAndWait();
+                        restartApplication();
                     }
                 }
             }
-            throw new RuntimeException("SQLite disconnect error. Restarting...");
+            throw e;
         }
     }
 
