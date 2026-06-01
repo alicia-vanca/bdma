@@ -67,10 +67,10 @@ public class DashboardController extends BaseLayoutController {
     private Consumer<DeviceSummary> onRequestSync;
 
     public DashboardController(ViewLoader viewLoader,
-                               ValidatedDeviceRepository validatedDeviceRepository,
-                               DeviceMiniStatus deviceMiniStatus,
-                               Session session,
-                               DeviceListState deviceListState) {
+            ValidatedDeviceRepository validatedDeviceRepository,
+            DeviceMiniStatus deviceMiniStatus,
+            Session session,
+            DeviceListState deviceListState) {
         super(viewLoader);
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.deviceMiniStatus = deviceMiniStatus;
@@ -156,9 +156,9 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private void setupEditBehavior(DeviceSummary summary,
-                                   Label name,
-                                   TextField nameField,
-                                   SVGPath icon) {
+            Label name,
+            TextField nameField,
+            SVGPath icon) {
 
         icon.setOnMousePressed(Event::consume);
 
@@ -191,8 +191,8 @@ public class DashboardController extends BaseLayoutController {
     }
 
     private Runnable createCommitAction(DeviceSummary summary,
-                                        Label name,
-                                        TextField nameField) {
+            Label name,
+            TextField nameField) {
 
         return () -> {
             String newName = nameField.getText();
@@ -262,7 +262,7 @@ public class DashboardController extends BaseLayoutController {
     // Display sync progress for connected devices: queued, syncing with counts, or
     // idle
     private String resolveConnectedText(DeviceMiniStatus.SyncStatus status,
-                                        DeviceMiniStatus.SyncProgress progress) {
+            DeviceMiniStatus.SyncProgress progress) {
 
         return switch (status) {
             case QUEUED -> I18n.get("dashboard.device.queued");
