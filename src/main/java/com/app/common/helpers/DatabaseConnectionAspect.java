@@ -9,13 +9,11 @@ import org.aspectj.lang.annotation.Aspect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.beans.factory.annotation.Autowired;
 
-import java.sql.SQLException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.sql.DataSource;
 import java.sql.DatabaseMetaData;
-import java.lang.management.ManagementFactory;
 import java.sql.ResultSet;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -28,35 +26,83 @@ import java.util.List;
 public class DatabaseConnectionAspect {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseConnectionAspect.class);
     private static final AtomicBoolean isAlertShowing = new AtomicBoolean(false);
-    @Autowired
-    private DataSource dataSource;
+
+    private final DataSource dataSource;
+
+    public static final class DatabaseUnavailableException extends RuntimeException {
+        public DatabaseUnavailableException(Throwable cause) {
+            super("SQLite disconnect error. Restarting...", cause);
+        }
+    }
+
+    public DatabaseConnectionAspect(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
 
     // Scan all repositories in the directory. com.app.common.repositories
     @Around("execution(* com.app.common.repositories.*.*(..))")
-    public Object handleDatabaseException(ProceedingJoinPoint joinPoint) throws Throwable {
+    public Object recoverFromRepositoryDatabaseFailure(ProceedingJoinPoint joinPoint) throws Throwable {
         try {
             return joinPoint.proceed(); // Run the JdbcTemplate command.
         } catch (Throwable e) {
             Throwable rootCause = getRootCause(e);
-            //Check for SQLiteException errors.
-            if (rootCause instanceof org.sqlite.SQLiteException) {
-                org.sqlite.SQLiteException sqliteEx = (org.sqlite.SQLiteException) rootCause;
-                String errMsgSqlite = sqliteEx.getMessage().toLowerCase();
-                boolean isDatabaseAlive = checkDatabaseConnection();
-                if (!isDatabaseAlive) {
-                    if (isAlertShowing.compareAndSet(false, true)) {
-                        // Display the alert and restart the app.
-
-                        logger.error("DB not found: {}", errMsgSqlite);
-                        Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
-                                I18n.get("helper.db.disconnect"), I18n.get("helper.db.lost"), I18n.get("helper.db.alert"));
-                        confirm.showAndWait();
-                        restartApplication();
-                    }
-                }
+            // Check for SQLiteException errors.
+            if (!(rootCause instanceof org.sqlite.SQLiteException sqliteEx)) {
+                throw e;
             }
-            throw e;
+
+            String errMsgSqlite = sqliteEx.getMessage().toLowerCase();
+            logger.error("Detected connection error to SQL: {}", errMsgSqlite);
+            boolean databaseAvailable = isDatabaseAvailable();
+            if (!databaseAvailable) {
+                if (isAlertShowing.compareAndSet(false, true)) {
+                    showDatabaseLostAlertAndRestart();
+                }
+                holdUntilApplicationExits();
+            }
+            throw new DatabaseUnavailableException(rootCause);
         }
+    }
+
+    private void holdUntilApplicationExits() {
+        CountDownLatch shutdownLatch = new CountDownLatch(1);
+        try {
+            shutdownLatch.await();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for application restart");
+        }
+    }
+
+    private void showDatabaseLostAlertAndRestart() {
+        if (Platform.isFxApplicationThread()) {
+            showDatabaseLostAlertOnFxThread();
+            restartApplication();
+            return;
+        }
+
+        CountDownLatch latch = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            try {
+                showDatabaseLostAlertOnFxThread();
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        try {
+            latch.await();
+            restartApplication();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database disconnect alert during shutdown");
+        }
+    }
+
+    private void showDatabaseLostAlertOnFxThread() {
+        Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
+                I18n.get("helper.db.disconnect"), I18n.get("helper.db.lost"), I18n.get("helper.db.alert"));
+        confirm.showAndWait();
     }
 
     private Throwable getRootCause(Throwable throwable) {
@@ -67,13 +113,10 @@ public class DatabaseConnectionAspect {
         return getRootCause(cause);
     }
 
-    //restart application
+    // restart application
     private void restartApplication() {
         try {
             List<String> command = new ArrayList<>();
-
-            List<String> inputArguments = ManagementFactory.getRuntimeMXBean().getInputArguments();
-            String sunJavaCommand = System.getProperty("sun.java.command");
 
             String userDir = System.getProperty("user.dir");
 
@@ -89,7 +132,8 @@ public class DatabaseConnectionAspect {
                 String javaBin = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
                 command.add(javaBin);
 
-                File currentJar = new File(com.app.MainApp.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+                File currentJar = new File(
+                        com.app.MainApp.class.getProtectionDomain().getCodeSource().getLocation().toURI());
                 if (currentJar.getName().endsWith(".jar")) {
                     command.add("-jar");
                     command.add(currentJar.getPath());
@@ -110,14 +154,15 @@ public class DatabaseConnectionAspect {
 
         } catch (Exception e) {
             logger.error("The application cannot be automatically restarted.: ", e);
-            // Final backup plan: It's still necessary to shut it down to avoid the user's computer freezing.
+            // Final backup plan: It's still necessary to shut it down to avoid the user's
+            // computer freezing.
             Platform.exit();
             System.exit(1);
         }
     }
 
-    //Check if the database exists.
-    private boolean checkDatabaseConnection() {
+    // Check if the database exists.
+    private boolean isDatabaseAvailable() {
         try (Connection connection = dataSource.getConnection()) {
 
             // 1. Check basic connection
@@ -125,13 +170,15 @@ public class DatabaseConnectionAspect {
                 statement.execute("SELECT 1;");
             }
 
-            // 2. RESOLVING MIGRATE/EMPTY FILE ISSUES: Check if any tables already exist in the database.
+            // 2. RESOLVING MIGRATE/EMPTY FILE ISSUES: Check if any tables already exist in
+            // the database.
             DatabaseMetaData metaData = connection.getMetaData();
 
             // Get a list of user-defined tables (TABLE), ignoring SQLite system tables.
-            try (ResultSet resultSet = metaData.getTables(null, null, "%", new String[]{"TABLE"})) {
+            try (ResultSet resultSet = metaData.getTables(null, null, "%", new String[] { "TABLE" })) {
                 if (!resultSet.next()) {
-                    // If resultSet.next() returns false, it means the database is empty and no tables have been migrated yet.
+                    // If resultSet.next() returns false, it means the database is empty and no
+                    // tables have been migrated yet.
                     logger.error("Error: SQLite connection successful, but the database file is empty (0 tables)!");
                     return false;
                 }
