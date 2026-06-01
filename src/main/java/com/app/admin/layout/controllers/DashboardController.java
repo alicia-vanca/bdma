@@ -7,14 +7,13 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import org.springframework.context.event.EventListener;
+import com.app.common.services.DeviceListState;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceSummary;
 import com.app.common.dtos.DeviceValidationResult;
-import com.app.common.events.DeviceEvent;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
@@ -22,7 +21,6 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.DeviceMiniStatus;
-import com.app.common.services.DeviceTracker;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -58,32 +56,27 @@ public class DashboardController extends BaseLayoutController {
     private HBox root;
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final DeviceMiniStatus deviceMiniStatus;
-    private final DeviceTracker deviceTracker;
     private final Session session;
-    private final ObservableList<DeviceSummary> deviceItems = FXCollections.observableArrayList();
+    private final DeviceListState deviceListState;
+    private final ObservableList<DeviceSummary> deviceItems;
 
     private FileListController fileListController;
-    private boolean deviceStateInitialized;
     private Consumer<DeviceSummary> onRequestValidate;
     private final List<DeviceSummary> pendingValidationRequests = new java.util.ArrayList<>();
     @Setter
     private Consumer<DeviceSummary> onRequestSync;
-    private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
-                    DashboardController::sortName,
-                    String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(summary -> summary.getHardwareId() == null ? "" : summary.getHardwareId(),
-                    String.CASE_INSENSITIVE_ORDER);
 
     public DashboardController(ViewLoader viewLoader,
                                ValidatedDeviceRepository validatedDeviceRepository,
                                DeviceMiniStatus deviceMiniStatus,
-                               DeviceTracker deviceTracker,
-                               Session session) {
+                               Session session,
+                               DeviceListState deviceListState) {
         super(viewLoader);
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.deviceMiniStatus = deviceMiniStatus;
-        this.deviceTracker = deviceTracker;
         this.session = session;
+        this.deviceListState = deviceListState;
+        this.deviceItems = deviceListState.getDeviceItems();
     }
 
     public void setOnRequestValidate(Consumer<DeviceSummary> callback) {
@@ -338,11 +331,8 @@ public class DashboardController extends BaseLayoutController {
                 root.widthProperty().multiply(0.15));
         updateCellFactory();
         deviceListView.setItems(deviceItems);
-        if (!deviceStateInitialized) {
-            loadSavedDevices();
-            deviceStateInitialized = true;
-        }
-        applyCurrentDeviceSnapshot();
+        deviceListState.loadSavedDevicesIfNeeded();
+        deviceMiniStatus.setOnProgressChanged(this::refresh);
         refresh();
         loadFileList();
 
@@ -363,152 +353,13 @@ public class DashboardController extends BaseLayoutController {
     // Clear runtime device state only when the user session ends so language or
     // tab reloads can reuse the same in-memory list.
     public void resetState() {
+        deviceListState.resetState();
         deviceItems.clear();
-        deviceStateInitialized = false;
 
         // Cleanup file list controller resources to prevent thread leaks
         if (fileListController != null) {
             fileListController.cleanup();
         }
-    }
-
-    // Handle device connection/disconnection events from DeviceTracker
-
-    @EventListener
-    public void handleTrackerEvent(DeviceEvent event) {
-        // Ignore events before UI initialization
-        if (deviceListView == null) {
-            return;
-        }
-
-        Platform.runLater(() -> {
-            processDeviceEvent(event);
-            deviceListView.refresh();
-        });
-    }
-
-    private void processDeviceEvent(DeviceEvent event) {
-        if (event.type() == DeviceEvent.EventType.CONNECTED) {
-            handleConnected(event);
-        } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
-            handleDisconnectedEvent(event);
-        } else if (event.type() == DeviceEvent.EventType.UNVALIDATED) {
-            handleUnvalidated(event);
-        }
-    }
-
-    // Handle device disconnection events with proper logic for both validated and
-    // unvalidated devices
-    private void handleDisconnectedEvent(DeviceEvent event) {
-        String cameraId;
-
-        // Try to get cameraId from validation result first
-        if (event.validationResult() != null) {
-            cameraId = event.validationResult().getCameraId();
-        } else {
-            // For devices without validation result, find by hardwareId
-            cameraId = findCameraIdByHardwareId(event.hardwareId());
-        }
-
-        if (cameraId != null) {
-            handleDisconnected(cameraId);
-        }
-    }
-
-    // Handle unvalidated device: add as transient device to the list
-    private void handleUnvalidated(DeviceEvent event) {
-        DeviceValidationResult result = event.validationResult();
-        if (result == null) {
-            return;
-        }
-
-        // Check if device already exists in the list to avoid duplicates
-        Optional<DeviceSummary> existing = findByCameraId(result.getCameraId());
-        if (existing.isPresent()) {
-            return;
-        }
-
-        DeviceSummary summary = addTransientDevice(result);
-        maybeRequestValidate(summary);
-    }
-
-    // Handle device connection: update saved device status or add as unvalidated
-    // transient device
-    private void handleConnected(DeviceEvent event) {
-        DeviceValidationResult result = event.validationResult();
-        if (result == null || !result.isValid()) {
-            refresh();
-            return;
-        }
-
-        if (result.isAlreadySaved()) {
-            updateSavedDeviceAsConnected(result);
-        } else {
-            DeviceSummary summary = addTransientDevice(result);
-            maybeRequestValidate(summary);
-        }
-    }
-
-    private void updateSavedDeviceAsConnected(DeviceValidationResult result) {
-        Optional<DeviceSummary> existing = findByCameraId(result.getCameraId());
-        if (existing.isEmpty()) {
-            refresh();
-            return;
-        }
-
-        DeviceSummary summary = existing.get();
-        summary.setHardwareId(result.getHardwareId());
-        summary.setStatus(DeviceSummary.Status.CONNECTED);
-        summary.setSyncProgress(resolveSyncProgress(summary));
-        deviceListView.refresh();
-    }
-
-    private DeviceSummary addTransientDevice(DeviceValidationResult result) {
-        DeviceSummary summary = new DeviceSummary(
-                result.getHardwareId(),
-                result.getCameraId(),
-                result.getCameraId(),
-                DeviceSummary.Status.UNVALIDATED,
-                DeviceMiniStatus.SyncProgress.idle(),
-                result);
-        deviceItems.add(summary);
-        sortDeviceItems();
-        return summary;
-    }
-
-    // Handle device disconnection: remove unvalidated devices or mark saved devices
-    // as offline
-    private void handleDisconnected(String cameraId) {
-        Optional<DeviceSummary> existing = findByCameraId(cameraId);
-        if (existing.isEmpty()) {
-            return;
-        }
-
-        DeviceSummary summary = existing.get();
-        if (summary.getStatus() == DeviceSummary.Status.UNVALIDATED) {
-            deviceItems.remove(summary);
-
-            sortDeviceItems();
-            return;
-        }
-
-        summary.setStatus(DeviceSummary.Status.OFFLINE);
-        summary.setSyncProgress(DeviceMiniStatus.SyncProgress.idle());
-        deviceListView.refresh();
-    }
-
-    private Optional<DeviceSummary> findByCameraId(String cameraId) {
-        return deviceItems.stream()
-                .filter(summary -> cameraId != null && cameraId.equals(summary.getCameraId()))
-                .findFirst();
-    }
-
-    private String findCameraIdByHardwareId(String hardwareId) {
-        return deviceItems.stream()
-                .filter(summary -> hardwareId != null && hardwareId.equals(summary.getHardwareId()))
-                .map(DeviceSummary::getCameraId)
-                .findFirst()
-                .orElse(null);
     }
 
     private void maybeRequestValidate(DeviceSummary summary) {
@@ -544,60 +395,9 @@ public class DashboardController extends BaseLayoutController {
                 || summary.getStatus() == DeviceSummary.Status.OFFLINE;
     }
 
-    private void loadSavedDevices() {
-        deviceItems.setAll(validatedDeviceRepository.findAll().stream()
-                .map(this::toSavedSummary)
-                .toList());
-        sortDeviceItems();
-    }
-
-    private void applyCurrentDeviceSnapshot() {
-        deviceTracker.getCurrentDeviceEvents().forEach(this::processDeviceEvent);
-        deviceListView.refresh();
-    }
-
     public void markDeviceSaved(DeviceValidationResult result, String savedDeviceName) {
-        if (result == null) {
-            return;
-        }
-
-        findByCameraId(result.getCameraId())
-                .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
-                .ifPresent(summary -> {
-                    summary.setDeviceName(savedDeviceName);
-                    summary.setStatus(DeviceSummary.Status.CONNECTED);
-                    summary.setSyncProgress(resolveSyncProgress(summary));
-                    summary.setValidationResult(null);
-                });
+        deviceListState.markDeviceSaved(result, savedDeviceName);
         deviceListView.refresh();
-    }
-
-    private void sortDeviceItems() {
-        FXCollections.sort(deviceItems, DEVICE_NAME_COMPARATOR);
-    }
-
-    private static String sortName(DeviceSummary summary) {
-        if (summary.getDeviceName() != null && !summary.getDeviceName().isBlank()) {
-            return summary.getDeviceName();
-        }
-        if (summary.getHardwareId() != null) {
-            return summary.getHardwareId();
-        }
-        return "";
-    }
-
-    // Build DeviceSummary from persisted device: status will be updated by
-    // device tracker events when devices connect/disconnect
-    private DeviceSummary toSavedSummary(ValidatedDevice device) {
-        DeviceSummary summary = new DeviceSummary(
-                device.getHardwareId(),
-                device.getDeviceName(),
-                device.getCameraId(),
-                DeviceSummary.Status.OFFLINE,
-                DeviceMiniStatus.SyncProgress.idle(),
-                null);
-        summary.setSyncProgress(resolveSyncProgress(summary));
-        return summary;
     }
 
     private void loadFileList() {
@@ -643,23 +443,8 @@ public class DashboardController extends BaseLayoutController {
     }
 
     public void mergeSavedDevices() {
-        List<ValidatedDevice> dbDevices = validatedDeviceRepository.findAll();
-
-        Set<String> dbCameraIds = dbDevices.stream()
-                .map(ValidatedDevice::getCameraId)
-                .collect(Collectors.toSet());
-        for (ValidatedDevice device : dbDevices) {
-            boolean alreadyInList = deviceItems.stream()
-                    .anyMatch(s -> device.getCameraId().equals(s.getCameraId()));
-            if (!alreadyInList) {
-                deviceItems.add(toSavedSummary(device));
-            }
-        }
-
-        deviceItems.removeIf(summary -> summary.getStatus() == DeviceSummary.Status.OFFLINE
-                && !dbCameraIds.contains(summary.getCameraId()));
-
-        sortDeviceItems();
+        deviceListState.mergeSavedDevices();
+        refresh();
     }
 
     public void onUserAutoCreated() {

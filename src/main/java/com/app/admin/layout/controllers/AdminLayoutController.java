@@ -162,9 +162,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
     private final Set<String> pendingStorageSyncs = new HashSet<>();
     private final Queue<FailureSummaryRequestedEvent> pendingFailureSummaries = new ArrayDeque<>();
-    private final Queue<DeviceSummary> pendingValidationRequests = new ArrayDeque<>();
     private boolean failureSummaryVisible;
-    private boolean validationDialogVisible;
 
     public AdminLayoutController(ViewLoader viewLoader,
             AppUpdateController appUpdateController,
@@ -297,29 +295,7 @@ public class AdminLayoutController extends BaseLayoutController {
             showContactAdminToSaveDeviceDialog(summary.getValidationResult());
             return;
         }
-
-        Platform.runLater(() -> {
-            pendingValidationRequests.add(summary);
-            showNextValidationIfIdle();
-        });
-    }
-
-    private void showNextValidationIfIdle() {
-        if (validationDialogVisible) {
-            return;
-        }
-        DeviceSummary next = pendingValidationRequests.poll();
-        if (next == null) {
-            return;
-        }
-
-        validationDialogVisible = true;
-        try {
-            showSaveDeviceConfirmation(next.getValidationResult());
-        } finally {
-            validationDialogVisible = false;
-            showNextValidationIfIdle();
-        }
+        showSaveDeviceConfirmation(summary.getValidationResult());
     }
 
     private void handleRequestSync(DeviceSummary summary) {
@@ -530,6 +506,11 @@ public class AdminLayoutController extends BaseLayoutController {
     // Handle device connection/disconnection events from DeviceTracker
     @EventListener(condition = "@session.user != null")
     public void onDeviceEvent(DeviceEvent event) {
+        // Ignore events before user login
+        if (session.getUser() == null) {
+            return;
+        }
+
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             Platform.runLater(() -> handleValidatedResult(event.validationResult()));
         } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
@@ -862,7 +843,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private int updateStorageBar(String labelKey, ProgressBar pb,
-                                 Label titleLbl, Label percentLbl, Label usageLbl, File folder) {
+            Label titleLbl, Label percentLbl, Label usageLbl, File folder) {
         if (pb == null || titleLbl == null || percentLbl == null || usageLbl == null) {
             return STORAGE_OK;
         }
@@ -898,7 +879,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     // Set UI state when storage drive is unavailable
     private void setStorageUnavailableUI(ProgressBar pb, Label titleLbl, Label percentLbl, Label usageLbl,
-                                         String labelKey) {
+            String labelKey) {
         pb.setProgress(0);
         pb.getStyleClass().removeAll(CSS_STORAGE_WARN, CSS_STORAGE_CRITICAL);
         pb.getStyleClass().add(CSS_STORAGE_CRITICAL);
@@ -909,7 +890,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     // Set UI state when storage metrics are unknown
     private void setStorageUnknownUI(ProgressBar pb, Label titleLbl, Label percentLbl, Label usageLbl,
-                                     String labelKey) {
+            String labelKey) {
         pb.setProgress(0);
         titleLbl.setText(I18n.get(labelKey));
         percentLbl.setText("—");
@@ -918,7 +899,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     // Update storage UI with calculated metrics
     private void updateStorageUI(ProgressBar pb, Label titleLbl, Label percentLbl, Label usageLbl,
-                                 String labelKey, File statsTarget, double ratio) {
+            String labelKey, File statsTarget, double ratio) {
         pb.setProgress(ratio);
         pb.getStyleClass().removeAll(CSS_STORAGE_WARN, CSS_STORAGE_CRITICAL);
 
@@ -933,7 +914,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
     // Set storage label text values
     private void setStorageLabels(Label titleLbl, Label percentLbl, Label usageLbl,
-                                  String labelKey, File statsTarget, double ratio) {
+            String labelKey, File statsTarget, double ratio) {
         String driveLetter = FileUtil.extractDriveLetter(statsTarget);
         String folderName = I18n.get(labelKey);
         if (driveLetter != null && !driveLetter.isEmpty()) {

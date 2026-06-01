@@ -179,7 +179,7 @@ public class GuestLayoutController extends BaseLayoutController {
                 null);
         settingsPopupHelper.initialize();
 
-        labelGreeting.setText(I18n.get("top.hello"));
+        labelGreeting.setText(I18n.get("top.hello.guest"));
 
         appNoticeService.bindNoticeContainer(noticeContainer);
 
@@ -336,63 +336,7 @@ public class GuestLayoutController extends BaseLayoutController {
             if (!restoreService.isRunning()) {
                 registerDeviceForSync(cameraId);
             }
-            return;
         }
-
-        if (session.isAdmin()) {
-            refreshDashboardIfActive();
-            showSaveDeviceConfirmation(result);
-        }
-    }
-
-    private void showSaveDeviceConfirmation(DeviceValidationResult result) {
-        if (result == null || !result.isValid()) {
-            showNoticeError(I18n.get("device.validation.failed"));
-            return;
-        }
-
-        String cameraId = result.getCameraId();
-        Alert confirm = AlertHelper.createConfirmation(
-                I18n.get("device.save.title"),
-                I18n.get("device.save.header"),
-                I18n.get(
-                        "device.save.content",
-                        cameraId,
-                        result.getMatchedModelName()));
-
-        ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
-        ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
-        AlertHelper.setButtons(confirm, yesButton, noButton);
-
-        registerAlert(result.getHardwareId(), confirm);
-        Optional<ButtonType> chosen;
-        try {
-            chosen = confirm.showAndWait();
-        } finally {
-            unregisterAlert(result.getHardwareId(), confirm);
-        }
-        if (chosen.isEmpty() || chosen.get() != yesButton) {
-            return;
-        }
-
-        ValidatedDevice saved = deviceValidationService.saveValidatedDevice(
-                cameraId,
-                result.getHardwareId(),
-                result.getMatchedWhitelistId());
-        if (currentDashboardController != null) {
-            currentDashboardController.markDeviceSaved(result, saved.getDeviceName());
-        }
-        showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
-        registerDeviceForSync(cameraId);
-        refreshDashboardIfActive();
-    }
-
-    private void registerAlert(String hardwareId, Alert alert) {
-        activeAlertsByHardwareId.put(hardwareId, alert);
-    }
-
-    private void unregisterAlert(String hardwareId, Alert alert) {
-        activeAlertsByHardwareId.remove(hardwareId, alert);
     }
 
     // Programmatically dismiss any open dialog for a device that disconnected so
