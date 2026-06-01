@@ -60,8 +60,9 @@ public class DatabaseConnectionAspect {
                     showDatabaseLostAlertAndRestart();
                 }
                 holdUntilApplicationExits();
+                throw new DatabaseUnavailableException(rootCause);
             }
-            throw new DatabaseUnavailableException(rootCause);
+            throw e;
         }
     }
 
