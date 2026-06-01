@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 public class DeviceListState {
 
     @Getter
-    private final ObservableList<DeviceSummary> deviceItems = FXCollections.observableArrayList();
+    private static final ObservableList<DeviceSummary> deviceItems = FXCollections.observableArrayList();
 
     private final ValidatedDeviceRepository validatedDeviceRepository;
     private final DeviceMiniStatus deviceMiniStatus;

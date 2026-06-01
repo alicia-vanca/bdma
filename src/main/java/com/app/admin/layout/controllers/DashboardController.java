@@ -58,11 +58,9 @@ public class DashboardController extends BaseLayoutController {
     private final DeviceMiniStatus deviceMiniStatus;
     private final Session session;
     private final DeviceListState deviceListState;
-    private final ObservableList<DeviceSummary> deviceItems;
 
     private FileListController fileListController;
     private Consumer<DeviceSummary> onRequestValidate;
-    private final List<DeviceSummary> pendingValidationRequests = new java.util.ArrayList<>();
     @Setter
     private Consumer<DeviceSummary> onRequestSync;
 
@@ -76,17 +74,11 @@ public class DashboardController extends BaseLayoutController {
         this.deviceMiniStatus = deviceMiniStatus;
         this.session = session;
         this.deviceListState = deviceListState;
-        this.deviceItems = deviceListState.getDeviceItems();
     }
 
     public void setOnRequestValidate(Consumer<DeviceSummary> callback) {
         this.onRequestValidate = callback;
         updateCellFactory();
-        if (!pendingValidationRequests.isEmpty()) {
-            List<DeviceSummary> requests = List.copyOf(pendingValidationRequests);
-            pendingValidationRequests.clear();
-            Platform.runLater(() -> requests.forEach(this::maybeRequestValidate));
-        }
     }
 
     private void updateCellFactory() {
@@ -330,7 +322,7 @@ public class DashboardController extends BaseLayoutController {
         devicePanel.maxWidthProperty().bind(
                 root.widthProperty().multiply(0.15));
         updateCellFactory();
-        deviceListView.setItems(deviceItems);
+        deviceListView.setItems(DeviceListState.getDeviceItems());
         deviceListState.loadSavedDevicesIfNeeded();
         deviceMiniStatus.setOnProgressChanged(this::refresh);
         refresh();
@@ -350,29 +342,6 @@ public class DashboardController extends BaseLayoutController {
         }
     }
 
-    // Clear runtime device state only when the user session ends so language or
-    // tab reloads can reuse the same in-memory list.
-    public void resetState() {
-        deviceListState.resetState();
-        deviceItems.clear();
-
-        // Cleanup file list controller resources to prevent thread leaks
-        if (fileListController != null) {
-            fileListController.cleanup();
-        }
-    }
-
-    private void maybeRequestValidate(DeviceSummary summary) {
-        if (summary == null || !summary.isUnvalidated()) {
-            return;
-        }
-        if (onRequestValidate == null) {
-            pendingValidationRequests.add(summary);
-            return;
-        }
-        Platform.runLater(() -> onRequestValidate.accept(summary));
-    }
-
     private DeviceMiniStatus.SyncProgress resolveSyncProgress(DeviceSummary summary) {
         if (summary.getCameraId() == null) {
             return DeviceMiniStatus.SyncProgress.idle();
@@ -382,7 +351,7 @@ public class DashboardController extends BaseLayoutController {
 
     // Re-resolve sync state only for devices represented by persisted records.
     public void refresh() {
-        for (DeviceSummary summary : deviceItems) {
+        for (DeviceSummary summary : DeviceListState.getDeviceItems()) {
             if (isPersistedDeviceState(summary)) {
                 summary.setSyncProgress(resolveSyncProgress(summary));
             }

@@ -41,7 +41,6 @@ public class GuestDashboardController extends BaseLayoutController {
     private final DeviceMiniStatus deviceMiniStatus;
     private final ApplicationEventPublisher publisher;
     private final DeviceListState deviceListState;
-    private final ObservableList<DeviceSummary> deviceItems;
 
     private FileListController fileListController;
 
@@ -53,7 +52,6 @@ public class GuestDashboardController extends BaseLayoutController {
         this.deviceMiniStatus = deviceMiniStatus;
         this.publisher = publisher;
         this.deviceListState = deviceListState;
-        this.deviceItems = deviceListState.getDeviceItems();
     }
 
     // Apply visual styling based on device status: connected (green), offline
@@ -126,7 +124,7 @@ public class GuestDashboardController extends BaseLayoutController {
     @FXML
     public void initialize() {
         deviceListState.loadSavedDevicesIfNeeded();
-        deviceItems.addListener((ListChangeListener<? super DeviceSummary>) change -> refresh());
+        DeviceListState.getDeviceItems().addListener((ListChangeListener<? super DeviceSummary>) change -> refresh());
         deviceMiniStatus.setOnProgressChanged(this::refresh);
         refresh();
     }
@@ -139,7 +137,7 @@ public class GuestDashboardController extends BaseLayoutController {
 
         deviceFlowPane.getChildren().clear();
 
-        for (DeviceSummary summary : deviceItems) {
+        for (DeviceSummary summary : DeviceListState.getDeviceItems()) {
             summary.setSyncProgress(resolveSyncProgress(summary));
             deviceFlowPane.getChildren().add(createDeviceCard(summary));
         }

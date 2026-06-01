@@ -2,15 +2,9 @@ package com.app.admin.layout.controllers;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Queue;
-import java.util.Set;
+import java.util.*;
 
+import com.app.common.services.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -49,10 +43,6 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.media.services.MediaViewerService;
 import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.common.modules.session.Session;
-import com.app.common.services.AppNoticeService;
-import com.app.common.services.DeviceMiniStatus;
-import com.app.common.services.DeviceTracker;
-import com.app.common.services.DeviceValidationService;
 import com.app.common.utils.FileUtil;
 import com.app.dev.settingsdialog.controllers.DevSettingsDialogController;
 import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
@@ -237,7 +227,9 @@ public class AdminLayoutController extends BaseLayoutController {
         openDefaultTab();
         if (!session.isDev()) {
             refreshStorageStatus();
+
         }
+
     }
 
     public void setIconNte() {
@@ -284,6 +276,7 @@ public class AdminLayoutController extends BaseLayoutController {
             setContent(result.node());
         }
         setActiveButton(getMenuButtons(), btnDashboard);
+        Platform.runLater(this::showPendingUnvalidatedDevices);
     }
 
     private void handleRequestValidate(DeviceSummary summary) {
@@ -362,20 +355,11 @@ public class AdminLayoutController extends BaseLayoutController {
         mediaViewerService.close();
         log.info("User {} is logging out", session.getUser().getUsername());
         if (currentDashboardController != null) {
-            currentDashboardController.resetState();
             currentDashboardController.closeQueueDialog();
+            currentDashboardController.setOnRequestValidate(null);
+            currentDashboardController.setOnRequestValidate(null);
         }
-//        restoreService.cancel();
-//        deviceSyncQueue.clearAll();
-//        deviceMiniStatus.clearAll();
-//        queueManagerService.clearAll();
 
-        // Reset tracked device state for the current session. The next login will
-        // start from a fresh device scan.
-//        backupRunner.resetForLogout();
-//        syncRunner.resetForLogout();
-//        exportRunner.resetForLogout();
-//        pendingFailureSummaries.clear();
         failureSummaryVisible = false;
 
         session.clear();
@@ -506,11 +490,6 @@ public class AdminLayoutController extends BaseLayoutController {
     // Handle device connection/disconnection events from DeviceTracker
     @EventListener(condition = "@session.user != null")
     public void onDeviceEvent(DeviceEvent event) {
-        // Ignore events before user login
-        if (session.getUser() == null) {
-            return;
-        }
-
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             Platform.runLater(() -> handleValidatedResult(event.validationResult()));
         } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
@@ -989,4 +968,11 @@ public class AdminLayoutController extends BaseLayoutController {
         });
     }
 
+    private void showPendingUnvalidatedDevices() {
+        DeviceListState.getDeviceItems().stream()
+                .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
+                .map(DeviceSummary::getValidationResult)
+                .filter(Objects::nonNull)
+                .forEach(session.isAdmin() ? this::showSaveDeviceConfirmation : this::showContactAdminToSaveDeviceDialog);
+    }
 }
