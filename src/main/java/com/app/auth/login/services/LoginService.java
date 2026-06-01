@@ -42,15 +42,6 @@ public class LoginService {
             return;
         }
 
-        // Ensure data and backup directories are initialized and accessible
-        folderManager.init();
-
-        syncRunner.startSyncWorker();
-        backupRunner.startBackupWorker();
-
-        // Clear deferred backup flag and notify user if drive still unavailable
-        backupService.recoverPendingBackups();
-
         log.info("Login init [{}] [{}] finished.",
                 user.getUsername(),
                 user.getRole());

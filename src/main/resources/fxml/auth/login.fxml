@@ -32,6 +32,6 @@
             </StackPane>
         </VBox>
         <Label fx:id="message" visible="false" styleClass="message-error"/>
-        <Button text="%login.button" onAction="#handleLogin" maxWidth="1.7976931348623157E308" styleClass="login-btn"/>
+        <Button fx:id="btnLogin" text="%login.button" onAction="#handleLogin" maxWidth="1.7976931348623157E308" styleClass="login-btn"/>
     </VBox>
 </StackPane>

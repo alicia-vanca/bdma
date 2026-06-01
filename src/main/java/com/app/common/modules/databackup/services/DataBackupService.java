@@ -78,11 +78,6 @@ public class DataBackupService {
         }
 
         try {
-            // Skip recovery if user is not logged in
-            if (session.getUser() == null) {
-                return;
-            }
-
             List<String> pending = fileRepo.loadPendingBackup();
 
             if (pending.isEmpty()) {

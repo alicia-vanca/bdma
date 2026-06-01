@@ -66,9 +66,6 @@ public class DataSyncService {
         if (existing != null) {
             return existing.getId();
         }
-        if (!session.isAdmin()) {
-            return null;
-        }
         return createDefaultUser(normalized).getId();
     }
 

@@ -437,8 +437,7 @@ public class DataSyncWorker implements Runnable {
 
         try {
             Long deviceId = dataSyncService.resolveDeviceId(syncContext.cameraId());
-            Long userId = dataSyncService.resolveUserId(syncContext.username());
-            if (deviceId == null || userId == null)
+            if (deviceId == null)
                 return;
 
             String deviceName = syncContext.deviceName();

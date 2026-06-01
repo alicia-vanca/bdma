@@ -2,6 +2,8 @@ package com.app.auth.login.controllers;
 
 import java.util.List;
 
+import javafx.scene.Scene;
+import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -60,6 +62,8 @@ public class LoginController {
     private Label message;
     @FXML
     private Button btnSettings;
+    @FXML
+    private Button btnLogin;
 
     private final Session session;
     private final UserService userService;
@@ -240,6 +244,8 @@ public class LoginController {
         if (response.result() == LoginResult.SUCCESS && response.user().getRole() == Role.DEV) {
             session.setPendingDevUser(response.user());
             MainApp.showTotp();
+            Stage stage = (Stage) btnLogin.getScene().getWindow();
+            stage.close();
             return;
         }
 
@@ -258,12 +264,10 @@ public class LoginController {
                 // Trigger background sync without blocking UI
                 loginService.onLoginSuccess();
 
-                // Start a fresh device-tracking session after successful login.
-                DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
-                dataSyncRunner.startDeviceTracker();
-
                 // Navigate to main screen
                 MainApp.showAdmin();
+                Stage stage = (Stage) btnLogin.getScene().getWindow();
+                stage.close();
                 break;
 
             case ACCOUNT_DEACTIVATED:

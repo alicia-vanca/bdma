@@ -32,9 +32,6 @@ public record SyncContext(
         if (cameraId == null || !cameraId.equals(fileCameraId)) {
             return false;
         }
-        if (isAdmin) {
-            return true;
-        }
-        return username != null && username.equals(fileUserName);
+        return true;
     }
 }

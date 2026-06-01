@@ -34,6 +34,7 @@ public class DeviceTracker implements Runnable {
     private final ConcurrentHashMap<String, DeviceState> deviceStates = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ScheduledFuture<?>> gracePeriodTasks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, DeviceValidationResult> unvalidatedResults = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, DeviceEvent> currentDeviceEvents = new ConcurrentHashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private volatile boolean running;
 
@@ -147,6 +148,7 @@ public class DeviceTracker implements Runnable {
 
         deviceStates.clear();
         unvalidatedResults.clear();
+        currentDeviceEvents.clear();
     }
 
     // Recreates the scheduler if it was shut down (e.g. after logout/login cycle).
@@ -268,6 +270,7 @@ public class DeviceTracker implements Runnable {
                 } else if (state == DeviceState.UNVALIDATED) {
                     deviceStates.remove(serial);
                     cancelStabilityCheck(serial);
+                    currentDeviceEvents.remove(serial);
                     eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, unvalidatedResults.remove(serial)));
                 }
             }
@@ -333,11 +336,15 @@ public class DeviceTracker implements Runnable {
         DeviceValidationResult result = validateSerialSafely(serial);
 
         if (result.isValid()) {
-            eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result));
+            DeviceEvent event = new DeviceEvent(serial, DeviceEvent.EventType.CONNECTED, result);
+            currentDeviceEvents.put(serial, event);
+            eventPublisher.publishEvent(event);
         } else {
             deviceStates.put(serial, DeviceState.UNVALIDATED);
             unvalidatedResults.put(serial, result);
-            eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.UNVALIDATED, result));
+            DeviceEvent event = new DeviceEvent(serial, DeviceEvent.EventType.UNVALIDATED, result);
+            currentDeviceEvents.put(serial, event);
+            eventPublisher.publishEvent(event);
         }
     }
 
@@ -377,6 +384,7 @@ public class DeviceTracker implements Runnable {
                 if (deviceStates.remove(serial, DeviceState.DISCONNECTING)) {
                     log.info("[{}] Grace period expired, publishing DISCONNECTED", serial);
                     adbClient.onDisconnected(serial);
+                    currentDeviceEvents.remove(serial);
                     eventPublisher.publishEvent(
                             new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, null));
                 } else {
@@ -398,5 +406,9 @@ public class DeviceTracker implements Runnable {
             future.cancel(false);
         }
         adbClient.onReconnected(serial);
+    }
+
+    public List<DeviceEvent> getCurrentDeviceEvents() {
+        return currentDeviceEvents.values().stream().toList();
     }
 }

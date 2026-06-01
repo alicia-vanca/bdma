@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.FlowPane?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.control.Label?>
+<HBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.app.guest.controllers.GuestDashboardController"
+      styleClass="content">
+    <VBox fx:id="devicePanel" styleClass="device-panel" HBox.hgrow="ALWAYS">
+        <Label text="%dashboard.devices" styleClass="panel-title"/>
+        <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS">
+            <FlowPane fx:id="deviceFlowPane" hgap="10" vgap="10" styleClass="device-flow"/>
+        </ScrollPane>
+    </VBox>
+</HBox>
+
+
