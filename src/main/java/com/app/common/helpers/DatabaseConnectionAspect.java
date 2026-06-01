@@ -52,9 +52,10 @@ public class DatabaseConnectionAspect {
             }
 
             String errMsgSqlite = sqliteEx.getMessage().toLowerCase();
-            logger.error("Detected connection error to SQL: {}", errMsgSqlite);
+
             boolean databaseAvailable = isDatabaseAvailable();
             if (!databaseAvailable) {
+                logger.error("Detected connection error to SQL: {}", errMsgSqlite);
                 if (isAlertShowing.compareAndSet(false, true)) {
                     showDatabaseLostAlertAndRestart();
                 }
