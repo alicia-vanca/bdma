@@ -1,5 +1,6 @@
-package com.app.common.helpers;
+package com.app.common.aspects;
 
+import com.app.common.helpers.AlertHelper;
 import com.app.common.modules.i18n.I18n;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
@@ -68,11 +69,15 @@ public class DatabaseConnectionAspect {
 
     private void holdUntilApplicationExits() {
         CountDownLatch shutdownLatch = new CountDownLatch(1);
-        try {
-            shutdownLatch.await();
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for application restart");
+        while (shutdownLatch.getCount() > 0) {
+            try {
+                shutdownLatch.await();
+            } catch (InterruptedException ex) {
+                // Keep repository callers parked while shutdown is in progress; returning would
+                // let scheduler threads log restart-control exceptions during application exit.
+                Thread.currentThread().interrupt();
+                logger.warn("Interrupted while waiting for application restart");
+            }
         }
     }
 
@@ -103,7 +108,7 @@ public class DatabaseConnectionAspect {
 
     private void showDatabaseLostAlertOnFxThread() {
         Alert confirm = AlertHelper.create(Alert.AlertType.ERROR,
-                I18n.get("helper.db.disconnect"), I18n.get("helper.db.lost"), I18n.get("helper.db.alert"));
+                I18n.get("aspect.db.disconnect"), I18n.get("aspect.db.lost"), I18n.get("aspect.db.alert"));
         confirm.showAndWait();
     }
 
@@ -126,7 +131,7 @@ public class DatabaseConnectionAspect {
 
             if (exeFile.exists()) {
                 // CASE A: The user is running the program using an installed .exe file
-                logger.info("Restarting the application from the .exe file.: {}", exeFile.getPath());
+                logger.info("Restarting the application from the .exe file : {}", exeFile.getPath());
                 command.add(exeFile.getPath());
             } else {
                 // CASE B: Running in a development environment (IDE) or a separate .jar file.
@@ -155,7 +160,7 @@ public class DatabaseConnectionAspect {
             System.exit(0);
 
         } catch (Exception e) {
-            logger.error("The application cannot be automatically restarted.: ", e);
+            logger.error("The application cannot be automatically restarted : ", e);
             // Final backup plan: It's still necessary to shut it down to avoid the user's
             // computer freezing.
             Platform.exit();
