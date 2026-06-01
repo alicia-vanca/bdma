@@ -11,7 +11,7 @@
            styleClass="content-shell">
     <VBox spacing="12" styleClass="patch-import-shell">
         <HBox alignment="CENTER_LEFT" styleClass="patch-import-toolbar">
-            <Button fx:id="btnImportPatch" onAction="#onImportPatch" text="%setting.patch.btn.apply"
+            <Button fx:id="btnImportPatch" onAction="#onImportPatch" text="%dev.patch.btn.apply"
                     styleClass="btn-primary"/>
         </HBox>
         <StackPane VBox.vgrow="ALWAYS" styleClass="patch-import-table-shell">
@@ -20,12 +20,12 @@
                     <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
                 </columnResizePolicy>
                 <columns>
-                    <TableColumn fx:id="colPatchId" text="%setting.patch.table.patchId" prefWidth="40"/>
-                    <TableColumn fx:id="colPatchFile" text="%setting.patch.table.file" prefWidth="40"/>
-                    <TableColumn fx:id="colPatchAppliedAt" text="%setting.patch.table.appliedAt" prefWidth="20"/>
+                    <TableColumn fx:id="colPatchId" text="%dev.patch.table.patchId" prefWidth="40"/>
+                    <TableColumn fx:id="colPatchFile" text="%dev.patch.table.file" prefWidth="40"/>
+                    <TableColumn fx:id="colPatchAppliedAt" text="%dev.patch.table.appliedAt" prefWidth="20"/>
                 </columns>
                 <placeholder>
-                    <Label text="%setting.patch.table.empty" styleClass="patch-import-empty"/>
+                    <Label text="%dev.patch.table.empty" styleClass="patch-import-empty"/>
                 </placeholder>
             </TableView>
         </StackPane>

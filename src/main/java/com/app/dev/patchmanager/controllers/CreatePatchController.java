@@ -61,14 +61,14 @@ public class CreatePatchController {
     private static final String ENCRYPTED_SQL_EXTENSION = ".sql.enc";
     private static final String STYLE_STATUS_SUCCESS = "status-success";
     private static final String STYLE_STATUS_ERROR = "status-error";
-    private static final String KEY_BUILDER_USERNAME = "setting.patch.builder.username";
-    private static final String KEY_BUILDER_PASSWORD = "setting.patch.builder.password";
-    private static final String KEY_BUILDER_MODEL_NAME = "setting.patch.builder.modelName";
-    private static final String KEY_BUILDER_NEW_MODEL_NAME = "setting.patch.builder.newModelName";
-    private static final String KEY_BUILDER_KEEP_CURRENT = "setting.patch.builder.keepCurrentIfBlank";
-    private static final String KEY_BUILDER_STATUS = "setting.patch.builder.status";
-    private static final String KEY_BUILDER_CURRENT_USERNAME = "setting.patch.builder.currentUsername";
-    private static final String KEY_BUILDER_CURRENT_MODEL_NAME = "setting.patch.builder.currentModelName";
+    private static final String KEY_BUILDER_USERNAME = "dev.patch.builder.username";
+    private static final String KEY_BUILDER_PASSWORD = "dev.patch.builder.password";
+    private static final String KEY_BUILDER_MODEL_NAME = "dev.patch.builder.modelName";
+    private static final String KEY_BUILDER_NEW_MODEL_NAME = "dev.patch.builder.newModelName";
+    private static final String KEY_BUILDER_KEEP_CURRENT = "dev.patch.builder.keepCurrentIfBlank";
+    private static final String KEY_BUILDER_STATUS = "dev.patch.builder.status";
+    private static final String KEY_BUILDER_CURRENT_USERNAME = "dev.patch.builder.currentUsername";
+    private static final String KEY_BUILDER_CURRENT_MODEL_NAME = "dev.patch.builder.currentModelName";
     private static final String SQL_VALUES_PREFIX = "VALUES (";
 
     private final PatchCryptoService patchCryptoService;
@@ -178,15 +178,15 @@ public class CreatePatchController {
         txtPatchSql.setText((existing == null || existing.isBlank()) ? sql
                 : existing.stripTrailing() + System.lineSeparator() + System.lineSeparator() + sql);
         txtPatchSql.positionCaret(txtPatchSql.getText().length());
-        showPatchBuilderStatus(I18n.get("setting.patch.builder.statementAdded"), true);
+        showPatchBuilderStatus(I18n.get("dev.patch.builder.statementAdded"), true);
     }
 
     @FXML
     public void onLoadPatchSql() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle(I18n.get("setting.patch.chooser.loadSql.title"));
+        chooser.setTitle(I18n.get("dev.patch.chooser.loadSql.title"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(
-                I18n.get("setting.patch.chooser.sql.files"), "*.sql"));
+                I18n.get("dev.patch.chooser.sql.files"), "*.sql"));
         applyLastChooserDirectory(chooser);
         File selected = chooser.showOpenDialog(getStage());
         if (selected == null) {
@@ -198,7 +198,7 @@ public class CreatePatchController {
             txtPatchSql.setText(Files.readString(selected.toPath(), StandardCharsets.UTF_8));
         } catch (IOException e) {
             log.error("Failed to load patch SQL file", e);
-            showNotice(I18n.get("setting.patch.loadSql.error"), false);
+            showNotice(I18n.get("dev.patch.loadSql.error"), false);
         }
     }
 
@@ -210,10 +210,10 @@ public class CreatePatchController {
 
         UUID patchId = UUID.randomUUID();
         FileChooser chooser = new FileChooser();
-        chooser.setTitle(I18n.get("setting.patch.chooser.save.title"));
+        chooser.setTitle(I18n.get("dev.patch.chooser.save.title"));
         chooser.setInitialFileName("BDMA_Patch_" + patchId);
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(
-                I18n.get("setting.patch.chooser.encrypted.files"), "*" + ENCRYPTED_SQL_EXTENSION));
+                I18n.get("dev.patch.chooser.encrypted.files"), "*" + ENCRYPTED_SQL_EXTENSION));
         applyLastChooserDirectory(chooser);
         File selected = chooser.showSaveDialog(getStage());
         if (selected == null) {
@@ -224,10 +224,10 @@ public class CreatePatchController {
         try {
             Path encFile = normalizeEncryptedPatchPath(selected.toPath());
             patchCryptoService.encryptSql(txtPatchSql.getText(), encFile, patchId);
-            showNotice(I18n.get("setting.patch.save.success", encFile.getFileName()), true);
+            showNotice(I18n.get("dev.patch.save.success", encFile.getFileName()), true);
         } catch (Exception e) {
             log.error("Failed to save encrypted patch", e);
-            showNotice(I18n.get("setting.patch.packTyped.encrypt.error"), false);
+            showNotice(I18n.get("dev.patch.packTyped.encrypt.error"), false);
         }
     }
 
@@ -253,9 +253,9 @@ public class CreatePatchController {
         }
         try {
             List<String> statements = patchCryptoService.validateSql(sql);
-            refreshTypedPatchState(true, I18n.get("setting.patch.validation.valid", statements.size()));
+            refreshTypedPatchState(true, I18n.get("dev.patch.validation.valid", statements.size()));
             if (showNotice) {
-                showNotice(I18n.get("setting.patch.validation.sqlValid"), true);
+                showNotice(I18n.get("dev.patch.validation.sqlValid"), true);
             }
             return true;
         } catch (Exception e) {
@@ -284,7 +284,7 @@ public class CreatePatchController {
         patchBuilderRebuilding = true;
         patchBuilderForm.getChildren().clear();
         whitelistRuleInputs.clear();
-        addBuilderRow(0, I18n.get("setting.patch.builder.scenario"), cbPatchBuilderScenario);
+        addBuilderRow(0, I18n.get("dev.patch.builder.scenario"), cbPatchBuilderScenario);
         addBuilderSeparator(1);
         PatchBuilderScenario scenario = cbPatchBuilderScenario.getValue();
         if (scenario == PatchBuilderScenario.ADD_USER || scenario == PatchBuilderScenario.UPDATE_USER) {
@@ -321,16 +321,16 @@ public class CreatePatchController {
         if (createMode) {
             addBuilderRow(2, I18n.get(KEY_BUILDER_USERNAME), txtBuilderUsername);
             addBuilderRow(3, I18n.get(KEY_BUILDER_PASSWORD), txtBuilderPassword);
-            addBuilderRow(4, I18n.get("setting.patch.builder.role"), cbBuilderRole);
+            addBuilderRow(4, I18n.get("dev.patch.builder.role"), cbBuilderRole);
             addBuilderInlineRow(5, I18n.get(KEY_BUILDER_STATUS), statusSelector);
         } else {
             txtBuilderCurrentUsername = builderTextField(I18n.get(KEY_BUILDER_CURRENT_USERNAME));
             txtBuilderNewUsername = builderTextField(I18n.get(KEY_BUILDER_KEEP_CURRENT));
             addBuilderRow(2, I18n.get(KEY_BUILDER_CURRENT_USERNAME), txtBuilderCurrentUsername);
             addBuilderSeparator(3);
-            addBuilderRow(4, I18n.get("setting.patch.builder.newUsername"), txtBuilderNewUsername);
+            addBuilderRow(4, I18n.get("dev.patch.builder.newUsername"), txtBuilderNewUsername);
             addBuilderRow(5, I18n.get(KEY_BUILDER_PASSWORD), txtBuilderPassword);
-            addBuilderRow(6, I18n.get("setting.patch.builder.role"), cbBuilderRole);
+            addBuilderRow(6, I18n.get("dev.patch.builder.role"), cbBuilderRole);
             addBuilderInlineRow(7, I18n.get(KEY_BUILDER_STATUS), statusSelector);
         }
     }
@@ -351,11 +351,11 @@ public class CreatePatchController {
         whitelistRulesBox = new VBox(8);
         whitelistRulesBox.getStyleClass().add("patch-builder-rules");
         addBuilderInlineRow(updateMode ? 5 : 3, I18n.get(KEY_BUILDER_STATUS), statusSelector);
-        addBuilderRow(updateMode ? 6 : 4, I18n.get("setting.patch.builder.rules"), whitelistRulesBox);
+        addBuilderRow(updateMode ? 6 : 4, I18n.get("dev.patch.builder.rules"), whitelistRulesBox);
         addWhitelistRule("ro.product.model", "");
         addWhitelistRule("ro.product.device", "");
         addWhitelistRule("ro.board.platform", "");
-        Button addRuleButton = new Button(I18n.get("setting.patch.builder.addRule"));
+        Button addRuleButton = new Button(I18n.get("dev.patch.builder.addRule"));
         addRuleButton.getStyleClass().add("btn-secondary");
         addRuleButton.setOnAction(event -> addWhitelistRule("", ""));
         whitelistRulesBox.getChildren().add(addRuleButton);
@@ -363,8 +363,8 @@ public class CreatePatchController {
 
     private Node createStatusSelector() {
         ToggleGroup statusGroup = new ToggleGroup();
-        rbBuilderActive = new RadioButton(I18n.get("setting.patch.builder.active"));
-        RadioButton rbBuilderInactive = new RadioButton(I18n.get("setting.patch.builder.inactive"));
+        rbBuilderActive = new RadioButton(I18n.get("dev.patch.builder.active"));
+        RadioButton rbBuilderInactive = new RadioButton(I18n.get("dev.patch.builder.inactive"));
         rbBuilderActive.setToggleGroup(statusGroup);
         rbBuilderInactive.setToggleGroup(statusGroup);
         rbBuilderActive.setSelected(true);
@@ -423,8 +423,8 @@ public class CreatePatchController {
     }
 
     private void addWhitelistRule(String key, String value) {
-        TextField keyField = builderTextField(I18n.get("setting.patch.builder.ruleKey"));
-        TextField valueField = builderTextField(I18n.get("setting.patch.builder.ruleValue"));
+        TextField keyField = builderTextField(I18n.get("dev.patch.builder.ruleKey"));
+        TextField valueField = builderTextField(I18n.get("dev.patch.builder.ruleValue"));
         keyField.setText(key);
         valueField.setText(value);
         Button removeButton = new Button("×");
@@ -544,7 +544,7 @@ public class CreatePatchController {
                 continue;
             }
             if (key.isBlank() || expectedValue.isBlank()) {
-                throw new AppException(I18n.get("setting.patch.builder.ruleIncomplete"));
+                throw new AppException(I18n.get("dev.patch.builder.ruleIncomplete"));
             }
             sql.append(System.lineSeparator()).append(System.lineSeparator())
                     .append("INSERT INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)")
@@ -563,7 +563,7 @@ public class CreatePatchController {
     private String required(TextField field, String label) {
         String value = value(field);
         if (value.isBlank()) {
-            throw new AppException(I18n.get("setting.patch.builder.required", label));
+            throw new AppException(I18n.get("dev.patch.builder.required", label));
         }
         return value;
     }
@@ -586,10 +586,10 @@ public class CreatePatchController {
 
     private String builderScenarioLabel(PatchBuilderScenario scenario) {
         return switch (scenario) {
-            case ADD_USER -> I18n.get("setting.patch.builder.scenario.addUser");
-            case UPDATE_USER -> I18n.get("setting.patch.builder.scenario.updateUser");
-            case ADD_WHITELIST_MODEL -> I18n.get("setting.patch.builder.scenario.addWhitelistModel");
-            case UPDATE_WHITELIST_MODEL -> I18n.get("setting.patch.builder.scenario.updateWhitelistModel");
+            case ADD_USER -> I18n.get("dev.patch.builder.scenario.addUser");
+            case UPDATE_USER -> I18n.get("dev.patch.builder.scenario.updateUser");
+            case ADD_WHITELIST_MODEL -> I18n.get("dev.patch.builder.scenario.addWhitelistModel");
+            case UPDATE_WHITELIST_MODEL -> I18n.get("dev.patch.builder.scenario.updateWhitelistModel");
         };
     }
 

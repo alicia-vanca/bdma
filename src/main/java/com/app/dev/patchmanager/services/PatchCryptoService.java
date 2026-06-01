@@ -99,7 +99,7 @@ public class PatchCryptoService {
      */
     public void encryptSql(String sql, Path outFile, UUID patchId) {
         if (sql == null) {
-            throw new AppException(I18n.get("setting.patch.validation.empty"));
+            throw new AppException(I18n.get("dev.patch.validation.empty"));
         }
         encryptPlaintext(sql.getBytes(StandardCharsets.UTF_8), outFile, patchId);
     }
@@ -195,13 +195,13 @@ public class PatchCryptoService {
                 }
             }
             if (result.isEmpty()) {
-                throw new AppException(I18n.get("setting.patch.validation.empty"));
+                throw new AppException(I18n.get("dev.patch.validation.empty"));
             }
             return result;
         } catch (AppException e) {
             throw e;
         } catch (Exception e) {
-            throw new AppException(I18n.get("setting.patch.validation.statementParse", findFirstProblemStatement(sql)),
+            throw new AppException(I18n.get("dev.patch.validation.statementParse", findFirstProblemStatement(sql)),
                     e);
         }
     }
@@ -215,11 +215,11 @@ public class PatchCryptoService {
             try {
                 parsed = CCJSqlParserUtil.parse(stmtSql);
             } catch (Exception e) {
-                throw new AppException(I18n.get("setting.patch.validation.statementParse", summarize(stmtSql)), e);
+                throw new AppException(I18n.get("dev.patch.validation.statementParse", summarize(stmtSql)), e);
             }
 
             if (!(parsed instanceof Insert) && !(parsed instanceof Update)) {
-                throw new AppException(I18n.get("setting.patch.validation.onlyInsertUpdate", summarize(stmtSql)));
+                throw new AppException(I18n.get("dev.patch.validation.onlyInsertUpdate", summarize(stmtSql)));
             }
         }
     }
