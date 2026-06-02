@@ -66,7 +66,7 @@ public class ImportPatchController {
     @FXML
     public void initialize() {
         noticeRenderer = new NoticeStackRenderer(noticeContainer);
-        btnImportPatch.setText(I18n.get("setting.patch.btn.apply"));
+        btnImportPatch.setText(I18n.get("dev.patch.btn.apply"));
         colPatchId.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getPatchId().toString()));
         colPatchFile.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getFileName()));
         colPatchAppliedAt.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getAppliedAt()));
@@ -76,9 +76,9 @@ public class ImportPatchController {
     @FXML
     public void onImportPatch() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle(I18n.get("setting.patch.chooser.apply.title"));
+        chooser.setTitle(I18n.get("dev.patch.chooser.apply.title"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(
-                I18n.get("setting.patch.chooser.encrypted.files"), "*" + ENCRYPTED_SQL_EXTENSION));
+                I18n.get("dev.patch.chooser.encrypted.files"), "*" + ENCRYPTED_SQL_EXTENSION));
         applyLastChooserDirectory(chooser);
         File selected = chooser.showOpenDialog(getStage());
         if (selected == null) {
@@ -91,16 +91,16 @@ public class ImportPatchController {
             Files.deleteIfExists(selected.toPath());
             refreshAppliedPatchTable();
             showPatchApplyResultDialog(
-                    I18n.get("setting.patch.apply.dialog.success.header"),
-                    I18n.get("setting.patch.apply.dialog.success.content"));
+                    I18n.get("dev.patch.apply.dialog.success.header"),
+                    I18n.get("dev.patch.apply.dialog.success.content"));
         } catch (AppException e) {
             log.warn("Patch apply rejected: {}", e.getMessage(), e);
-            showPatchApplyResultDialog(I18n.get("setting.patch.apply.dialog.failure.header"),
+            showPatchApplyResultDialog(I18n.get("dev.patch.apply.dialog.failure.header"),
                     toPatchApplyFailureMessage(e));
         } catch (Exception e) {
             log.error("Failed to apply patch file", e);
-            showPatchApplyResultDialog(I18n.get("setting.patch.apply.dialog.failure.header"),
-                    I18n.get("setting.patch.apply.dialog.failure.generic"));
+            showPatchApplyResultDialog(I18n.get("dev.patch.apply.dialog.failure.header"),
+                    I18n.get("dev.patch.apply.dialog.failure.generic"));
         }
     }
 
@@ -125,13 +125,13 @@ public class ImportPatchController {
     private String toPatchApplyFailureMessage(AppException e) {
         String message = e.getMessage();
         if (message != null && message.contains("has already been applied")) {
-            return I18n.get("setting.patch.apply.dialog.failure.duplicate");
+            return I18n.get("dev.patch.apply.dialog.failure.duplicate");
         }
-        return I18n.get("setting.patch.apply.dialog.failure.incompatible");
+        return I18n.get("dev.patch.apply.dialog.failure.incompatible");
     }
 
     private void showPatchApplyResultDialog(String header, String content) {
-        AlertHelper.createInformation(I18n.get("setting.patch.apply.dialog.title"), header, content).showAndWait();
+        AlertHelper.createInformation(I18n.get("dev.patch.apply.dialog.title"), header, content).showAndWait();
     }
 
     private Stage getStage() {
