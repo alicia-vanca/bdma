@@ -2,9 +2,16 @@ package com.app.admin.layout.controllers;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Queue;
+import java.util.Set;
+import java.util.Objects;
 
-import com.app.common.services.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -43,6 +50,11 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.media.services.MediaViewerService;
 import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.common.modules.session.Session;
+import com.app.common.services.AppNoticeService;
+import com.app.common.services.DeviceMiniStatus;
+import com.app.common.services.DeviceTracker;
+import com.app.common.services.DeviceValidationService;
+import com.app.common.services.DeviceListState;
 import com.app.common.utils.FileUtil;
 import com.app.dev.settingsdialog.controllers.DevSettingsDialogController;
 import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
@@ -227,9 +239,7 @@ public class AdminLayoutController extends BaseLayoutController {
         openDefaultTab();
         if (!session.isDev()) {
             refreshStorageStatus();
-
         }
-
     }
 
     public void setIconNte() {

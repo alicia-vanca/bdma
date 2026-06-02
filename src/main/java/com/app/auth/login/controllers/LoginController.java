@@ -2,11 +2,7 @@ package com.app.auth.login.controllers;
 
 import java.util.List;
 
-import com.app.auth.totp.controllers.TotpController;
-import com.app.auth.totp.dtos.TotpDialogContext;
 import com.app.auth.totp.services.TotpPromptService;
-import com.app.common.helpers.DialogHelper;
-import javafx.scene.Scene;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,16 +12,11 @@ import org.springframework.stereotype.Component;
 import com.app.MainApp;
 import com.app.auth.login.services.LoginService;
 import com.app.common.definitions.AppConstants;
-import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.LoginResult;
 import com.app.common.definitions.enums.Role;
 import com.app.common.events.ThemeChangedEvent;
-import com.app.common.helpers.CssLoader;
-import com.app.common.helpers.SpringContextHolder;
-import com.app.common.helpers.ViewLoader;
 import com.app.common.models.User;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
-import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
@@ -37,7 +28,6 @@ import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.geometry.Bounds;
 import javafx.geometry.Side;
-import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
@@ -238,12 +228,14 @@ public class LoginController {
             session.setPendingDevUser(response.user());
             Stage stage = (Stage) btnLogin.getScene().getWindow();
             stage.close();
-            totpPromptService.prompt(
-                    "totp.title",
-                    "totp.title",
-                    "common.back",
-                    () -> {},
-                    () -> {});
+            Platform.runLater(() -> {
+                totpPromptService.prompt(
+                        "totp.title",
+                        "totp.title",
+                        "common.back",
+                        () -> {},
+                        () -> {});
+            });
             return;
         }
 
