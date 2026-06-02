@@ -1,20 +1,14 @@
 package com.app.auth.login.controllers;
 
-import java.util.List;
-
-import com.app.auth.totp.services.TotpPromptService;
-import javafx.stage.Stage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
-
 import com.app.MainApp;
 import com.app.auth.login.services.LoginService;
+import com.app.auth.totp.services.TotpPromptService;
 import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.LoginResult;
 import com.app.common.definitions.enums.Role;
 import com.app.common.events.ThemeChangedEvent;
+import com.app.common.helpers.DialogHelper;
 import com.app.common.models.User;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.i18n.I18n;
@@ -23,20 +17,21 @@ import com.app.common.modules.theme.ThemeManager;
 import com.app.common.repositories.RecentUsernameRepository;
 import com.app.common.services.UserService;
 import com.app.common.services.UserSettingService;
-
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.geometry.Bounds;
 import javafx.geometry.Side;
-import javafx.scene.control.Button;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.Label;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.PasswordField;
-import javafx.scene.control.TextField;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
+import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 public class LoginController {
@@ -225,39 +220,24 @@ public class LoginController {
         UserService.LoginResponse response = userService.loginWithStatus(usernameText, passwordText);
 
         if (response.result() == LoginResult.SUCCESS && response.user().getRole() == Role.DEV) {
-            session.setPendingDevUser(response.user());
-            Stage stage = (Stage) btnLogin.getScene().getWindow();
-            stage.close();
-            Platform.runLater(() -> {
-                totpPromptService.prompt(
-                        "totp.title",
-                        "totp.title",
-                        "common.back",
-                        () -> {},
-                        () -> {});
-            });
+            User devUser = response.user();
+            session.setPendingDevUser(devUser);
+            closeLoginWindow();
+            Platform.runLater(() -> totpPromptService.prompt(
+                    "totp.title",
+                    "totp.title",
+                    "common.back",
+                    () -> completeSuccessfulLogin(usernameText, devUser),
+                    () -> {
+                        session.consumePendingDevUser();
+                        showLoginDialog();
+                    }));
             return;
         }
 
         switch (response.result()) {
             case SUCCESS:
-                recentUsernameRepository.upsert(usernameText.trim());
-                User user = response.user();
-                log.info("User '{}' logged in successfully", usernameText);
-
-                // Initialize session for the authenticated user
-                session.setUser(user);
-
-                // Apply user-specific runtime settings
-                userSettingService.applyRuntimeSettings(user.getId());
-
-                // Trigger background sync without blocking UI
-                loginService.onLoginSuccess();
-
-                // Navigate to main screen
-                MainApp.showAdmin();
-                Stage stage = (Stage) btnLogin.getScene().getWindow();
-                stage.close();
+                completeSuccessfulLogin(usernameText, response.user());
                 break;
 
             case ACCOUNT_DEACTIVATED:
@@ -271,6 +251,57 @@ public class LoginController {
                 showError("login.error.invalid");
                 break;
         }
+    }
+
+    /**
+     * Completes post-authentication setup after password-only or OTP-verified
+     * login.
+     *
+     * @param usernameText username entered by the user
+     * @param user         authenticated user to place in the active session
+     */
+    private void completeSuccessfulLogin(String usernameText, User user) {
+        recentUsernameRepository.upsert(usernameText.trim());
+        log.info("User '{}' logged in successfully", usernameText);
+
+        // Initialize session for the authenticated user.
+        session.setUser(user);
+
+        // Apply user-specific runtime settings.
+        userSettingService.applyRuntimeSettings(user.getId());
+
+        // Trigger background sync without blocking UI.
+        loginService.onLoginSuccess();
+
+        MainApp.showAdmin();
+        closeLoginWindow();
+    }
+
+    /**
+     * Closes only the login dialog while leaving the guest/admin primary window
+     * alive.
+     */
+    private void closeLoginWindow() {
+        if (btnLogin.getScene() == null || btnLogin.getScene().getWindow() == null) {
+            return;
+        }
+        Stage stage = (Stage) btnLogin.getScene().getWindow();
+        stage.close();
+    }
+
+    /**
+     * Reopens the login dialog after an OTP cancellation without replacing the
+     * guest screen.
+     */
+    private void showLoginDialog() {
+        DialogHelper.Dialog<LoginController> dialog = DialogHelper.createDialog(
+                ViewPaths.LOGIN,
+                "BDMA");
+        Stage stage = dialog.stage();
+        stage.setResizable(false);
+        stage.setMinWidth(480);
+        stage.setMinHeight(420);
+        stage.showAndWait();
     }
 
     private void showError(String key) {
