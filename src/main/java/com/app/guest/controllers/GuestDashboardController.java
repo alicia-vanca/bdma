@@ -152,10 +152,6 @@ public class GuestDashboardController extends BaseLayoutController {
 
         VBox card = new VBox(12, header);
         card.getStyleClass().add("device-card");
-//        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
-//        card.setPrefWidth(screen.getWidth() / 3.25);
-//        card.setPrefHeight(screen.getHeight() / 3.25);
-//        card.setMaxWidth(Double.MAX_VALUE);
         card.prefWidthProperty().bind(
                 deviceFlowPane.widthProperty()
                         .subtract(deviceFlowPane.getHgap() * 2)
@@ -173,8 +169,8 @@ public class GuestDashboardController extends BaseLayoutController {
             );
             Stage stage = dialog.stage();
             stage.setResizable(false);
-            stage.setMinWidth(480);
-            stage.setMinHeight(420);
+            stage.setWidth(480);
+            stage.setHeight(420);
             stage.showAndWait();
         });
 

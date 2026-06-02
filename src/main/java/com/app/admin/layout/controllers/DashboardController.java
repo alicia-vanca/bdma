@@ -1,11 +1,6 @@
 package com.app.admin.layout.controllers;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import com.app.common.services.DeviceListState;
 import org.springframework.stereotype.Component;
@@ -22,9 +17,6 @@ import com.app.common.modules.session.Session;
 import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.services.DeviceMiniStatus;
 
-import javafx.application.Platform;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
 import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;

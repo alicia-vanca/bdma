@@ -299,8 +299,8 @@ public class LoginController {
                 "BDMA");
         Stage stage = dialog.stage();
         stage.setResizable(false);
-        stage.setMinWidth(480);
-        stage.setMinHeight(420);
+        stage.setWidth(480);
+        stage.setHeight(420);
         stage.showAndWait();
     }
 

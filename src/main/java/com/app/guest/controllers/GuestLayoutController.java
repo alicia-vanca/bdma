@@ -9,8 +9,6 @@ import com.app.common.definitions.enums.FolderType;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.dtos.SyncContext;
 import com.app.common.events.DeviceEvent;
-import com.app.common.events.FailureSummaryRequestedEvent;
-import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
@@ -119,8 +117,6 @@ public class GuestLayoutController extends BaseLayoutController {
     private PreLoginSettingsPopupHelper settingsPopupHelper;
     private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
     private final Set<String> pendingStorageSyncs = new HashSet<>();
-    private final Queue<FailureSummaryRequestedEvent> pendingFailureSummaries = new ArrayDeque<>();
-    private boolean failureSummaryVisible;
 
     public GuestLayoutController(ViewLoader viewLoader,
                                  AppUpdateController appUpdateController,
@@ -206,8 +202,8 @@ public class GuestLayoutController extends BaseLayoutController {
         );
         Stage stage = dialog.stage();
         stage.setResizable(false);
-        stage.setMinWidth(480);
-        stage.setMinHeight(420);
+        stage.setWidth(480);
+        stage.setHeight(420);
         stage.showAndWait();
     }
 

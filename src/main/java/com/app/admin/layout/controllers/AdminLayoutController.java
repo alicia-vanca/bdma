@@ -36,10 +36,7 @@ import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
-import com.app.common.modules.databackup.DataBackupRunner;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
-import com.app.common.modules.dataexport.DataExportRunner;
-import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
@@ -48,7 +45,6 @@ import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.media.services.MediaViewerService;
-import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
 import com.app.common.services.DeviceMiniStatus;
@@ -106,16 +102,12 @@ public class AdminLayoutController extends BaseLayoutController {
     private final AppNoticeService appNoticeService;
     private final DeviceSyncQueue deviceSyncQueue;
     private final DeviceTracker deviceTracker;
-    private final DataSyncRunner syncRunner;
-    private final DataBackupRunner backupRunner;
     private final DeviceMiniStatus deviceMiniStatus;
-    private final QueueManagerService queueManagerService;
     private final FolderManagerService folderManagerService;
     private final RestoreService restoreService;
     private final DataSyncService dataSyncService;
     private final AdminSettingsDialogService adminSettingsService;
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
-    private final DataExportRunner exportRunner;
     private final MediaViewerService mediaViewerService;
     private final DevOtpGuardService devOtpGuardService;
 
@@ -174,15 +166,11 @@ public class AdminLayoutController extends BaseLayoutController {
             DeviceSyncQueue deviceSyncQueue,
             DeviceTracker deviceTracker,
             DeviceMiniStatus deviceMiniStatus,
-            QueueManagerService queueManagerService,
-            DataSyncRunner syncRunner,
-            DataBackupRunner backupRunner,
             FolderManagerService folderManagerService,
             RestoreService restoreService,
             DataSyncService dataSyncService,
             AdminSettingsDialogService adminSettingsService,
             StorageUnavailableEventHandler storageUnavailableEventHandler,
-            DataExportRunner exportRunner,
             MediaViewerService mediaViewerService,
             DevOtpGuardService devOtpGuardService) {
         super(viewLoader);
@@ -192,16 +180,12 @@ public class AdminLayoutController extends BaseLayoutController {
         this.appNoticeService = appNoticeService;
         this.deviceSyncQueue = deviceSyncQueue;
         this.deviceTracker = deviceTracker;
-        this.syncRunner = syncRunner;
-        this.backupRunner = backupRunner;
         this.deviceMiniStatus = deviceMiniStatus;
-        this.queueManagerService = queueManagerService;
         this.folderManagerService = folderManagerService;
         this.restoreService = restoreService;
         this.dataSyncService = dataSyncService;
         this.adminSettingsService = adminSettingsService;
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
-        this.exportRunner = exportRunner;
         this.mediaViewerService = mediaViewerService;
         this.devOtpGuardService = devOtpGuardService;
     }

@@ -150,14 +150,6 @@ public class MainApp extends Application {
         loadAndNavigate(ViewPaths.LOGIN, "BDMA", 480, 420);
     }
 
-    public static void showTotp() {
-        primaryStage.setMaximized(false);
-        primaryStage.setResizable(false);
-        primaryStage.setMinWidth(0);
-        primaryStage.setMinHeight(0);
-        loadAndNavigate(ViewPaths.TOTP, "BDMA", 480, 360);
-    }
-
     public static void showGuest() {
         primaryStage.setResizable(true);
         primaryStage.setMinWidth(800);
