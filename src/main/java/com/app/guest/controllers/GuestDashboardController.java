@@ -5,19 +5,14 @@ import com.app.auth.login.controllers.LoginController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceSummary;
-import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.services.DeviceListState;
 import com.app.common.services.DeviceMiniStatus;
-import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
-import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
-import javafx.geometry.Pos;
-import javafx.geometry.Rectangle2D;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.FlowPane;
@@ -25,10 +20,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
-import javafx.stage.Screen;
 import javafx.stage.Stage;
-import lombok.Setter;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -39,18 +31,15 @@ public class GuestDashboardController extends BaseLayoutController {
     @FXML
     private FlowPane deviceFlowPane;
     private final DeviceMiniStatus deviceMiniStatus;
-    private final ApplicationEventPublisher publisher;
     private final DeviceListState deviceListState;
 
     private FileListController fileListController;
 
     public GuestDashboardController(ViewLoader viewLoader,
                                     DeviceMiniStatus deviceMiniStatus,
-                                    ApplicationEventPublisher publisher,
                                     DeviceListState deviceListState) {
         super(viewLoader);
         this.deviceMiniStatus = deviceMiniStatus;
-        this.publisher = publisher;
         this.deviceListState = deviceListState;
     }
 
@@ -147,31 +136,36 @@ public class GuestDashboardController extends BaseLayoutController {
         Circle dot = new Circle(8);
 
         Label nameLabel = new Label(summary.getDeviceName());
-        nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 16;");
+        nameLabel.getStyleClass().add("device-cell-name");
 
         Label cameraIdLabel = new Label(summary.getCameraId());
-        cameraIdLabel.setStyle("-fx-text-fill: #888; -fx-font-size: 16;");
+        cameraIdLabel.getStyleClass().add("device-cell-camera-id");
 
         Label statusLabel = new Label();
-        statusLabel.setStyle("-fx-font-size: 16;");
         applyStatusStyle(summary, dot, statusLabel);
 
         VBox infoBox = new VBox(4, nameLabel, cameraIdLabel, statusLabel);
-        infoBox.setStyle("-fx-padding: 0 8 0 8;");
+        infoBox.getStyleClass().add("device-info-box");
 
         HBox header = new HBox(8, dot, infoBox);
-        header.setAlignment(Pos.CENTER_LEFT);
+        header.getStyleClass().add("device-card-header");
 
         VBox card = new VBox(12, header);
-        card.setStyle(
-                "-fx-border-color: #ddd; " +
-                        "-fx-border-radius: 5; " +
-                        "-fx-padding: 12; " +
-                        "-fx-background-color: #f9f9f9;"
+        card.getStyleClass().add("device-card");
+//        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+//        card.setPrefWidth(screen.getWidth() / 3.25);
+//        card.setPrefHeight(screen.getHeight() / 3.25);
+//        card.setMaxWidth(Double.MAX_VALUE);
+        card.prefWidthProperty().bind(
+                deviceFlowPane.widthProperty()
+                        .subtract(deviceFlowPane.getHgap() * 2)
+                        .divide(3.25)
         );
-        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
-        card.setPrefWidth(screen.getWidth() / 3.5);
-        card.setMaxWidth(Double.MAX_VALUE);
+        card.prefHeightProperty().bind(
+                devicePanel.heightProperty()
+                        .subtract(deviceFlowPane.getVgap() * 3)
+                        .divide(4)
+        );
         card.setOnMouseClicked(event -> {
             DialogHelper.Dialog<LoginController> dialog = DialogHelper.createDialog(
                     ViewPaths.LOGIN,
@@ -179,8 +173,8 @@ public class GuestDashboardController extends BaseLayoutController {
             );
             Stage stage = dialog.stage();
             stage.setResizable(false);
-            stage.setWidth(480);
-            stage.setHeight(360);
+            stage.setMinWidth(480);
+            stage.setMinHeight(420);
             stage.showAndWait();
         });
 
@@ -192,11 +186,6 @@ public class GuestDashboardController extends BaseLayoutController {
             return DeviceMiniStatus.SyncProgress.idle();
         }
         return deviceMiniStatus.getProgress(summary.getCameraId());
-    }
-
-    public void markDeviceSaved(DeviceValidationResult result, String savedDeviceName) {
-        deviceListState.markDeviceSaved(result, savedDeviceName);
-        refresh();
     }
 
     public void onFileSyncCompleted(String syncedPath) {

@@ -33,14 +33,12 @@ import com.app.common.services.DeviceValidationService;
 import com.app.common.utils.FileUtil;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.geometry.Rectangle2D;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.stage.Screen;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -208,11 +206,8 @@ public class GuestLayoutController extends BaseLayoutController {
         );
         Stage stage = dialog.stage();
         stage.setResizable(false);
-        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
-        stage.setMinWidth(0);
-        stage.setMinHeight(0);
-        stage.setMaxHeight(screen.getHeight() * 0.80);
-        stage.setMaxWidth(screen.getWidth() * 0.50);
+        stage.setMinWidth(480);
+        stage.setMinHeight(420);
         stage.showAndWait();
     }
 
@@ -238,56 +233,6 @@ public class GuestLayoutController extends BaseLayoutController {
     @Override
     public void showNoticeError(String text) {
         appNoticeService.showError(text);
-    }
-
-    /**
-     * Queues failure-summary dialogs so sync/export results are shown one at a
-     * time instead of stacking multiple modal windows.
-     */
-    @EventListener
-    public void onFailureSummaryRequested(FailureSummaryRequestedEvent event) {
-        if (event == null || event.getRows().isEmpty() || session.getUser() == null) {
-            return;
-        }
-        Platform.runLater(() -> {
-            if (session.getUser() == null) {
-                return;
-            }
-            pendingFailureSummaries.add(event);
-            showNextFailureSummaryIfIdle();
-        });
-    }
-
-    private void showNextFailureSummaryIfIdle() {
-        if (session.getUser() == null) {
-            pendingFailureSummaries.clear();
-            return;
-        }
-        if (failureSummaryVisible) {
-            return;
-        }
-
-        FailureSummaryRequestedEvent event = pendingFailureSummaries.poll();
-        if (event == null) {
-            return;
-        }
-
-        failureSummaryVisible = true;
-        try {
-            AlertHelper.DialogText dialogText = new AlertHelper.DialogText(
-                    event.getTitle(), event.getHeader(), event.getContent());
-            AlertHelper.TableColumns columns = new AlertHelper.TableColumns(
-                    event.getFirstColumnName(), "fileName",
-                    event.getSecondColumnName(), "reason");
-            ButtonType retryButton = new ButtonType(I18n.get("common.retry"), ButtonBar.ButtonData.OK_DONE);
-            ButtonType closeButton = new ButtonType(I18n.get("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
-            AlertHelper.showAlertWithTableNow(dialogText, event.getRows(), columns, retryButton, closeButton,
-                    event.getPrimaryAction());
-        } finally {
-            failureSummaryVisible = false;
-            // Continue draining queued summaries after the current modal closes.
-            showNextFailureSummaryIfIdle();
-        }
     }
 
     @EventListener(condition = "@session.user == null")

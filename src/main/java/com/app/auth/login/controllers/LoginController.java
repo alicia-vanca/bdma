@@ -2,6 +2,10 @@ package com.app.auth.login.controllers;
 
 import java.util.List;
 
+import com.app.auth.totp.controllers.TotpController;
+import com.app.auth.totp.dtos.TotpDialogContext;
+import com.app.auth.totp.services.TotpPromptService;
+import com.app.common.helpers.DialogHelper;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
@@ -23,7 +27,6 @@ import com.app.common.models.User;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.preloginsettingspopup.helpers.PreLoginSettingsPopupHelper;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.repositories.RecentUsernameRepository;
@@ -61,8 +64,6 @@ public class LoginController {
     @FXML
     private Label message;
     @FXML
-    private Button btnSettings;
-    @FXML
     private Button btnLogin;
 
     private final Session session;
@@ -71,8 +72,8 @@ public class LoginController {
     private final UserSettingService userSettingService;
     private final LoginService loginService; // Triggers background sync after login
     private final RecentUsernameRepository recentUsernameRepository;
+    private final TotpPromptService totpPromptService;
 
-    private PreLoginSettingsPopupHelper settingsPopupHelper;
     private ImageView passwordIconView;
 
     public LoginController(Session session,
@@ -80,13 +81,15 @@ public class LoginController {
             AppUpdateController appUpdateController,
             UserSettingService userSettingService,
             LoginService loginService,
-            RecentUsernameRepository recentUsernameRepository) {
+            RecentUsernameRepository recentUsernameRepository,
+            TotpPromptService totpPromptService) {
         this.session = session;
         this.userService = userService;
         this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
         this.loginService = loginService;
         this.recentUsernameRepository = recentUsernameRepository;
+        this.totpPromptService = totpPromptService;
     }
 
     @FXML
@@ -95,16 +98,6 @@ public class LoginController {
         appUpdateController.checkOnStartup();
 
         hideError();
-
-        settingsPopupHelper = new PreLoginSettingsPopupHelper(
-                "login",
-                btnSettings,
-                PreLoginSettingsPopupHelper.PopupAnchorY.TOP,
-                null,
-                this::reloadUI,
-                appUpdateController::onCheckUpdateManual,
-                null);
-        settingsPopupHelper.initialize();
 
         // Setup password peek functionality
         setupPasswordPeek();
@@ -243,9 +236,14 @@ public class LoginController {
 
         if (response.result() == LoginResult.SUCCESS && response.user().getRole() == Role.DEV) {
             session.setPendingDevUser(response.user());
-            MainApp.showTotp();
             Stage stage = (Stage) btnLogin.getScene().getWindow();
             stage.close();
+            totpPromptService.prompt(
+                    "totp.title",
+                    "totp.title",
+                    "common.back",
+                    () -> {},
+                    () -> {});
             return;
         }
 
@@ -290,25 +288,6 @@ public class LoginController {
 
     private void hideError() {
         message.setVisible(false);
-    }
-
-    @FXML
-    private void openSettingsPopup() {
-        settingsPopupHelper.togglePopup();
-    }
-
-    private void reloadUI() {
-        try {
-            ViewLoader viewLoader = SpringContextHolder.getBean(ViewLoader.class);
-            var result = viewLoader.loadView(ViewPaths.LOGIN);
-            if (result != null) {
-                Parent root = (Parent) result.node();
-                MainApp.getScene().setRoot(root);
-                CssLoader.applyLogin(MainApp.getScene());
-            }
-        } catch (Exception e) {
-            log.error("Failed to reload login UI", e);
-        }
     }
 
     /**

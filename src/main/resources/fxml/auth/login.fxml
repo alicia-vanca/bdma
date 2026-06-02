@@ -11,9 +11,6 @@
            styleClass="root"
            alignment="CENTER">
     <VBox spacing="12" alignment="TOP_CENTER" styleClass="login-card" maxHeight="-Infinity">
-        <HBox alignment="CENTER_RIGHT">
-            <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup" styleClass="icon-btn"/>
-        </HBox>
         <Label text="%login.title" styleClass="title"/>
         <VBox spacing="10">
             <TextField fx:id="username" promptText="%login.username" maxWidth="1.7976931348623157E308"/>

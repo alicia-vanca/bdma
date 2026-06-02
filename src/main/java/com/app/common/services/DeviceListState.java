@@ -167,7 +167,7 @@ public class DeviceListState {
         });
     }
 
-    private DeviceSummary addTransientDevice(DeviceValidationResult result) {
+    private void addTransientDevice(DeviceValidationResult result) {
         DeviceSummary summary = new DeviceSummary(
                 result.getHardwareId(),
                 result.getCameraId(),
@@ -176,7 +176,6 @@ public class DeviceListState {
                 DeviceMiniStatus.SyncProgress.idle(),
                 result);
         deviceItems.add(summary);
-        return summary;
     }
 
     private void handleDisconnected(String cameraId) {

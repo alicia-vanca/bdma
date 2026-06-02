@@ -75,6 +75,9 @@ public class TotpController {
     @FXML
     public void initialize() {
         appUpdateController.setOnStatusChange(null);
+        cancellationHandled = false;
+        verifying = false;
+        windowCloseHandlerRegistered = false;
 
         context = TotpDialogContext.login(this::completeLogin, MainApp::showLogin);
         settingsPopupHelper = new PreLoginSettingsPopupHelper(
