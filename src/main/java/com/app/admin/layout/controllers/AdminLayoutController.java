@@ -358,9 +358,9 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     public void logout() {
+        log.info("User {} is logging out", session.getUser().getUsername());
         devOtpGuardService.stop();
         mediaViewerService.close();
-        log.info("User {} is logging out", session.getUser().getUsername());
         if (currentDashboardController != null) {
             currentDashboardController.resetState();
             currentDashboardController.closeQueueDialog();
