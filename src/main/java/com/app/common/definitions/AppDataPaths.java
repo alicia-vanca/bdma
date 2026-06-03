@@ -15,6 +15,10 @@ public final class AppDataPaths {
         return APP_DIR;
     }
 
+    public static String syncDatabaseForderDir(){return Path.of(APP_DIR,"sync_db").toString();};
+
+    public static String syncDatabaseFileDir(){return Path.of(APP_DIR,"sync_db","database.db").toString();};
+
     public static String logsDir() {
         return Path.of(APP_DIR, "logs").toString();
     }
@@ -33,5 +37,8 @@ public final class AppDataPaths {
 
     public static File dataFile() {
         return Path.of(APP_DIR, "data.db").toFile();
+    }
+    public static File dataFileDataBackup() {
+        return Path.of(APP_DIR,"sync_db", "database.db").toFile();
     }
 }
