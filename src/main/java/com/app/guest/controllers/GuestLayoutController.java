@@ -6,6 +6,7 @@ import com.app.admin.settingsdialog.services.RestoreService;
 import com.app.auth.login.controllers.LoginController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
+import com.app.common.definitions.enums.NavigationTarget;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.dtos.SyncContext;
 import com.app.common.events.DeviceEvent;
@@ -29,6 +30,7 @@ import com.app.common.services.DeviceMiniStatus;
 import com.app.common.services.DeviceTracker;
 import com.app.common.services.DeviceValidationService;
 import com.app.common.utils.FileUtil;
+import com.app.guest.services.NavigationIntentService;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
@@ -77,6 +79,7 @@ public class GuestLayoutController extends BaseLayoutController {
     private final DataSyncService dataSyncService;
     private final AdminSettingsDialogService adminSettingsService;
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
+    private final NavigationIntentService navigationIntentService;
 
     @FXML
     private StackPane contentArea;
@@ -130,7 +133,8 @@ public class GuestLayoutController extends BaseLayoutController {
                                  RestoreService restoreService,
                                  DataSyncService dataSyncService,
                                  AdminSettingsDialogService adminSettingsService,
-                                 StorageUnavailableEventHandler storageUnavailableEventHandler) {
+                                 StorageUnavailableEventHandler storageUnavailableEventHandler,
+                                 NavigationIntentService navigationIntentService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.session = session;
@@ -144,6 +148,7 @@ public class GuestLayoutController extends BaseLayoutController {
         this.dataSyncService = dataSyncService;
         this.adminSettingsService = adminSettingsService;
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
+        this.navigationIntentService = navigationIntentService;
     }
 
     @Override
@@ -205,6 +210,18 @@ public class GuestLayoutController extends BaseLayoutController {
         stage.setWidth(480);
         stage.setHeight(420);
         stage.showAndWait();
+    }
+
+    @FXML
+    public void goUser() {
+        navigationIntentService.setPendingTarget(NavigationTarget.USER);
+        goLogin();
+    }
+
+    @FXML
+    public void goDashboard() {
+        navigationIntentService.setPendingTarget(NavigationTarget.DASHBOARD);
+        goLogin();
     }
 
     public void showDashboard() {

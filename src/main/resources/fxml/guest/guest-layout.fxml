@@ -27,9 +27,9 @@
                     <HBox.margin>
                         <Insets left="30"/>
                     </HBox.margin>
-                    <Button fx:id="btnDashboard" text="%menu.dashboard" onAction="#goLogin"
+                    <Button fx:id="btnDashboard" text="%menu.dashboard" onAction="#goDashboard"
                             styleClass="menu-tab-btn"/>
-                    <Button fx:id="btnUser" text="%menu.user" onAction="#goLogin" styleClass="menu-tab-btn"/>
+                    <Button fx:id="btnUser" text="%menu.user" onAction="#goUser" styleClass="menu-tab-btn"/>
                 </HBox>
                 <Region HBox.hgrow="ALWAYS"/>
                 <HBox spacing="12" alignment="CENTER_RIGHT" styleClass="top-right-actions">

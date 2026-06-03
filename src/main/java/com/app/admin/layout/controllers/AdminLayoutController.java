@@ -12,6 +12,8 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.Objects;
 
+import com.app.common.definitions.enums.NavigationTarget;
+import com.app.guest.services.NavigationIntentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -110,6 +112,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
     private final MediaViewerService mediaViewerService;
     private final DevOtpGuardService devOtpGuardService;
+    private final NavigationIntentService navigationIntentService;
 
     @FXML
     private StackPane contentArea;
@@ -172,7 +175,8 @@ public class AdminLayoutController extends BaseLayoutController {
             AdminSettingsDialogService adminSettingsService,
             StorageUnavailableEventHandler storageUnavailableEventHandler,
             MediaViewerService mediaViewerService,
-            DevOtpGuardService devOtpGuardService) {
+            DevOtpGuardService devOtpGuardService,
+            NavigationIntentService navigationIntentService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.session = session;
@@ -188,6 +192,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
         this.mediaViewerService = mediaViewerService;
         this.devOtpGuardService = devOtpGuardService;
+        this.navigationIntentService = navigationIntentService;
     }
 
     @Override
@@ -705,7 +710,14 @@ public class AdminLayoutController extends BaseLayoutController {
             goImportPatch();
             return;
         }
-        goDashboard();
+        NavigationTarget target = navigationIntentService.consumePendingTarget();
+        Platform.runLater(() -> {
+            if (target == NavigationTarget.USER) {
+                goUser();
+            } else {
+                goDashboard();
+            }
+        });
     }
 
     @Override
