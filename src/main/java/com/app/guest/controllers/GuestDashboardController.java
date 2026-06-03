@@ -155,12 +155,12 @@ public class GuestDashboardController extends BaseLayoutController {
         card.prefWidthProperty().bind(
                 deviceFlowPane.widthProperty()
                         .subtract(deviceFlowPane.getHgap() * 2)
-                        .divide(3.25)
+                        .divide(3.075)
         );
         card.prefHeightProperty().bind(
                 devicePanel.heightProperty()
                         .subtract(deviceFlowPane.getVgap() * 3)
-                        .divide(4)
+                        .divide(5)
         );
         card.setOnMouseClicked(event -> {
             DialogHelper.Dialog<LoginController> dialog = DialogHelper.createDialog(

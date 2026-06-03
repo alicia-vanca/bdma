@@ -119,7 +119,7 @@ public class MainApp extends Application {
         // Start a fresh device-tracking session
         DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
         dataSyncRunner.startDeviceTracker();
-        showGuest();
+        showAdmin();
     }
 
     @Override
@@ -148,14 +148,6 @@ public class MainApp extends Application {
         primaryStage.setMinWidth(0);
         primaryStage.setMinHeight(0);
         loadAndNavigate(ViewPaths.LOGIN, "BDMA", 480, 420);
-    }
-
-    public static void showGuest() {
-        primaryStage.setResizable(true);
-        primaryStage.setMinWidth(800);
-        primaryStage.setMinHeight(500);
-        loadAndNavigate(ViewPaths.GUEST, "BDMA", 1201, 800);
-        Platform.runLater(() -> primaryStage.setMaximized(true));
     }
 
     public static void showAdmin() {

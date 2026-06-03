@@ -5,7 +5,6 @@ public final class ViewPaths {
 
     public static final String LOGIN = "/fxml/auth/login.fxml";
     public static final String TOTP = "/fxml/auth/totp.fxml";
-    public static final String GUEST = "/fxml/guest/guest-layout.fxml";
     public static final String GUEST_DASHBOARD = "/fxml/guest/guest-dashboard.fxml";
     public static final String ADMIN_LAYOUT = "/fxml/admin/admin_layout.fxml";
     public static final String ADMIN_DASHBOARD = "/fxml/admin/dashboard.fxml";

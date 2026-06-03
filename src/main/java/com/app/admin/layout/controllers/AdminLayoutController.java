@@ -12,7 +12,10 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.Objects;
 
+import com.app.auth.login.controllers.LoginController;
 import com.app.common.definitions.enums.NavigationTarget;
+import com.app.common.modules.preloginsettingspopup.helpers.PreLoginSettingsPopupHelper;
+import com.app.guest.controllers.GuestDashboardController;
 import com.app.guest.services.NavigationIntentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -154,8 +157,14 @@ public class AdminLayoutController extends BaseLayoutController {
     private Label lblBackupStoragePercent;
     @FXML
     private ImageView nteIcon;
+    @FXML
+    private Button btnLogout;
+    @FXML
+    private Button btnLogin;
 
     private DashboardController currentDashboardController;
+    private GuestDashboardController guestDashboardController;
+    private PreLoginSettingsPopupHelper settingsPopupHelper;
     private final Map<String, Alert> activeAlertsByHardwareId = new HashMap<>();
     private final Set<String> pendingStorageSyncs = new HashSet<>();
     private final Queue<FailureSummaryRequestedEvent> pendingFailureSummaries = new ArrayDeque<>();
@@ -212,12 +221,29 @@ public class AdminLayoutController extends BaseLayoutController {
     public void initialize() {
         configureRoleVisibility();
 
+        if (session.isGuest()) {
+            currentDashboardController = null;
+        } else {
+            guestDashboardController = null;
+        }
+
         // Keep header buttons responsive while update checks are running.
         appUpdateController.setOnCheckStart(() -> btnSettings.setDisable(true));
         appUpdateController.setOnCheckEnd(() -> btnSettings.setDisable(false));
         appUpdateController.setOnStatusChange(msg -> log.info("Update status: {}", msg));
 
-        labelGreeting.setText(I18n.get("top.hello", session.getUser().getUsername()));
+        settingsPopupHelper = new PreLoginSettingsPopupHelper(
+                "guest",
+                btnSettings,
+                PreLoginSettingsPopupHelper.PopupAnchorY.TOP,
+                null,
+                this::reloadUI,
+                appUpdateController::onCheckUpdateManual,
+                null);
+        settingsPopupHelper.initialize();
+
+        labelGreeting.setText(!session.isGuest() ?
+                I18n.get("top.hello", session.getUser().getUsername()) : I18n.get("top.hello.guest"));
 
         appNoticeService.bindNoticeContainer(noticeContainer);
 
@@ -229,12 +255,23 @@ public class AdminLayoutController extends BaseLayoutController {
         if (!session.isDev()) {
             refreshStorageStatus();
         }
+        updateAuthButtons();
+    }
+
+    private void updateAuthButtons() {
+        boolean guest = session.isGuest();
+
+        btnLogin.setVisible(guest);
+        btnLogin.setManaged(guest);
+
+        btnLogout.setVisible(!guest);
+        btnLogout.setManaged(!guest);
     }
 
     public void setIconNte() {
         Image image = new Image(
-                getClass()
-                        .getResource("/image/NTE_Logo.png")
+                Objects.requireNonNull(getClass()
+                                .getResource("/image/NTE_Logo.png"))
                         .toExternalForm());
         nteIcon.setImage(image);
         nteIcon.setFitWidth(150);
@@ -262,6 +299,10 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @FXML
     public void goDashboard() {
+        if (session.isGuest()) {
+            navigationIntentService.setPendingTarget(NavigationTarget.DASHBOARD);
+            showLoginPopup();
+        }
         if (session.isDev()) {
             goImportPatch();
             return;
@@ -283,6 +324,9 @@ public class AdminLayoutController extends BaseLayoutController {
             showNoticeError(I18n.get("device.validation.failed"));
             return;
         }
+        if (session.isGuest()) {
+            return;
+        }
         if (!session.isAdmin()) {
             showContactAdminToSaveDeviceDialog(summary.getValidationResult());
             return;
@@ -299,11 +343,19 @@ public class AdminLayoutController extends BaseLayoutController {
         if (!summary.isConnected()) {
             return;
         }
+        if (session.isGuest()) {
+            return;
+        }
         showSyncConfirmation(summary.getHardwareId(), summary.getDeviceName(), summary.getCameraId());
     }
 
     @FXML
     private void goUser() {
+        if (session.isGuest()) {
+            navigationIntentService.setPendingTarget(NavigationTarget.USER);
+            showLoginPopup();
+            return;
+        }
         if (session.isDev()) {
             goImportPatch();
             return;
@@ -349,6 +401,19 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     @FXML
+    public void showLoginPopup() {
+        DialogHelper.Dialog<LoginController> dialog = DialogHelper.createDialog(
+                ViewPaths.LOGIN,
+                "BDMA"
+        );
+        Stage stage = dialog.stage();
+        stage.setResizable(false);
+        stage.setWidth(480);
+        stage.setHeight(420);
+        stage.showAndWait();
+    }
+
+    @FXML
     public void logout() {
         devOtpGuardService.stop();
         mediaViewerService.close();
@@ -362,11 +427,24 @@ public class AdminLayoutController extends BaseLayoutController {
         failureSummaryVisible = false;
 
         session.clear();
-        MainApp.showGuest();
+        MainApp.showAdmin();
+    }
+
+    public void showGuestDashboard() {
+        var result = loadViewWithController(ViewPaths.GUEST_DASHBOARD, GuestDashboardController.class);
+        if (result != null) {
+            guestDashboardController = result.controller();
+            dataSyncService.setOnUserAutoCreated(username -> guestDashboardController.onUserAutoCreated());
+            setContent(result.node());
+        }
     }
 
     @FXML
     private void openSettingsPopup() {
+        if (session.isGuest()) {
+            settingsPopupHelper.togglePopup();
+            return;
+        }
         if (session.isDev()) {
             openDevSettingsDialog();
             return;
@@ -487,7 +565,7 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     // Handle device connection/disconnection events from DeviceTracker
-    @EventListener(condition = "@session.user != null")
+    @EventListener
     public void onDeviceEvent(DeviceEvent event) {
         if (event.type() == DeviceEvent.EventType.CONNECTED) {
             Platform.runLater(() -> handleValidatedResult(event.validationResult()));
@@ -539,6 +617,10 @@ public class AdminLayoutController extends BaseLayoutController {
         if (session.isAdmin()) {
             refreshDashboardIfActive();
             showSaveDeviceConfirmation(result);
+        }
+
+        if (session.isGuest()) {
+            refreshDashboardIfActive();
         }
     }
 
@@ -678,7 +760,7 @@ public class AdminLayoutController extends BaseLayoutController {
 
         boolean autoDelete = adminSettingsService.getAutoDelete();
 
-        boolean queued = deviceSyncQueue.add(new SyncContext(session.getUser().getUsername(), session.isAdmin(),
+        boolean queued = deviceSyncQueue.add(new SyncContext(null, false,
                 folderManagerService.getSyncDir(), autoDelete, deviceName, hardwareId, cameraId));
         // Only show success notice if device wasn't already in queue
         if (queued) {
@@ -706,6 +788,10 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private void openDefaultTab() {
+        if (session.isGuest()) {
+            showGuestDashboard();
+            return;
+        }
         if (session.isDev()) {
             goImportPatch();
             return;
@@ -735,6 +821,8 @@ public class AdminLayoutController extends BaseLayoutController {
     private void refreshDashboardIfActive() {
         if (currentDashboardController != null) {
             currentDashboardController.refresh();
+        } else if (guestDashboardController != null) {
+            guestDashboardController.refresh();
         }
     }
 
