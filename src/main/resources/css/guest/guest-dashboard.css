@@ -12,18 +12,18 @@
     -fx-padding: 0 0 8 0;
 }
 
-/* ── FlowPane Container ── */
-#deviceFlowPane {
+/* ── GridPane Container ── */
+#deviceGrid {
     -fx-background-color: transparent;
     -fx-border-color: transparent;
     -fx-hgap: 10;
     -fx-vgap: 10;
+    -fx-padding: 4;
 }
 
 /* ── ScrollPane (Device Flow Scroll Container) ── */
 .device-flow-scroll {
     -fx-background-color: transparent;
-    -fx-background: transparent;
     -fx-border-color: transparent;
     -fx-border-width: 0;
     -fx-padding: 0;

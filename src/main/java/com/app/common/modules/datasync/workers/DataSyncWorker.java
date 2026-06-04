@@ -373,7 +373,7 @@ public class DataSyncWorker implements Runnable {
         String type = extractType(path);
         FileInfo info = FileInfo.parse(name(path), 0, type);
 
-        if (info == null || !syncContext.canSync(info.username(), info.cameraId())) {
+        if (info == null || !syncContext.canSync(info.cameraId())) {
             return null;
         }
 

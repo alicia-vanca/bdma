@@ -50,8 +50,6 @@ public class TotpController {
     private Label message;
     @FXML
     private Button btnBack;
-    @FXML
-    private Button btnSettings;
 
     private final TotpService totpService;
     private final Session session;
@@ -82,7 +80,7 @@ public class TotpController {
         context = TotpDialogContext.login(this::completeLogin, MainApp::showLogin);
         settingsPopupHelper = new PreLoginSettingsPopupHelper(
                 "totp",
-                btnSettings,
+                null,
                 PreLoginSettingsPopupHelper.PopupAnchorY.TOP,
                 null,
                 this::reloadUI,
@@ -119,8 +117,6 @@ public class TotpController {
         }
         lblHeader.setText(I18n.get(context.headerKey()));
         btnBack.setText(I18n.get(context.cancelTextKey()));
-        btnSettings.setVisible(context.settingsBtnVisible());
-        btnSettings.setManaged(context.settingsBtnVisible());
     }
 
     private void logOtpShown() {

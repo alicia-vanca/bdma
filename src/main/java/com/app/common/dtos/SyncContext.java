@@ -23,15 +23,11 @@ public record SyncContext(
     /**
      * Determines whether a file is eligible for this sync context.
      *
-     * @param fileUserName owner encoded in the remote filename
-     * @param fileCameraId camera ID encoded in the remote filename
+=     * @param fileCameraId camera ID encoded in the remote filename
      * @return true when the file belongs to the connected camera and, for non-admins,
      *         the authenticated user
      */
-    public boolean canSync(String fileUserName, String fileCameraId) {
-        if (cameraId == null || !cameraId.equals(fileCameraId)) {
-            return false;
-        }
-        return true;
+    public boolean canSync(String fileCameraId) {
+        return cameraId != null && cameraId.equals(fileCameraId);
     }
 }

@@ -10,9 +10,6 @@
            styleClass="root"
            alignment="CENTER">
     <VBox spacing="12" alignment="TOP_CENTER" styleClass="login-card" maxHeight="-Infinity">
-        <HBox alignment="CENTER_RIGHT">
-            <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup" styleClass="icon-btn"/>
-        </HBox>
         <Label fx:id="lblHeader" styleClass="title"/>
         <Label fx:id="spacingPlaceholder"/>
         <VBox spacing="10" alignment="CENTER">

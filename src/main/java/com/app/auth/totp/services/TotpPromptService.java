@@ -39,7 +39,6 @@ public class TotpPromptService {
                 titleKey,
                 headerKey,
                 cancelTextKey,
-                false,
                 () -> {
                     verified[0] = true;
                     if (onVerified != null) {

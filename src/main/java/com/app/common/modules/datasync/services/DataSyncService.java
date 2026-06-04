@@ -15,7 +15,6 @@ import com.app.common.models.User;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.databackup.services.DataBackupService;
 import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.session.Session;
 import com.app.common.repositories.FileRepository;
 import com.app.common.repositories.UserRepository;
 import com.app.common.repositories.ValidatedDeviceRepository;
@@ -31,7 +30,6 @@ public class DataSyncService {
     private final FileRepository fileRepo;
     private final UserRepository userRepo;
     private final DataBackupService dataBackupService;
-    private final Session session;
     private final AppNoticeService appNoticeService;
 
     private Consumer<String> onUserAutoCreated;
@@ -40,13 +38,11 @@ public class DataSyncService {
             FileRepository fileRepo,
             UserRepository userRepo,
             DataBackupService dataBackupService,
-            Session session,
             AppNoticeService appNoticeService) {
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.fileRepo = fileRepo;
         this.userRepo = userRepo;
         this.dataBackupService = dataBackupService;
-        this.session = session;
         this.appNoticeService = appNoticeService;
     }
 

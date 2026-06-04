@@ -116,6 +116,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final MediaViewerService mediaViewerService;
     private final DevOtpGuardService devOtpGuardService;
     private final NavigationIntentService navigationIntentService;
+    private final DeviceListState deviceListState;
 
     @FXML
     private StackPane contentArea;
@@ -185,7 +186,8 @@ public class AdminLayoutController extends BaseLayoutController {
             StorageUnavailableEventHandler storageUnavailableEventHandler,
             MediaViewerService mediaViewerService,
             DevOtpGuardService devOtpGuardService,
-            NavigationIntentService navigationIntentService) {
+            NavigationIntentService navigationIntentService,
+            DeviceListState deviceListState) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.session = session;
@@ -202,6 +204,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.mediaViewerService = mediaViewerService;
         this.devOtpGuardService = devOtpGuardService;
         this.navigationIntentService = navigationIntentService;
+        this.deviceListState = deviceListState;
     }
 
     @Override
@@ -831,6 +834,8 @@ public class AdminLayoutController extends BaseLayoutController {
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
                 currentDashboardController.onFileSyncCompleted(event.getSyncedPath());
+            } else if (guestDashboardController != null) {
+                guestDashboardController.onFileSyncCompleted(event.getSyncedPath());
             }
             refreshStorageStatus();
         });
@@ -841,6 +846,8 @@ public class AdminLayoutController extends BaseLayoutController {
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
                 currentDashboardController.onFileBackupCompleted();
+            } else if (guestDashboardController != null) {
+                guestDashboardController.onFileBackupCompleted();
             }
             refreshStorageStatus();
         });
@@ -1049,21 +1056,22 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @EventListener(StorageRecoveryCompletedEvent.class)
     public void onStorageRestoreCompleted() {
-        if (session.getUser() == null) {
-            return;
-        }
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
                 currentDashboardController.onFileBackupCompleted();
                 currentDashboardController.mergeSavedDevices();
                 currentDashboardController.refresh();
+            } else if (guestDashboardController != null) {
+                guestDashboardController.onFileBackupCompleted();
+                guestDashboardController.mergeSavedDevices();
+                guestDashboardController.refresh();
             }
             refreshStorageStatus();
         });
     }
 
     private void showPendingUnvalidatedDevices() {
-        DeviceListState.getDeviceItems().stream()
+        deviceListState.getDeviceItems().stream()
                 .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
                 .map(DeviceSummary::getValidationResult)
                 .filter(Objects::nonNull)
