@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.DeviceValidationResult;
 import com.app.common.models.ModelWhitelist;
 import com.app.common.models.ModelWhitelistRule;
@@ -25,7 +26,6 @@ public class DeviceValidationService {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceValidationService.class);
 
-    private static final String SERIAL_PROPERTY = "ro.serialno";
     private static final Pattern ACCOUNT_USER_ID_PATTERN = Pattern
             .compile("account\\.user_id\\s*=\\s*\"([^\"\\r\\n]*)\"", Pattern.CASE_INSENSITIVE);
 
@@ -69,15 +69,15 @@ public class DeviceValidationService {
     // Validate connected device and return metadata used by the UI flow.
     private DeviceValidationResult validate(String adbSerial) {
         if (adbSerial == null || adbSerial.isBlank()) {
-            return DeviceValidationResult.invalid(null, "ADB serial is required");
+            return failValidation(null, Map.of(), "ADB serial is required");
         }
 
         Map<String, String> props = adbClient.getProps(adbSerial);
         if (props.isEmpty()) {
-            return DeviceValidationResult.invalid(adbSerial, "Cannot read device properties");
+            return failValidation(adbSerial, props, "Cannot read device properties");
         }
 
-        String hardwareId = sanitizeValue(props.get(SERIAL_PROPERTY));
+        String hardwareId = sanitizeValue(props.get(AppConstants.ADB_PROP_SERIAL));
         if (hardwareId.isBlank()) {
             hardwareId = sanitizeValue(adbSerial);
         }
@@ -85,22 +85,26 @@ public class DeviceValidationService {
         List<ModelWhitelist> whitelists = whitelistRepository.findAllActiveWithRules();
         Optional<ModelWhitelist> matchedWhitelist = findMatchedWhitelist(whitelists, props);
         if (matchedWhitelist.isEmpty()) {
-            return DeviceValidationResult.invalid(adbSerial, "Device does not match any active whitelist");
+            return failValidation(adbSerial, props, "Whitelist rule mismatch");
         }
 
         List<String> missingFiles = findMissingFiles(adbSerial, Set.of(configCsonPath, requiredDeviceDataFolder));
         if (!missingFiles.isEmpty()) {
-            return DeviceValidationResult.invalid(adbSerial, "Required files are missing");
+            return failValidation(adbSerial, props, "Required file not exist: " + String.join(", ", missingFiles));
         }
 
         String configContent = adbClient.readTextFile(adbSerial, configCsonPath);
 
         if (configContent == null || configContent.isBlank()) {
-            return DeviceValidationResult.invalid(adbSerial, "account.user_id not found: config missing or unreadable");
+            return failValidation(adbSerial,
+                    props,
+                    "cameraId not exist in file: config missing or unreadable " + configCsonPath);
         }
         String cameraId = extractAccountUserId(configContent);
         if (cameraId.isBlank()) {
-            return DeviceValidationResult.invalid(adbSerial, "account.user_id is blank or invalid");
+            return failValidation(adbSerial,
+                    props,
+                    "cameraId not exist in file: account.user_id is blank or invalid " + configCsonPath);
         }
 
         ModelWhitelist whitelist = matchedWhitelist.get();
@@ -153,6 +157,38 @@ public class DeviceValidationService {
         }
 
         return true;
+    }
+
+    /**
+     * Log failed validation with stable hardware props needed to diagnose whitelist
+     * and required-file issues from production logs.
+     *
+     * @param adbSerial ADB serial being validated
+     * @param props     device getprop values captured before failure
+     * @param reason    validation failure reason suitable for logs and UI messages
+     * @return invalid validation result carrying the same reason
+     */
+    private DeviceValidationResult failValidation(String adbSerial, Map<String, String> props, String reason) {
+        if (log.isWarnEnabled()) {
+            log.warn(
+                    "Failed to verify device adbSerial={} {}={} {}={} {}={} reason={}",
+                    adbSerial,
+                    AppConstants.ADB_PROP_PRODUCT_MODEL,
+                    prop(props, AppConstants.ADB_PROP_PRODUCT_MODEL),
+                    AppConstants.ADB_PROP_PRODUCT_DEVICE,
+                    prop(props, AppConstants.ADB_PROP_PRODUCT_DEVICE),
+                    AppConstants.ADB_PROP_BOARD_PLATFORM,
+                    prop(props, AppConstants.ADB_PROP_BOARD_PLATFORM),
+                    reason);
+        }
+        return DeviceValidationResult.invalid(adbSerial, reason);
+    }
+
+    private String prop(Map<String, String> props, String key) {
+        if (props == null) {
+            return "";
+        }
+        return sanitizeValue(props.get(key));
     }
 
     private List<String> findMissingFiles(String adbSerial, Set<String> requiredFiles) {
