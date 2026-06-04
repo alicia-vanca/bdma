@@ -45,8 +45,6 @@ public class SyncLogRepository {
             log.setOperation(rs.getString("operation"));
             log.setRecordId(rs.getString("record_id"));
             log.setSynced(rs.getInt("synced"));
-
-            // TEXT 그대로
             log.setCreatedAt(rs.getString("created_at"));
 
             return log;
