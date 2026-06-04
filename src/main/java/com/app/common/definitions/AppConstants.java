@@ -70,6 +70,12 @@ public final class AppConstants {
     public static final String KEY_DEVICE_CONNECTED = "dashboard.device.connected";
     public static final String KEY_DEVICE_SYNCED = "dashboard.device.synced";
 
+    // ────────────── ADB Properties ──────────────
+    public static final String ADB_PROP_SERIAL = "ro.serialno";
+    public static final String ADB_PROP_PRODUCT_MODEL = "ro.product.model";
+    public static final String ADB_PROP_PRODUCT_DEVICE = "ro.product.device";
+    public static final String ADB_PROP_BOARD_PLATFORM = "ro.board.platform";
+
     // ────────────── User Management ──────────────
     public static final int DEFAULT_PAGE_SIZE = 50;
     public static final java.util.List<Integer> PAGE_SIZE_THRESHOLDS = java.util.List.of(10, 25, 50, 100);
@@ -78,6 +84,7 @@ public final class AppConstants {
     public static final java.util.List<String> MEDIA_TYPES = java.util.List.of("audio", "image", "video", "IMP", "SOS");
     public static final int MAX_RETRY = 3;
     public static final String TMP_EXTENSION = ".tmp";
+    public static final String BODYCAM_ENCRYPTED_FILENAME_MARKER = "_enc";
 
     // ────────────── File List ──────────────
     public static final String DATE_PICKER_FORMAT = "dd/MM/yyyy";

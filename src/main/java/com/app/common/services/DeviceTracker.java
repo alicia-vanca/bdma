@@ -263,12 +263,14 @@ public class DeviceTracker implements Runnable {
                     deviceStates.put(serial, DeviceState.DISCONNECTING);
                     startGracePeriod(serial);
                 } else if (state == DeviceState.STABILIZING) {
+                    log.info("[{}] Device disconnected during stability check, dropping pending device", serial);
                     deviceStates.remove(serial);
                     cancelStabilityCheck(serial);
                 } else if (state == DeviceState.UNVALIDATED) {
                     deviceStates.remove(serial);
                     cancelStabilityCheck(serial);
-                    eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED, unvalidatedResults.remove(serial)));
+                    eventPublisher.publishEvent(new DeviceEvent(serial, DeviceEvent.EventType.DISCONNECTED,
+                            unvalidatedResults.remove(serial)));
                 }
             }
         }
@@ -309,7 +311,7 @@ public class DeviceTracker implements Runnable {
 
         if (!adbClient.isDeviceAlive(serial)) {
             stableSince[0] = 0;
-            log.info("[{}] Disconnected, resetting stability timer", serial);
+            log.info("[{}] Device is not alive, resetting stability timer", serial);
             return;
         }
 

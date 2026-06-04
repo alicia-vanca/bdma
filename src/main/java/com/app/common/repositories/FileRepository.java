@@ -32,8 +32,7 @@ public class FileRepository {
         return jdbcTemplate.query(
                 "SELECT * FROM files WHERE device_id = ?",
                 this::fileRowMapper,
-                deviceId
-        );
+                deviceId);
     }
 
     /**
@@ -47,6 +46,64 @@ public class FileRepository {
                 """;
 
         return jdbcTemplate.queryForList(sql, String.class, AppConstants.FILE_STATUS_SYNCED);
+    }
+
+    /**
+     * Finds legacy synced files whose stored local path still uses the temporary
+     * _enc filename marker. Used only by the startup transition migration.
+     */
+    public List<FileRecord> findSyncedEncryptedTransitionFiles() {
+        String sql = """
+                    SELECT * FROM files
+                    WHERE synced_path LIKE ?
+                      AND status IN (?, ?)
+                """;
+
+        return jdbcTemplate.query(sql,
+                this::fileRowMapper,
+                "%" + AppConstants.BODYCAM_ENCRYPTED_FILENAME_MARKER + ".%",
+                AppConstants.FILE_STATUS_SYNCED,
+                AppConstants.FILE_STATUS_BACKEDUP);
+    }
+
+    /**
+     * Updates a legacy encrypted sync record after the decrypted normal file
+     * exists.
+     * Backup metadata is cleared because old encrypted backup files are discarded.
+     */
+    public void transitionEncryptedSyncedFile(Long fileId, String normalName, String normalSyncedPath, long fileSize) {
+        String sql = """
+                    UPDATE files
+                    SET name = ?,
+                        synced_path = ?,
+                        file_size = ?,
+                        status = ?,
+                        backed_up_path = NULL,
+                        backed_up_at = NULL
+                    WHERE file_id = ?
+                """;
+
+        try {
+            jdbcTemplate.update(sql,
+                    normalName,
+                    normalSyncedPath,
+                    fileSize,
+                    AppConstants.FILE_STATUS_SYNCED,
+                    fileId);
+        } catch (Exception e) {
+            throw new RepositoryException("transitionEncryptedSyncedFile failed: " + normalSyncedPath, e);
+        }
+    }
+
+    /**
+     * Deletes a file record by primary key.
+     */
+    public void deleteById(Long fileId) {
+        try {
+            jdbcTemplate.update("DELETE FROM files WHERE file_id = ?", fileId);
+        } catch (Exception e) {
+            throw new RepositoryException("deleteById failed: " + fileId, e);
+        }
     }
 
     /**

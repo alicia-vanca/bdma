@@ -48,7 +48,9 @@ public class SyncProgressTracker {
         String rootRowId = syncContext.cameraId();
         DeviceQueueItem device = new DeviceQueueItem(rootRowId, syncContext.deviceName());
         devices.put(rootRowId, device);
-        publishRowChangedEvent(rootRowId, "Device added to sync queue");
+        // Re-adding a completed device replaces its root and leaf state for the new
+        // sync run.
+        publishQueueChangedEvent(rootRowId, "Device added to sync queue");
     }
 
     /**

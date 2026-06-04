@@ -601,11 +601,12 @@ public class MediaViewerController {
         }
         cbSpeed.setValue("1x");
 
-        mediaPlayer.volumeProperty().bind(volumeSlider.valueProperty());
+        MediaPlayer activePlayer = mediaPlayer;
+        activePlayer.volumeProperty().bind(volumeSlider.valueProperty());
 
-        mediaPlayer.currentTimeProperty().addListener((obs, oldVal, newVal) -> {
-            if (!sliderDragging) {
-                Duration total = mediaPlayer.getTotalDuration();
+        activePlayer.currentTimeProperty().addListener((obs, oldVal, newVal) -> {
+            if (!sliderDragging && activePlayer == mediaPlayer) {
+                Duration total = activePlayer.getTotalDuration();
                 if (total != null && total.greaterThan(Duration.ZERO)) {
                     videoSlider.setValue(newVal.toSeconds() / total.toSeconds() * 100);
                 }
@@ -617,9 +618,12 @@ public class MediaViewerController {
         videoSlider.setOnMousePressed(e -> sliderDragging = true);
         videoSlider.setOnMouseReleased(e -> {
             sliderDragging = false;
-            Duration total = mediaPlayer.getTotalDuration();
+            if (activePlayer != mediaPlayer) {
+                return;
+            }
+            Duration total = activePlayer.getTotalDuration();
             if (total != null) {
-                mediaPlayer.seek(total.multiply(videoSlider.getValue() / 100));
+                activePlayer.seek(total.multiply(videoSlider.getValue() / 100));
             }
         });
 
