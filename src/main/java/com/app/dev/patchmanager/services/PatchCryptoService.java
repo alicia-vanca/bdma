@@ -5,22 +5,20 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import javax.crypto.AEADBadTagException;
-import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.app.common.exceptions.AppException;
+import com.app.common.modules.crypto.constants.CryptoConstants;
+import com.app.common.modules.crypto.dtos.AesGcmCryptoRequest;
+import com.app.common.modules.crypto.exceptions.CryptoException;
+import com.app.common.modules.crypto.helpers.KeyMaterialHelper;
+import com.app.common.modules.crypto.services.AesGcmCryptoService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.repositories.PatchApplyLogRepository;
 
@@ -51,20 +49,18 @@ public class PatchCryptoService {
 
     private static final int MAGIC_LENGTH = 4;
     private static final int PATCH_ID_LENGTH = 16;
-    private static final int IV_LENGTH = 12;
-    private static final int GCM_TAG_BITS = 128;
-    private static final int GCM_TAG_BYTES = GCM_TAG_BITS / 8;
+    private static final int IV_LENGTH = CryptoConstants.GCM_RECOMMENDED_IV_BYTES;
+    private static final int GCM_TAG_BYTES = CryptoConstants.GCM_TAG_BITS / 8;
     private static final int HEADER_LENGTH = MAGIC_LENGTH + PATCH_ID_LENGTH + IV_LENGTH;
     private static final int MIN_FILE_LENGTH = HEADER_LENGTH + GCM_TAG_BYTES;
     private static final long MAX_FILE_BYTES = 10L * 1024 * 1024; // 10 MB guard
 
-    private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int STMT_PREVIEW_LEN = 120;
 
     /**
      * Expected key length in bytes (AES-256).
      */
-    private static final int KEY_BYTES = 32;
+    private static final int KEY_BYTES = CryptoConstants.AES_256_KEY_BYTES;
 
     // -------------------------------------------------------------------------
     // Dependencies
@@ -79,10 +75,12 @@ public class PatchCryptoService {
     private String masterKeyHex;
 
     private final PatchApplyLogRepository patchApplyLogRepository;
-    private final SecureRandom secureRandom = new SecureRandom();
+    private final AesGcmCryptoService aesGcmCryptoService;
 
-    public PatchCryptoService(PatchApplyLogRepository patchApplyLogRepository) {
+    public PatchCryptoService(PatchApplyLogRepository patchApplyLogRepository,
+            AesGcmCryptoService aesGcmCryptoService) {
         this.patchApplyLogRepository = patchApplyLogRepository;
+        this.aesGcmCryptoService = aesGcmCryptoService;
     }
 
     // =========================================================================
@@ -143,7 +141,7 @@ public class PatchCryptoService {
         try {
             plaintext = doDecrypt(ciphertext, key, iv, aad, encFile);
         } finally {
-            clearKey(key);
+            KeyMaterialHelper.clear(key);
         }
 
         String sql = new String(plaintext, StandardCharsets.UTF_8);
@@ -185,25 +183,25 @@ public class PatchCryptoService {
      * Parses SQL text reliably using JSQLParser.
      */
     private List<String> parseSqlStatements(String sql) {
+        List<Statement> parsedStatements;
         try {
-            var stmts = CCJSqlParserUtil.parseStatements(sql);
-            List<String> result = new ArrayList<>();
-            for (Statement s : stmts) {
-                String trimmed = s.toString().trim();
-                if (!trimmed.isEmpty()) {
-                    result.add(trimmed);
-                }
-            }
-            if (result.isEmpty()) {
-                throw new AppException(I18n.get("dev.patch.validation.empty"));
-            }
-            return result;
-        } catch (AppException e) {
-            throw e;
+            parsedStatements = CCJSqlParserUtil.parseStatements(sql);
         } catch (Exception e) {
             throw new AppException(I18n.get("dev.patch.validation.statementParse", findFirstProblemStatement(sql)),
                     e);
         }
+
+        List<String> result = new ArrayList<>();
+        for (Statement statement : parsedStatements) {
+            String trimmed = statement.toString().trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        if (result.isEmpty()) {
+            throw new AppException(I18n.get("dev.patch.validation.empty"));
+        }
+        return result;
     }
 
     /**
@@ -257,14 +255,14 @@ public class PatchCryptoService {
     private void encryptPlaintext(byte[] plaintext, Path outFile, UUID patchId) {
         validateSql(new String(plaintext, StandardCharsets.UTF_8));
 
-        byte[] iv = generateIv();
+        byte[] iv = KeyMaterialHelper.randomBytes(IV_LENGTH);
         byte[] key = loadMasterKey();
         byte[] ciphertext;
         try {
             byte[] aad = buildHeaderAad(patchId, iv);
             ciphertext = doEncrypt(plaintext, key, iv, aad);
         } finally {
-            clearKey(key);
+            KeyMaterialHelper.clear(key);
         }
 
         // Layout: [magic 4B][patchId 16B][iv 12B][ciphertext+tag NB]
@@ -279,37 +277,19 @@ public class PatchCryptoService {
 
     private byte[] doEncrypt(byte[] plaintext, byte[] key, byte[] iv, byte[] aad) {
         try {
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, toSecretKey(key), new GCMParameterSpec(GCM_TAG_BITS, iv));
-            cipher.updateAAD(aad);
-            return cipher.doFinal(plaintext);
-        } catch (Exception e) {
+            return aesGcmCryptoService.encrypt(new AesGcmCryptoRequest(plaintext, key, iv, aad));
+        } catch (CryptoException e) {
             throw new AppException("Encryption failed.", e);
         }
     }
 
     private byte[] doDecrypt(byte[] ciphertext, byte[] key, byte[] iv, byte[] aad, Path encFile) {
         try {
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, toSecretKey(key), new GCMParameterSpec(GCM_TAG_BITS, iv));
-            cipher.updateAAD(aad);
-            return cipher.doFinal(ciphertext);
-        } catch (AEADBadTagException e) {
+            return aesGcmCryptoService.decrypt(new AesGcmCryptoRequest(ciphertext, key, iv, aad));
+        } catch (CryptoException e) {
             throw new AppException(
-                    "Decryption failed: file is corrupted or was encrypted with a different key ΓÇö " + encFile, e);
-        } catch (Exception e) {
-            throw new AppException("Decryption failed: " + encFile, e);
+                    "Decryption failed: file is corrupted or was encrypted with a different key — " + encFile, e);
         }
-    }
-
-    private SecretKey toSecretKey(byte[] key) {
-        return new SecretKeySpec(key, "AES");
-    }
-
-    private byte[] generateIv() {
-        byte[] iv = new byte[IV_LENGTH];
-        secureRandom.nextBytes(iv);
-        return iv;
     }
 
     private byte[] buildHeaderAad(UUID patchId, byte[] iv) {
@@ -322,50 +302,27 @@ public class PatchCryptoService {
 
     /**
      * Decodes the master key from its hex representation.
-     * The caller MUST call {@link #clearKey(byte[])} on the returned array in a
-     * finally block.
+     * The caller MUST clear the returned array in a finally block.
      *
      * <p>
      * The key is sourced from the {@code patch.master.key} Spring property, which
-     * should be
-     * bound to the {@code PATCH_MASTER_KEY} environment variable (or Vault/KMS
-     * secret).
-     * Generate once with: {@code openssl rand -hex 32}
+     * should be bound to the {@code PATCH_MASTER_KEY} environment variable (or
+     * Vault/KMS secret). Generate once with: {@code openssl rand -hex 32}
      */
     private byte[] loadMasterKey() {
         if (masterKeyHex == null || masterKeyHex.isBlank()) {
             throw new AppException(
                     "Master patch key is not configured. Set the PATCH_MASTER_KEY environment variable.");
         }
-        String hex = masterKeyHex.trim();
-        if (hex.length() != KEY_BYTES * 2) {
-            throw new AppException(
-                    "Master patch key must be a 64-character hex string (32 bytes). Got length: " + hex.length());
-        }
-        byte[] key = new byte[KEY_BYTES];
-        for (int i = 0; i < KEY_BYTES; i++) {
-            int hi = Character.digit(hex.charAt(i * 2), 16);
-            int lo = Character.digit(hex.charAt(i * 2 + 1), 16);
-            if (hi < 0 || lo < 0) {
-                throw new AppException("Master patch key contains non-hex characters.");
-            }
-            key[i] = (byte) ((hi << 4) | lo);
-        }
-        return key;
-    }
-
-    /**
-     * Overwrites a key buffer with zeros to minimize time the secret lives in heap
-     * memory.
-     */
-    private void clearKey(byte[] key) {
-        if (key != null) {
-            Arrays.fill(key, (byte) 0);
+        try {
+            return KeyMaterialHelper.decodeHexKey(masterKeyHex, KEY_BYTES, "Master patch key");
+        } catch (CryptoException e) {
+            throw new AppException(e.getMessage(), e);
         }
     }
 
     // =========================================================================
-    // UUID Γåö bytes helpers
+    // UUID ↔ bytes helpers
     // =========================================================================
 
     private byte[] uuidToBytes(UUID uuid) {
@@ -404,8 +361,6 @@ public class PatchCryptoService {
                                 + " MB): " + file);
             }
             return Files.readAllBytes(file);
-        } catch (AppException e) {
-            throw e;
         } catch (IOException e) {
             throw new AppException("Cannot read file: " + file, e);
         }

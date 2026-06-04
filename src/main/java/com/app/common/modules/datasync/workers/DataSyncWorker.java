@@ -30,6 +30,7 @@ import com.app.common.events.FailureSummaryRequestedEvent;
 import com.app.common.events.FailureSummaryRequestedEvent.FailureSummaryRow;
 import com.app.common.exceptions.DeviceDisconnectedException;
 import com.app.common.models.FileRecord;
+import com.app.common.modules.crypto.services.BodycamCryptoService;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
@@ -88,6 +89,7 @@ public class DataSyncWorker implements Runnable {
     private final DriveLetterMapper driveLetterMapper;
     private final MassStorageFileSource massStorageFileSource;
     private final QueueManagerService queueManagerService;
+    private final BodycamCryptoService bodycamCryptoService;
 
     private final Map<String, String> driveLetterCache = new ConcurrentHashMap<>();
     private final Set<String> disconnectedDevices = ConcurrentHashMap.newKeySet();
@@ -221,7 +223,8 @@ public class DataSyncWorker implements Runnable {
             AppNoticeService appNoticeService,
             DriveLetterMapper driveLetterMapper,
             MassStorageFileSource massStorageFileSource,
-            QueueManagerService queueManagerService) {
+            QueueManagerService queueManagerService,
+            BodycamCryptoService bodycamCryptoService) {
         this.queue = queue;
         this.dataSyncService = dataSyncService;
         this.folderManagerService = folderManagerService;
@@ -232,6 +235,7 @@ public class DataSyncWorker implements Runnable {
         this.driveLetterMapper = driveLetterMapper;
         this.massStorageFileSource = massStorageFileSource;
         this.queueManagerService = queueManagerService;
+        this.bodycamCryptoService = bodycamCryptoService;
     }
 
     @Override
@@ -352,7 +356,8 @@ public class DataSyncWorker implements Runnable {
             SyncFile syncFile = buildSyncFile(path, syncContext, lookupCache);
             if (syncFile != null) {
                 allSyncFiles.add(syncFile);
-                queueManagerService.addFileToSyncTracker(syncContext.cameraId(), name(syncFile.remotePath()),
+                queueManagerService.addFileToSyncTracker(syncContext.cameraId(),
+                        nonEncFileName(name(syncFile.remotePath())),
                         syncFile.localPath());
                 if (!syncedPaths.contains(syncFile.relativeLocalPath())) {
                     unsyncedFiles.add(syncFile);
@@ -416,7 +421,24 @@ public class DataSyncWorker implements Runnable {
             return null;
 
         File dir = new File(new File(saveDir, info.username()), parts[parts.length - 3]);
-        return new File(dir, parts[parts.length - 1]).getAbsolutePath();
+        return new File(dir, nonEncFileName(parts[parts.length - 1])).getAbsolutePath();
+    }
+
+    // Strip the encrypted filename marker so local records show the playable media
+    // name.
+    private String nonEncFileName(String remoteFileName) {
+        int extensionIndex = remoteFileName.lastIndexOf('.');
+        if (extensionIndex <= 0) {
+            return remoteFileName;
+        }
+
+        String baseName = remoteFileName.substring(0, extensionIndex);
+        if (!baseName.endsWith(AppConstants.BODYCAM_ENCRYPTED_FILENAME_MARKER)) {
+            return remoteFileName;
+        }
+
+        return baseName.substring(0, baseName.length() - AppConstants.BODYCAM_ENCRYPTED_FILENAME_MARKER.length())
+                + remoteFileName.substring(extensionIndex);
     }
 
     // Extract folder type from remote path (third-to-last path component)
@@ -605,7 +627,7 @@ public class DataSyncWorker implements Runnable {
 
         file = sizedFile;
 
-        long requiredBytes = file.info().size();
+        long requiredBytes = requiredBytesForSync(file);
         if (!prep.syncedPaths().contains(file.relativeLocalPath())
                 && requiredBytes > 0
                 && !folderManagerService.hasSufficientSpace(syncContext.saveDir(), requiredBytes)) {
@@ -636,7 +658,8 @@ public class DataSyncWorker implements Runnable {
         PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size());
         if (result.isSuccess()) {
             String nonDriverLetterSyncedPath = FileUtil.stripDriveLetter(file.localPath());
-            dataSyncService.saveFile(uId, dId, name(file.remotePath()), nonDriverLetterSyncedPath, file.info());
+            dataSyncService.saveFile(uId, dId, nonEncFileName(name(file.remotePath())), nonDriverLetterSyncedPath,
+                    file.info());
             syncedPaths.add(file.relativeLocalPath());
             logSyncedFile(file.localPath(), counters.passed + 1, counters.total);
 
@@ -658,6 +681,7 @@ public class DataSyncWorker implements Runnable {
     // Pull file from device and verify size against the expected remote size.
     private PullResult pullAndVerify(String hardwareId, String remotePath, String localPath, long expectedSize) {
         String tempPath = localPath + AppConstants.TMP_EXTENSION;
+        String decryptedTempPath = localPath + ".dec" + AppConstants.TMP_EXTENSION;
         boolean moveSucceeded = false;
         try {
             PullResult result = folderManagerService
@@ -667,7 +691,12 @@ public class DataSyncWorker implements Runnable {
                 if (log.isDebugEnabled()) {
                     log.debug("Pull verified for {} -> {} ({} bytes)", name(remotePath), tempPath, expectedSize);
                 }
-                Files.move(Path.of(tempPath), Path.of(localPath), StandardCopyOption.REPLACE_EXISTING);
+                String sourcePath = tempPath;
+                if (isEncryptedRemoteFile(remotePath)) {
+                    sourcePath = decryptPulledEncryptedFile(remotePath, tempPath, decryptedTempPath);
+                    cleanupIncompleteFile(tempPath);
+                }
+                Files.move(Path.of(sourcePath), Path.of(localPath), StandardCopyOption.REPLACE_EXISTING);
                 moveSucceeded = true;
             }
             return result;
@@ -683,15 +712,21 @@ public class DataSyncWorker implements Runnable {
             return PullResult.failure(ERROR_EXCEPTION);
         } finally {
             if (!moveSucceeded) {
-                try {
-                    cleanupIncompleteFile(tempPath);
-                } catch (Exception e) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Failed to cleanup temp file {}: {}", tempPath, e.getMessage());
-                    }
-                }
+                cleanupIncompleteFile(tempPath);
+                cleanupIncompleteFile(decryptedTempPath);
             }
         }
+    }
+
+    private String decryptPulledEncryptedFile(String remotePath, String encryptedTempPath, String decryptedTempPath) {
+        if (!deleteExistingFile(decryptedTempPath)) {
+            throw new IllegalStateException("Cannot prepare decrypted temp file: " + decryptedTempPath);
+        }
+        bodycamCryptoService.decryptMediaFile(Path.of(encryptedTempPath), Path.of(decryptedTempPath));
+        if (log.isDebugEnabled()) {
+            log.debug("Decrypted encrypted sync file {} -> {}", name(remotePath), decryptedTempPath);
+        }
+        return decryptedTempPath;
     }
 
     private PullResult pullAndVerifyInternal(String hardwareId, String remotePath, String localPath,
@@ -902,6 +937,19 @@ public class DataSyncWorker implements Runnable {
         FileInfo updatedInfo = new FileInfo(file.info().cameraId(), file.info().username(),
                 file.info().createDate(), size, file.info().type());
         return new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), updatedInfo, null);
+    }
+
+    // Encrypted files need space for pulled encrypted temp and decrypted temp.
+    private long requiredBytesForSync(SyncFile file) {
+        long size = file.info().size();
+        if (size <= 0 || !isEncryptedRemoteFile(file.remotePath())) {
+            return size;
+        }
+        return size > Long.MAX_VALUE / 2 ? Long.MAX_VALUE : size * 2;
+    }
+
+    private boolean isEncryptedRemoteFile(String remotePath) {
+        return !nonEncFileName(name(remotePath)).equals(name(remotePath));
     }
 
     // Get remote file size strictly.
@@ -1198,10 +1246,10 @@ public class DataSyncWorker implements Runnable {
     private void cleanupIncompleteFile(String localPath) {
         boolean deleted = deleteExistingFile(localPath);
         if (deleted && log.isDebugEnabled()) {
-            log.debug("Cleaned up failed file: {}", localPath);
+            log.debug("Cleaned up left-over file: {}", localPath);
         }
         if (!deleted && log.isDebugEnabled()) {
-            log.debug("Failed to clean up failed file: {}", localPath);
+            log.debug("Failed to clean up left-over file: {}", localPath);
         }
     }
 

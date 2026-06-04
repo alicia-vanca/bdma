@@ -78,6 +78,7 @@ public final class AppConstants {
     public static final java.util.List<String> MEDIA_TYPES = java.util.List.of("audio", "image", "video", "IMP", "SOS");
     public static final int MAX_RETRY = 3;
     public static final String TMP_EXTENSION = ".tmp";
+    public static final String BODYCAM_ENCRYPTED_FILENAME_MARKER = "_enc";
 
     // ────────────── File List ──────────────
     public static final String DATE_PICKER_FORMAT = "dd/MM/yyyy";
