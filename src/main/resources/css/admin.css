@@ -323,11 +323,3 @@
   -fx-font-size: 13px;
   -fx-padding: 0 0 8 0;
 }
-
-.device-panel-guest {
-  -fx-pref-width: -1;
-  -fx-min-width: 0;
-  -fx-max-width: -1;
-  -fx-padding: 0 10 0 0;
-  -fx-border-color: none;
-}

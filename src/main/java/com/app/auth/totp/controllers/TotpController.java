@@ -7,19 +7,13 @@ import org.springframework.stereotype.Component;
 import com.app.MainApp;
 import com.app.auth.totp.dtos.TotpDialogContext;
 import com.app.auth.totp.services.TotpService;
-import com.app.common.definitions.ViewPaths;
-import com.app.common.helpers.CssLoader;
-import com.app.common.helpers.SpringContextHolder;
-import com.app.common.helpers.ViewLoader;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.models.User;
 import com.app.common.modules.i18n.I18n;
-import com.app.common.modules.preloginsettingspopup.helpers.PreLoginSettingsPopupHelper;
 import com.app.common.modules.session.Session;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
@@ -55,7 +49,6 @@ public class TotpController {
     private final Session session;
     private final AppUpdateController appUpdateController;
     private TextField[] digitFields;
-    private PreLoginSettingsPopupHelper settingsPopupHelper;
     private TotpDialogContext context;
     private boolean updatingFields;
     private boolean verifying;
@@ -78,15 +71,6 @@ public class TotpController {
         windowCloseHandlerRegistered = false;
 
         context = TotpDialogContext.login(this::completeLogin, MainApp::showLogin);
-        settingsPopupHelper = new PreLoginSettingsPopupHelper(
-                "totp",
-                null,
-                PreLoginSettingsPopupHelper.PopupAnchorY.TOP,
-                null,
-                this::reloadUI,
-                appUpdateController::onCheckUpdateManual,
-                null);
-        settingsPopupHelper.initialize();
 
         digitFields = new TextField[] { digit1, digit2, digit3, digit4, digit5, digit6 };
         applyContext();
@@ -288,25 +272,6 @@ public class TotpController {
         log.info("OTP cancelled: [ {} - {} ]", otpTitle(), otpHeader());
         if (context != null && context.onCancel() != null) {
             context.onCancel().run();
-        }
-    }
-
-    @FXML
-    private void openSettingsPopup() {
-        settingsPopupHelper.togglePopup();
-    }
-
-    private void reloadUI() {
-        try {
-            ViewLoader viewLoader = SpringContextHolder.getBean(ViewLoader.class);
-            var result = viewLoader.loadView(ViewPaths.TOTP);
-            if (result != null) {
-                Parent root = (Parent) result.node();
-                MainApp.getScene().setRoot(root);
-                CssLoader.applyLogin(MainApp.getScene());
-            }
-        } catch (Exception e) {
-            log.error("Failed to reload TOTP UI", e);
         }
     }
 

@@ -102,3 +102,11 @@
     -fx-opacity: 0.55;
     -fx-text-fill: -text-color;
 }
+
+.device-panel-guest {
+    -fx-pref-width: -1;
+    -fx-min-width: 0;
+    -fx-max-width: -1;
+    -fx-padding: 0;
+    -fx-border-color: none;
+}

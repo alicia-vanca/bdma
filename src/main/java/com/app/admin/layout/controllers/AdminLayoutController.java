@@ -834,8 +834,6 @@ public class AdminLayoutController extends BaseLayoutController {
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
                 currentDashboardController.onFileSyncCompleted(event.getSyncedPath());
-            } else if (guestDashboardController != null) {
-                guestDashboardController.onFileSyncCompleted(event.getSyncedPath());
             }
             refreshStorageStatus();
         });
@@ -846,8 +844,6 @@ public class AdminLayoutController extends BaseLayoutController {
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
                 currentDashboardController.onFileBackupCompleted();
-            } else if (guestDashboardController != null) {
-                guestDashboardController.onFileBackupCompleted();
             }
             refreshStorageStatus();
         });
@@ -1061,10 +1057,6 @@ public class AdminLayoutController extends BaseLayoutController {
                 currentDashboardController.onFileBackupCompleted();
                 currentDashboardController.mergeSavedDevices();
                 currentDashboardController.refresh();
-            } else if (guestDashboardController != null) {
-                guestDashboardController.onFileBackupCompleted();
-                guestDashboardController.mergeSavedDevices();
-                guestDashboardController.refresh();
             }
             refreshStorageStatus();
         });

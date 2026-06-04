@@ -128,24 +128,6 @@ public class GuestDashboardController extends BaseLayoutController {
         return deviceMiniStatus.getProgress(summary.getCameraId());
     }
 
-    public void onFileSyncCompleted(String syncedPath) {
-        if (fileListController != null) {
-            fileListController.onFileSyncCompleted(syncedPath);
-        }
-    }
-
-    public void onFileBackupCompleted() {
-        if (fileListController != null) {
-            fileListController.onFileBackupCompleted();
-        }
-        refresh();
-    }
-
-    public void mergeSavedDevices() {
-        deviceListState.mergeSavedDevices();
-        refresh();
-    }
-
     public void onUserAutoCreated() {
         if (fileListController != null) {
             fileListController.reloadUserFilter();
