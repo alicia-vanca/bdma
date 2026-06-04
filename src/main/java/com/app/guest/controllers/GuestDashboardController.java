@@ -1,6 +1,5 @@
 package com.app.guest.controllers;
 
-import com.app.admin.layout.controllers.FileListController;
 import com.app.auth.login.controllers.LoginController;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.DeviceSummary;
@@ -27,13 +26,9 @@ import org.springframework.stereotype.Component;
 public class GuestDashboardController extends BaseLayoutController {
 
     @FXML
-    private VBox devicePanel;
-    @FXML
     private GridPane deviceGrid;
     private final DeviceMiniStatus deviceMiniStatus;
     private final DeviceListState deviceListState;
-
-    private FileListController fileListController;
 
     public GuestDashboardController(ViewLoader viewLoader,
                                     DeviceMiniStatus deviceMiniStatus,
@@ -126,11 +121,5 @@ public class GuestDashboardController extends BaseLayoutController {
             return DeviceMiniStatus.SyncProgress.idle();
         }
         return deviceMiniStatus.getProgress(summary.getCameraId());
-    }
-
-    public void onUserAutoCreated() {
-        if (fileListController != null) {
-            fileListController.reloadUserFilter();
-        }
     }
 }

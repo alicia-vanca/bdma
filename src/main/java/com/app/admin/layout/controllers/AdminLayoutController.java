@@ -437,7 +437,6 @@ public class AdminLayoutController extends BaseLayoutController {
         var result = loadViewWithController(ViewPaths.GUEST_DASHBOARD, GuestDashboardController.class);
         if (result != null) {
             guestDashboardController = result.controller();
-            dataSyncService.setOnUserAutoCreated(username -> guestDashboardController.onUserAutoCreated());
             setContent(result.node());
         }
     }
