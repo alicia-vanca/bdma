@@ -66,8 +66,8 @@ public class DashboardController extends BaseLayoutController {
     @Setter
     private Consumer<DeviceSummary> onRequestSync;
     private static final Comparator<DeviceSummary> DEVICE_NAME_COMPARATOR = Comparator.comparing(
-                    DashboardController::sortName,
-                    String.CASE_INSENSITIVE_ORDER)
+            DashboardController::sortName,
+            String.CASE_INSENSITIVE_ORDER)
             .thenComparing(summary -> summary.getHardwareId() == null ? "" : summary.getHardwareId(),
                     String.CASE_INSENSITIVE_ORDER);
 
@@ -403,7 +403,7 @@ public class DashboardController extends BaseLayoutController {
     // Handle unvalidated device: add as transient device to the list
     private void handleUnvalidated(DeviceEvent event) {
         DeviceValidationResult result = event.validationResult();
-        if (result == null) {
+        if (result == null || !result.isValid()) {
             return;
         }
 

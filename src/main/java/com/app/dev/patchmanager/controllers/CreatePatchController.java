@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.Role;
 import com.app.common.exceptions.AppException;
 import com.app.common.helpers.NoticeStackRenderer;
@@ -352,9 +353,9 @@ public class CreatePatchController {
         whitelistRulesBox.getStyleClass().add("patch-builder-rules");
         addBuilderInlineRow(updateMode ? 5 : 3, I18n.get(KEY_BUILDER_STATUS), statusSelector);
         addBuilderRow(updateMode ? 6 : 4, I18n.get("dev.patch.builder.rules"), whitelistRulesBox);
-        addWhitelistRule("ro.product.model", "");
-        addWhitelistRule("ro.product.device", "");
-        addWhitelistRule("ro.board.platform", "");
+        addWhitelistRule(AppConstants.ADB_PROP_PRODUCT_MODEL, "");
+        addWhitelistRule(AppConstants.ADB_PROP_PRODUCT_DEVICE, "");
+        addWhitelistRule(AppConstants.ADB_PROP_BOARD_PLATFORM, "");
         Button addRuleButton = new Button(I18n.get("dev.patch.builder.addRule"));
         addRuleButton.getStyleClass().add("btn-secondary");
         addRuleButton.setOnAction(event -> addWhitelistRule("", ""));
