@@ -40,34 +40,22 @@ public class SyncService {
                             pkColumns,
                             recordId
                     );
-                    System.out.println("Delete in table : "+table+" with recordId : "+recordId);
                     repository.markSynced(log.getId());
                     continue;
                 }
 
                 // INSERT / UPDATE
-                if(table.equals("files")){
-                    System.out.println("hello");
-                }
                 List<Map<String, Object>> records = repository.getRecordFromA(table, recordId);
                 for(Map<String, Object> record : records){
                     if (record == null) {
-                        // record không tồn tại ở A → bỏ qua hoặc mark synced tùy logic bạn
                         continue;
                     }
                     repository.upsertToB(table, record);
-                    System.out.println("Upsert in table : "+table+" with recordId : "+recordId);
 
                     repository.markSynced(log.getId());
                 }
             } catch (Exception e) {
-
-                // nếu muốn debug sync lỗi
-                System.out.println("Note: Sync failed for table=" + table +
-                        ", recordId=" + recordId +
-                        ", error=" + e.getMessage());
-
-                // không mark synced → để retry lần sau
+                e.getMessage();
             }
         }
     }

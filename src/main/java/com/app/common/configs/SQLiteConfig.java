@@ -20,6 +20,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Properties;
 
 @Configuration
 public class SQLiteConfig {
@@ -141,4 +146,53 @@ public class SQLiteConfig {
             log.error("Failed to create databaseBackup file",e);
         }
     }
+    private boolean isEncrypted(Path dbFile) {
+
+        try (Connection conn =
+                     DriverManager.getConnection(
+                             "jdbc:sqlite:" + dbFile);
+             Statement stmt = conn.createStatement()) {
+
+            stmt.executeQuery(
+                    "SELECT count(*) FROM sqlite_master");
+
+            return false;
+        }
+        catch (SQLException ex) {
+            return true;
+        }
+    }
+    private HikariDataSource createDataSource(Path dbFile) {
+
+        SQLiteDataSource sqliteDataSource;
+
+        if (isEncrypted(dbFile)) {
+
+            byte[] key = AppContext.getDbKey();
+
+            if (key == null) {
+                throw new AppException(
+                        "Database key not initialized - ensure AppRuntimeInitializer ran before Spring context");
+            }
+
+            var config = SQLiteMCWxAES256Config.getDefault()
+                    .withKey(AppRuntimeInitializer.toRawKey(key))
+                    .build();
+
+            sqliteDataSource = new SQLiteDataSource(config);
+
+        } else {
+            sqliteDataSource = new SQLiteDataSource();
+        }
+
+        sqliteDataSource.setUrl("jdbc:sqlite:" + dbFile);
+
+        HikariConfig hikariConfig = new HikariConfig();
+        hikariConfig.setDataSource(sqliteDataSource);
+        hikariConfig.setMaximumPoolSize(1);
+        hikariConfig.setMinimumIdle(1);
+
+        return new HikariDataSource(hikariConfig);
+    }
+
 }
