@@ -7,6 +7,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Properties;
 
+import com.app.common.modules.datasync.DataSyncRunner;
+import com.app.guest.services.AppStartupService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -111,7 +113,13 @@ public class MainApp extends Application {
         ThemeManager.apply(getScene());
 
         log.info("App started");
-        showLogin();
+        AppStartupService startupService = springContext.getBean(AppStartupService.class);
+        startupService.initialize();
+
+        // Start a fresh device-tracking session
+        DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
+        dataSyncRunner.startDeviceTracker();
+        showAdmin();
     }
 
     @Override
@@ -142,14 +150,6 @@ public class MainApp extends Application {
         loadAndNavigate(ViewPaths.LOGIN, "BDMA", 480, 420);
     }
 
-    public static void showTotp() {
-        primaryStage.setMaximized(false);
-        primaryStage.setResizable(false);
-        primaryStage.setMinWidth(0);
-        primaryStage.setMinHeight(0);
-        loadAndNavigate(ViewPaths.TOTP, "BDMA", 480, 360);
-    }
-
     public static void showAdmin() {
         primaryStage.setResizable(true);
         primaryStage.setMinWidth(800);
@@ -172,9 +172,12 @@ public class MainApp extends Application {
             }
 
             primaryStage.setTitle(title);
-            primaryStage.setWidth(w);
-            primaryStage.setHeight(h);
-            primaryStage.centerOnScreen();
+
+            if (!primaryStage.isMaximized()) {
+                primaryStage.setWidth(w);
+                primaryStage.setHeight(h);
+                primaryStage.centerOnScreen();
+            }
 
             if (primaryStage.getScene() == null) {
                 primaryStage.setScene(scene);

@@ -302,3 +302,14 @@
 .file-list-pane {
   -fx-padding: 0 0 0 16;
 }
+
+.btn-login {
+  -fx-font-size: 13px;
+  -fx-background-color: -primary;
+  -fx-text-fill: white;
+  -fx-background-radius: 6;
+  -fx-padding: 6 12;
+  -fx-min-width: 96;
+  -fx-pref-width: 96;
+  -fx-cursor: hand;
+}

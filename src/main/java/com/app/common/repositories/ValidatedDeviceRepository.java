@@ -37,15 +37,6 @@ public class ValidatedDeviceRepository {
         return device;
     }
 
-    public Optional<ValidatedDevice> findByHardwareId(String hardwareId) {
-        String sql = "SELECT * FROM validated_device WHERE hardware_id = ? LIMIT 1";
-        try {
-            return Optional.ofNullable(jdbcTemplate.queryForObject(sql, this::mapRow, hardwareId));
-        } catch (EmptyResultDataAccessException e) {
-            return Optional.empty();
-        }
-    }
-
     public ValidatedDevice saveOrUpdate(String cameraId, String hardwareId, Long whitelistId) {
         return jdbcTemplate.queryForObject(
                 "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) "

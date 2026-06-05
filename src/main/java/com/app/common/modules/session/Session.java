@@ -91,6 +91,10 @@ public class Session {
         return currentUser != null && currentUser.getRole() == Role.DEV;
     }
 
+    public boolean isGuest() {
+        return currentUser == null;
+    }
+
     public Long getCurrentUserId() {
         if (currentUser == null) {
             return 0L;

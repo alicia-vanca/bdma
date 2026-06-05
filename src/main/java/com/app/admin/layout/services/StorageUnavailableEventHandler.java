@@ -266,13 +266,9 @@ public class StorageUnavailableEventHandler {
         }, "storage-dialog-queue").start();
     }
 
-    private boolean isSessionActive() {
-        return session.getUser() != null;
-    }
-
     @EventListener
     public void onStorageUnavailable(StorageUnavailableEvent event) {
-        if (event == null || !isSessionActive()) {
+        if (event == null) {
             return;
         }
         logDebug("StorageUnavailableEvent: target: {}, reason: {}", event.getTarget(), event.getReason());
@@ -299,12 +295,6 @@ public class StorageUnavailableEventHandler {
         CountDownLatch latch = getDialogLatch(event.getTarget());
 
         try {
-            if (!isSessionActive()) {
-                logDebug("Storage-unavailable dialog skipped because no user is logged in. target={}",
-                        event.getTarget());
-                return;
-            }
-
             FolderType target = event.getTarget();
             setStorageBlocked(target, event.getReason());
             String targetDrive = resolveTargetLabel(event);

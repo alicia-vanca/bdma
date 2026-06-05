@@ -37,6 +37,7 @@
                         <Label fx:id="labelGreeting" styleClass="greeting-label"/>
                         <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup" styleClass="icon-btn"/>
                         <Button fx:id="btnLogout" text="%top.logout" onAction="#logout" styleClass="btn-logout"/>
+                        <Button fx:id="btnLogin" text="%top.login" onAction="#showLoginPopup" styleClass="btn-login"/>
                     </HBox>
                 </HBox>
             </VBox>
