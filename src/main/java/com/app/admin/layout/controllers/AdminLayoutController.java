@@ -238,7 +238,7 @@ public class AdminLayoutController extends BaseLayoutController {
         settingsPopupHelper = new PreLoginSettingsPopupHelper(
                 "guest",
                 btnSettings,
-                PreLoginSettingsPopupHelper.PopupAnchorY.TOP,
+                PreLoginSettingsPopupHelper.PopupAnchorY.BOTTOM,
                 null,
                 this::reloadUI,
                 appUpdateController::onCheckUpdateManual,
