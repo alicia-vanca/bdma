@@ -226,6 +226,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
         if (session.isGuest()) {
             currentDashboardController = null;
+            appUpdateController.setOnStatusChange(null);
+            appUpdateController.checkOnStartup();
         } else {
             guestDashboardController = null;
         }
@@ -305,6 +307,7 @@ public class AdminLayoutController extends BaseLayoutController {
         if (session.isGuest()) {
             navigationIntentService.setPendingTarget(NavigationTarget.DASHBOARD);
             showLoginPopup();
+            return;
         }
         if (session.isDev()) {
             goImportPatch();
@@ -315,7 +318,11 @@ public class AdminLayoutController extends BaseLayoutController {
             currentDashboardController = result.controller();
             currentDashboardController.setOnRequestValidate(this::handleRequestValidate);
             currentDashboardController.setOnRequestSync(this::handleRequestSync);
-            dataSyncService.setOnUserAutoCreated(username -> currentDashboardController.onUserAutoCreated());
+            dataSyncService.setOnUserAutoCreated(username -> Platform.runLater(() -> {
+                if (currentDashboardController != null) {
+                    currentDashboardController.onUserAutoCreated();
+                }
+            }));
             setContent(result.node());
         }
         setActiveButton(getMenuButtons(), btnDashboard);
@@ -620,10 +627,6 @@ public class AdminLayoutController extends BaseLayoutController {
             refreshDashboardIfActive();
             showSaveDeviceConfirmation(result);
         }
-
-        if (session.isGuest()) {
-            refreshDashboardIfActive();
-        }
     }
 
     private void showContactAdminToSaveDeviceDialog(DeviceValidationResult result) {
@@ -762,8 +765,8 @@ public class AdminLayoutController extends BaseLayoutController {
 
         boolean autoDelete = adminSettingsService.getAutoDelete();
 
-        boolean queued = deviceSyncQueue.add(new SyncContext(null, false,
-                folderManagerService.getSyncDir(), autoDelete, deviceName, hardwareId, cameraId));
+        boolean queued = deviceSyncQueue.add(new SyncContext(folderManagerService.getSyncDir(),
+                autoDelete, deviceName, hardwareId, cameraId));
         // Only show success notice if device wasn't already in queue
         if (queued) {
             showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
@@ -1051,6 +1054,9 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @EventListener(StorageRecoveryCompletedEvent.class)
     public void onStorageRestoreCompleted() {
+        if (session.getUser() == null) {
+            return;
+        }
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
                 currentDashboardController.onFileBackupCompleted();

@@ -13,8 +13,6 @@ import java.io.File;
  * - cameraId: validated camera ID used for permissions and sync queue root rows
  */
 public record SyncContext(
-        String username,
-        boolean isAdmin,
         File saveDir,
         boolean autoDelete,
         String deviceName,

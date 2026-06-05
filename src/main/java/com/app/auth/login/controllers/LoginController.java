@@ -1,7 +1,6 @@
 package com.app.auth.login.controllers;
 
 import com.app.MainApp;
-import com.app.auth.login.services.LoginService;
 import com.app.auth.totp.services.TotpPromptService;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
@@ -10,7 +9,6 @@ import com.app.common.definitions.enums.Role;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.models.User;
-import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
@@ -53,9 +51,7 @@ public class LoginController {
 
     private final Session session;
     private final UserService userService;
-    private final AppUpdateController appUpdateController;
     private final UserSettingService userSettingService;
-    private final LoginService loginService; // Triggers background sync after login
     private final RecentUsernameRepository recentUsernameRepository;
     private final TotpPromptService totpPromptService;
 
@@ -63,25 +59,18 @@ public class LoginController {
 
     public LoginController(Session session,
             UserService userService,
-            AppUpdateController appUpdateController,
             UserSettingService userSettingService,
-            LoginService loginService,
             RecentUsernameRepository recentUsernameRepository,
             TotpPromptService totpPromptService) {
         this.session = session;
         this.userService = userService;
-        this.appUpdateController = appUpdateController;
         this.userSettingService = userSettingService;
-        this.loginService = loginService;
         this.recentUsernameRepository = recentUsernameRepository;
         this.totpPromptService = totpPromptService;
     }
 
     @FXML
     public void initialize() {
-        appUpdateController.setOnStatusChange(null);
-        appUpdateController.checkOnStartup();
-
         hideError();
 
         // Setup password peek functionality
@@ -261,7 +250,9 @@ public class LoginController {
      * @param user         authenticated user to place in the active session
      */
     private void completeSuccessfulLogin(String usernameText, User user) {
-        recentUsernameRepository.upsert(usernameText.trim());
+        if (!session.isDev()) {
+            recentUsernameRepository.upsert(usernameText.trim());
+        }
         log.info("User '{}' logged in successfully", usernameText);
 
         // Initialize session for the authenticated user.
@@ -269,9 +260,6 @@ public class LoginController {
 
         // Apply user-specific runtime settings.
         userSettingService.applyRuntimeSettings(user.getId());
-
-        // Trigger background sync without blocking UI.
-        loginService.onLoginSuccess();
 
         MainApp.showAdmin();
         closeLoginWindow();

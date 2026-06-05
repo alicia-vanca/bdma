@@ -313,13 +313,3 @@
   -fx-pref-width: 96;
   -fx-cursor: hand;
 }
-
-.device-flow {
-  -fx-padding: 12;
-}
-
-.panel-title {
-  -fx-font-weight: bold;
-  -fx-font-size: 13px;
-  -fx-padding: 0 0 8 0;
-}
