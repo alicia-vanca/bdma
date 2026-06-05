@@ -110,3 +110,7 @@
     -fx-padding: 0;
     -fx-border-color: none;
 }
+
+.device-flow {
+    -fx-padding: 12;
+}

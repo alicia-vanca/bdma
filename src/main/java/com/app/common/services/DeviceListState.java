@@ -123,12 +123,7 @@ public class DeviceListState {
     }
 
     private void handleDisconnectedEvent(DeviceEvent event) {
-        String cameraId = resolveCameraId(event).orElseGet(() ->
-                findCameraIdByHardwareId(event.hardwareId()));
-
-        if (cameraId != null) {
-            handleDisconnected(cameraId);
-        }
+        resolveCameraId(event).ifPresent(this::handleDisconnected);
     }
 
     private void handleUnvalidated(DeviceEvent event) {
@@ -205,17 +200,6 @@ public class DeviceListState {
         return deviceItems.stream()
                 .filter(summary -> cameraId.equals(summary.getCameraId()))
                 .findFirst();
-    }
-
-    private String findCameraIdByHardwareId(String hardwareId) {
-        if (hardwareId == null) {
-            return null;
-        }
-        return deviceItems.stream()
-                .filter(summary -> hardwareId.equals(summary.getHardwareId()))
-                .map(DeviceSummary::getCameraId)
-                .findFirst()
-                .orElse(null);
     }
 
     private DeviceSummary toSavedSummary(ValidatedDevice device) {

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.app.common.modules.session.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -90,6 +91,7 @@ public class DataSyncWorker implements Runnable {
     private final MassStorageFileSource massStorageFileSource;
     private final QueueManagerService queueManagerService;
     private final BodycamCryptoService bodycamCryptoService;
+    private final Session session;
 
     private final Map<String, String> driveLetterCache = new ConcurrentHashMap<>();
     private final Set<String> disconnectedDevices = ConcurrentHashMap.newKeySet();
@@ -224,7 +226,8 @@ public class DataSyncWorker implements Runnable {
             DriveLetterMapper driveLetterMapper,
             MassStorageFileSource massStorageFileSource,
             QueueManagerService queueManagerService,
-            BodycamCryptoService bodycamCryptoService) {
+            BodycamCryptoService bodycamCryptoService,
+            Session session) {
         this.queue = queue;
         this.dataSyncService = dataSyncService;
         this.folderManagerService = folderManagerService;
@@ -236,6 +239,7 @@ public class DataSyncWorker implements Runnable {
         this.massStorageFileSource = massStorageFileSource;
         this.queueManagerService = queueManagerService;
         this.bodycamCryptoService = bodycamCryptoService;
+        this.session = session;
     }
 
     @Override
@@ -899,7 +903,7 @@ public class DataSyncWorker implements Runnable {
 
         // Non-admin users cannot change save directory, wait for alert dismissal then
         // fail
-        if (!syncContext.isAdmin()) {
+        if (!session.isAdmin()) {
             if (log.isWarnEnabled()) {
                 log.warn(
                         "[{}] Non-admin user cannot recover from inaccessible save directory, waiting for alert dismissal",
@@ -1001,7 +1005,7 @@ public class DataSyncWorker implements Runnable {
 
         // Non-admin users cannot change save directory, wait for alert dismissal then
         // fail
-        if (!syncContext.isAdmin()) {
+        if (!session.isAdmin()) {
             if (log.isWarnEnabled()) {
                 log.warn("[{}] Non-admin user cannot recover from insufficient space, waiting for alert dismissal",
                         hardwareId);
@@ -1128,8 +1132,6 @@ public class DataSyncWorker implements Runnable {
                     requiredBytes);
         }
         return new SyncContext(
-                currentContext.username(),
-                currentContext.isAdmin(),
                 latestDataDir,
                 currentContext.autoDelete(),
                 currentContext.deviceName(),
