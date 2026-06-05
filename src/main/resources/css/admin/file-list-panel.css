@@ -1,0 +1,56 @@
+.status-label {
+    -fx-text-fill: -text-color;
+    -fx-font-size: 13px;
+}
+
+/* Keep row and header checkboxes the same compact size in the selection column. */
+.col-select {
+    -fx-padding: 0 0;
+    -fx-font-size: 15px;
+}
+
+.col-select .check-box {
+    -fx-font-size: 15px;
+}
+
+.table-view .column-header-background,
+.table-view .filler,
+.table-view .column-header {
+    -fx-background-color: -table-bg;
+    -fx-pref-height: 36;
+    -fx-min-height: 36;
+}
+
+.table-view .column-header .label {
+    -fx-font-size: 13px;
+}
+
+.table-view {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+    -fx-table-cell-border-color: -border-color;
+    -fx-table-header-border-color: -border-color;
+}
+
+.table-view .table-cell {
+    -fx-alignment: CENTER-LEFT;
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-padding: 0 12;
+    -fx-font-size: 16px;
+}
+
+.table-row-cell {
+    -fx-background-color: -table-bg;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: -table-odd;
+}
+
+.table-row-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: -table-selected;
+}

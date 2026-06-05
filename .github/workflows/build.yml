@@ -46,6 +46,8 @@ jobs:
         env:
           APP_VERSION: ${{ env.APP_VERSION }}
           LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
+          PATCH_MASTER_KEY: ${{ secrets.PATCH_MASTER_KEY }}
+          TOTP_SECRET: ${{ secrets.TOTP_SECRET }}
         run: ./gradlew clean shadowJar
 
       - name: Prepare package folder
@@ -57,6 +59,8 @@ jobs:
       - name: Build app-image
         env:
           LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
+          PATCH_MASTER_KEY: ${{ secrets.PATCH_MASTER_KEY }}
+          TOTP_SECRET: ${{ secrets.TOTP_SECRET }}
         run: |
           $version = "${{ env.APP_VERSION }}"
           $modulePath = "$env:JAVA_HOME\jmods;C:\javafx-jmods"
@@ -70,9 +74,9 @@ jobs:
             --app-version $version `
             --icon build\package\logo.ico `
             --dest build\dist `
-            --module-path $modulePath `
-            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,java.sql,java.logging" `
-            --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN" `
+            --module-path "$modulePath" `
+            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,java.sql,java.logging,javafx.media" `
+            --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN -DPATCH_MASTER_KEY=$env:PATCH_MASTER_KEY -DTOTP_SECRET=$env:TOTP_SECRET" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
       - name: Install NSIS
@@ -84,22 +88,34 @@ jobs:
           $outputDir = Join-Path (Get-Location).Path "build\installer"
           $sourceDir = Join-Path (Get-Location).Path "build\dist\BDMA"
           $iconPath = Join-Path (Get-Location).Path "src\main\resources\image\logo.ico"
-          $appPathsSource = Get-Content "src\main\java\com\app\common\config\AppPaths.java" -Raw
-          $appDirMatch = [regex]::Match($appPathsSource, 'APP_DIR\s*=\s*System\.getProperty\("user\.home"\)\s*\+(?<suffixExpression>.*?);', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+          $appPathsSource = Get-Content "src\main\java\com\app\common\definitions\AppDataPaths.java" -Raw
+          $appDirMatch = [regex]::Match($appPathsSource, 'APP_DIR\s*=\s*(?:Path\.of\(\s*System\.getProperty\("user\.home"\)\s*,\s*(?<pathOfSuffixExpression>.*?)\)\s*\.toString\(\)|System\.getProperty\("user\.home"\)\s*\+\s*(?<concatSuffixExpression>.*?));', [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
           if (-not $appDirMatch.Success) {
-            throw "Could not extract APP_DIR from AppPaths.java"
+            throw "Could not extract APP_DIR from AppDataPaths.java"
           }
 
-          $suffixParts = [regex]::Matches($appDirMatch.Groups['suffixExpression'].Value, '"([^"]*)"') | ForEach-Object {
-            $_.Groups[1].Value
+          $isPathOfExpression = $appDirMatch.Groups['pathOfSuffixExpression'].Success
+          $pathSeparator = [IO.Path]::DirectorySeparatorChar
+          $suffixExpression = if ($isPathOfExpression) {
+            $appDirMatch.Groups['pathOfSuffixExpression'].Value
+          } else {
+            $appDirMatch.Groups['concatSuffixExpression'].Value
+          }
+
+          $suffixParts = [regex]::Matches($suffixExpression, '"([^"]*)"') | ForEach-Object {
+            $_.Groups[1].Value.Replace('/', $pathSeparator)
           }
 
           if ($suffixParts.Count -eq 0) {
-            throw "Could not extract APP_DIR suffix from AppPaths.java"
+            throw "Could not extract APP_DIR suffix from AppDataPaths.java"
           }
 
-          $appDataDir = '$PROFILE' + (($suffixParts -join '') -replace '/', '\\')
+          if ($isPathOfExpression) {
+            $appDataDir = '$PROFILE' + $pathSeparator + ($suffixParts -join $pathSeparator)
+          } else {
+            $appDataDir = '$PROFILE' + ($suffixParts -join '')
+          }
 
           New-Item -ItemType Directory -Force -Path build\installer | Out-Null
 

@@ -1,0 +1,233 @@
+/* Queue Dialog Styles */
+
+/* Container that fills the entire window */
+.queue-dialog-container {
+    -fx-background-color: -card-bg;
+    -fx-padding: 20;
+}
+
+/* TAB PANE */
+.tab-pane {
+    -fx-background-color: -card-bg;
+}
+
+.tab-pane:focused {
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.tab-pane .tab-header-area {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+    -fx-padding: 0;
+}
+
+.tab-pane .tab-header-background {
+    -fx-background-color: -table-bg;
+}
+
+.tab-pane .tab {
+    -fx-background-color: -table-bg;
+    -fx-background-radius: 0;
+    -fx-border-color: transparent transparent -border-color transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-padding: 8 16;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.tab-pane .tab:focused {
+    -fx-background-color: -table-bg;
+    -fx-background-insets: 0;
+}
+
+.tab-pane .tab:selected {
+    -fx-background-color: -card-bg;
+    -fx-border-color: transparent transparent -primary transparent;
+    -fx-border-width: 0 0 2 0;
+}
+
+.tab-pane .tab:selected:focused {
+    -fx-background-color: -card-bg;
+    -fx-background-insets: 0;
+}
+
+.tab-pane .tab:hover {
+    -fx-background-color: -table-hover;
+}
+
+.tab-pane .tab .tab-label {
+    -fx-text-fill: -text-color;
+    -fx-font-size: 13px;
+    -fx-font-weight: 600;
+}
+
+.tab-pane .tab:selected .tab-label {
+    -fx-text-fill: -primary;
+}
+
+.tab-pane .tab-content-area {
+    -fx-background-color: -card-bg;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
+/* TABLE */
+.table-view {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+    -fx-padding: 0;
+    -fx-table-cell-border-color: -border-color;
+    -fx-table-header-border-color: -border-color;
+}
+
+/* No border on the background/filler containers � the outer table border handles framing */
+.table-view .column-header,
+.table-view .filler,
+.table-view .column-header-background {
+    -fx-background-color: -table-bg;
+    -fx-border-color: transparent;
+}
+
+.table-view .column-header-background,
+.table-view .filler,
+.table-view .column-header {
+    -fx-pref-height: 35;
+    -fx-min-height: 35;
+}
+
+.table-view .table-cell {
+    -fx-alignment: CENTER-LEFT;
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-padding: 2 12;
+    -fx-text-fill: -text-color;
+    -fx-wrap-text: true;
+}
+
+.table-view .column-header {
+    -fx-border-color: transparent -border-color -border-color transparent;
+}
+
+/* Remove the right-most border. */
+.table-view .column-header.last-cell {
+    -fx-border-color: transparent transparent -border-color transparent;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: -text-color;
+    -fx-font-weight: 600;
+}
+
+.table-row-cell {
+    -fx-background-color: -table-bg;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: -table-odd;
+}
+
+.table-row-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: -primary, -table-bg;
+    -fx-background-insets: 0, 2;
+}
+
+.table-row-cell:selected .table-cell {
+    -fx-text-fill: -text-color;
+}
+
+/* Hide the right-most border so it doesn't overlap the selected row's inset border */
+.table-row-cell:selected .last-cell {
+    -fx-border-color: transparent;
+}
+
+/* TREE TABLE */
+.tree-table-view {
+    -fx-background-color: -table-bg;
+    -fx-border-color: -border-color;
+    -fx-padding: 0;
+    -fx-table-cell-border-color: -border-color;
+}
+
+/* No border on the background/filler containers � the outer table border handles framing */
+.tree-table-view .column-header,
+.tree-table-view .filler,
+.tree-table-view .column-header-background {
+    -fx-background-color: -table-bg;
+    -fx-border-color: transparent;
+}
+
+.tree-table-view .column-header-background,
+.tree-table-view .filler,
+.tree-table-view .column-header {
+    -fx-pref-height: 35;
+    -fx-min-height: 35;
+}
+
+.tree-table-view .tree-table-cell {
+    -fx-alignment: CENTER-LEFT;
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-padding: 0 12;
+    -fx-text-fill: -text-color;
+    -fx-wrap-text: true;
+    -fx-min-height: 10;
+}
+
+.queue-cell-content {
+    -fx-padding: 4 0 4 0;
+}
+
+.tree-table-view .column-header {
+    -fx-border-color: transparent -border-color -border-color transparent;
+}
+
+/* Remove the right-most border. */
+.tree-table-view .column-header.last-cell {
+    -fx-border-color: transparent transparent -border-color transparent;
+}
+
+.tree-table-view .column-header .label {
+    -fx-text-fill: -text-color;
+    -fx-font-weight: 600;
+}
+
+.tree-table-row-cell {
+    -fx-background-color: -table-bg;
+}
+
+.tree-table-row-cell:odd {
+    -fx-background-color: -table-odd;
+}
+
+.tree-table-row-cell:hover {
+    -fx-background-color: -table-hover;
+}
+
+.tree-table-row-cell:selected {
+    -fx-background-color: -primary, -table-bg;
+    -fx-background-insets: 0, 2;
+}
+
+.tree-table-row-cell:selected .tree-table-cell {
+    -fx-text-fill: -text-color;
+}
+
+/* Hide the right-most border so it doesn't overlap the selected row's inset border */
+.tree-table-row-cell .last-cell {
+    -fx-border-color: transparent;
+}
+
+.tree-table-row-cell .tree-disclosure-node {
+    -fx-background-color: transparent;
+}
+
+.tree-table-row-cell .tree-disclosure-node .arrow {
+    -fx-background-color: -text-color;
+}
+
+.tree-table-row-cell:selected .tree-disclosure-node .arrow {
+    -fx-background-color: -text-color;
+}

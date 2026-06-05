@@ -1,90 +1,85 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.geometry.Insets?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
-<StackPane fx:id="root"
-           xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.app.admin.controller.AdminLayoutController"
-           styleClass="root">
-
-    <BorderPane>
-
+<StackPane fx:id="root" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.admin.layout.controllers.AdminLayoutController" styleClass="root">
+    <BorderPane minWidth="800">
         <top>
-            <VBox styleClass="header-shell" spacing="8">
-                <padding>
-                    <Insets top="10" right="15" bottom="10" left="15"/>
-                </padding>
-
-                <HBox alignment="CENTER_LEFT" spacing="10" styleClass="top-bar">
-                    <Label text="BDMA" styleClass="header-title"/>
-                    <Region HBox.hgrow="ALWAYS"/>
-
-                    <HBox spacing="8" alignment="CENTER_RIGHT" styleClass="top-right-actions">
-                        <Label fx:id="labelGreeting" styleClass="greeting-label"/>
-                        <Button fx:id="btnSettings"
-                                text="⚙"
-                                onAction="#openSettingsPopup"
-                                styleClass="icon-btn"/>
-                        <Button fx:id="btnLogout"
-                                text="%top.logout"
-                                onAction="#logout"
-                                styleClass="btn-logout"/>
+            <VBox styleClass="header-shell" spacing="6" >
+                <HBox alignment="CENTER_LEFT" spacing="15" styleClass="top-bar">
+                    <Label>
+                        <graphic>
+                            <ImageView fx:id="nteIcon"/>
+                        </graphic>
+                    </Label>
+                    <HBox spacing="15" styleClass="tabs-row">
+                        <HBox.margin>
+                            <Insets left="30"/>
+                        </HBox.margin>
+                        <Button fx:id="btnDashboard" text="%menu.dashboard" onAction="#goDashboard"
+                                styleClass="menu-tab-btn"/>
+                        <Button fx:id="btnUser" text="%menu.user" onAction="#goUser" styleClass="menu-tab-btn"/>
+                        <Button fx:id="btnImportPatch" text="%menu.dev.importPatch" onAction="#goImportPatch" styleClass="menu-tab-btn"/>
+                        <Button fx:id="btnCreatePatch" text="%menu.dev.createPatch" onAction="#goCreatePatch" styleClass="menu-tab-btn"/>
                     </HBox>
-                </HBox>
-
-                <HBox spacing="10" styleClass="tabs-row">
-                    <Button text="%menu.dashboard"
-                            fx:id="btnDashboard"
-                            onAction="#goDashboard"
-                            styleClass="menu-tab-btn"/>
-
-                    <Button text="%menu.user"
-                            fx:id="btnUser"
-                            onAction="#goUser"
-                            styleClass="menu-tab-btn"/>
-
-                    <Button text="%settings.title"
-                            fx:id="btnAppSetting"
-                            onAction="#toggleAppSettingMenu"
-                            styleClass="menu-tab-btn"/>
-
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <HBox spacing="12" alignment="CENTER_RIGHT" styleClass="top-right-actions">
+                        <Label fx:id="labelGreeting" styleClass="greeting-label"/>
+                        <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup" styleClass="icon-btn"/>
+                        <Button fx:id="btnLogout" text="%top.logout" onAction="#logout" styleClass="btn-logout"/>
+                        <Button fx:id="btnLogin" text="%top.login" onAction="#showLoginPopup" styleClass="btn-login"/>
+                    </HBox>
                 </HBox>
             </VBox>
         </top>
-
         <center>
-            <StackPane fx:id="contentArea" styleClass="content-shell"/>
+            <StackPane>
+                <StackPane fx:id="contentArea" styleClass="content-shell" VBox.vgrow="ALWAYS"/>
+                <VBox fx:id="noticeContainer" spacing="11" alignment="BOTTOM_CENTER" fillWidth="false"
+                      mouseTransparent="true" styleClass="notice-container"/>
+            </StackPane>
         </center>
-
+        <bottom>
+            <HBox fx:id="statusBar" styleClass="status-bar" alignment="CENTER_LEFT" spacing="10">
+                <HBox alignment="CENTER_LEFT" spacing="10" HBox.hgrow="ALWAYS" styleClass="status-storage-row"
+                      prefWidth="350" minWidth="300">
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS" minWidth="120">
+                        <Label fx:id="lblDataStorageTitle" styleClass="storage-title" minWidth="-1"/>
+                        <StackPane HBox.hgrow="ALWAYS" maxWidth="160" minWidth="40">
+                            <ProgressBar fx:id="pbDataStorage" progress="0" styleClass="storage-progress"
+                                         maxWidth="1.7976931348623157E308"/>
+                            <Label fx:id="lblDataStoragePercent" styleClass="storage-percent" mouseTransparent="true"/>
+                        </StackPane>
+                        <Label fx:id="lblDataStorageUsage" styleClass="storage-detail" minWidth="-1"/>
+                    </HBox>
+                    <Separator orientation="VERTICAL" styleClass="storage-separator"/>
+                    <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS" minWidth="120">
+                        <Label fx:id="lblBackupStorageTitle" styleClass="storage-title" minWidth="-1"/>
+                        <StackPane HBox.hgrow="ALWAYS" maxWidth="160" minWidth="40">
+                            <ProgressBar fx:id="pbBackupStorage" progress="0" styleClass="storage-progress"
+                                         maxWidth="1.7976931348623157E308"/>
+                            <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"
+                                   mouseTransparent="true"/>
+                        </StackPane>
+                        <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail" minWidth="-1"/>
+                    </HBox>
+                </HBox>
+                <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="8"
+                      styleClass="status-warning-strip" HBox.hgrow="ALWAYS" prefWidth="450">
+                    <Label fx:id="lblCombinedWarning" wrapText="false" minWidth="0"
+                           styleClass="status-warning-label" HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
+                </HBox>
+            </HBox>
+        </bottom>
     </BorderPane>
-
-    <VBox fx:id="appSettingMenu"
-          managed="false"
-          mouseTransparent="true"
-          visible="false"
-          fillWidth="true"
-          styleClass="dropdown-menu">
-        <Button fx:id="btnStorageSetting"
-                text="%settings.storage"
-                onAction="#goStorageSetting"
-                maxWidth="Infinity"
-                styleClass="dropdown-item"/>
-        <Button fx:id="btnDataBackupSetting"
-                text="%settings.data_backup"
-                onAction="#goDataBackupSetting"
-                maxWidth="Infinity"
-                styleClass="dropdown-item"/>
-    </VBox>
-
-    <Label fx:id="noticeLabel"
-           visible="false"
-           mouseTransparent="true"
-           styleClass="global-notice,message-success"
-           StackPane.alignment="BOTTOM_CENTER">
-        <StackPane.margin>
-            <Insets top="0" right="0" bottom="40" left="0"/>
-        </StackPane.margin>
-    </Label>
-
 </StackPane>

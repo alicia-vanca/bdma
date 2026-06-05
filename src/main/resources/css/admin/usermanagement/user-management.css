@@ -1,0 +1,96 @@
+/* TABLE */
+.table-view {
+  -fx-background-color: -table-bg;
+  -fx-font-size: 13px;
+}
+
+.table-view .column-header,
+.table-view .filler,
+.table-view .column-header-background {
+  -fx-background-color: -table-bg;
+  -fx-pref-height: 40;
+  -fx-min-height: 40;
+}
+
+.table-view .table-cell {
+  -fx-alignment: CENTER-LEFT;
+  -fx-padding: 0 12;
+}
+
+.table-view .column-header .label {
+  -fx-font-size: 13px;
+}
+
+.table-row-cell {
+  -fx-background-color: -table-bg;
+}
+
+.table-row-cell:odd {
+  -fx-background-color: -table-odd;
+}
+
+.table-row-cell:hover {
+  -fx-background-color: -table-hover;
+}
+
+.table-row-cell:selected {
+  -fx-background-color: -table-selected;
+}
+
+/* Floating notice */
+.label.floating-notice {
+  -fx-padding: 10 14;
+  -fx-font-weight: 600;
+  -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 12, 0.2, 0, 3);
+}
+
+.label.floating-notice.message-success {
+  -fx-background-color: rgba(39, 174, 96, 0.16);
+  -fx-border-color: rgba(39, 174, 96, 0.45);
+  -fx-text-fill: #2ecc71;
+}
+
+.label.floating-notice.message-error {
+  -fx-background-color: rgba(192, 57, 43, 0.14);
+  -fx-border-color: rgba(192, 57, 43, 0.4);
+  -fx-text-fill: #e74c3c;
+}
+
+/* ── ACTION COLUMN BUTTONS ───────────────────────────────────────── */
+.action-cell-box {
+  -fx-spacing: 10;
+  -fx-alignment: CENTER_LEFT;
+}
+
+.btn-edit {
+  -fx-background-color: #2980b9;
+  -fx-text-fill: white;
+  -fx-pref-height: 26;
+  -fx-padding: 0 10;
+}
+
+.btn-edit:hover {
+  -fx-background-color: #2471a3;
+}
+
+.btn-reactivate {
+  -fx-background-color: #27ae60;
+  -fx-text-fill: white;
+  -fx-pref-height: 26;
+  -fx-padding: 0 10;
+}
+
+.btn-reactivate:hover {
+  -fx-background-color: #229954;
+}
+
+.btn-delete {
+  -fx-background-color: #c0392b;
+  -fx-text-fill: white;
+  -fx-pref-height: 26;
+  -fx-padding: 0 10;
+}
+
+.btn-delete:hover {
+  -fx-background-color: #a93226;
+}
