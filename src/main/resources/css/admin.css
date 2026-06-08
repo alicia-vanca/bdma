@@ -1,52 +1,315 @@
 .root {
-    -fx-background-color: -app-bg;
+  -fx-background-color: -card-bg;
 }
 
-/* HEADER SHELL */
+.content-shell {
+  -fx-background-color: -card-bg;
+  -fx-padding: 12;
+}
+
 .header-shell {
-    -fx-background-color: -sidebar-bg;
+  -fx-background-color: -sidebar-bg;
+  -fx-padding: 8 23;
+  fx-alignment: center;
 }
 
-/* TOP BAR */
 .top-bar {
-    -fx-padding: 0;
+  -fx-padding: 0;
 }
 
-/* APP TITLE */
 .header-title {
-    -fx-font-size: 20px;
-    -fx-font-weight: bold;
+  -fx-font-size: 16px;
+  -fx-font-weight: bold;
 }
 
-/* TABS ROW */
 .tabs-row {
-    -fx-padding: 0 0 2 0;
+  -fx-pref-height: 28;
+  -fx-max-height: 28;
+  -fx-min-height: 28;
+  -fx-padding: 0 0 3 0;
 }
 
-/* USER MENU */
+.top-right-actions {
+  -fx-alignment: CENTER_RIGHT;
+}
+
+.greeting-label {
+  -fx-font-size: 13px;
+  -fx-font-weight: 600;
+}
+
+.btn-logout {
+  -fx-font-size: 13px;
+  -fx-background-color: -danger;
+  -fx-text-fill: white;
+  -fx-background-radius: 6;
+  -fx-padding: 6 12;
+  -fx-min-width: 96;
+  -fx-pref-width: 96;
+  -fx-cursor: hand;
+}
+
+.btn-logout:hover {
+  -fx-opacity: 0.9;
+}
+
+/* ── TAB BUTTONS ────────────────────────────────────────────────── */
+.menu-tab-btn {
+  -fx-font-size: 13px;
+  -fx-background-color: transparent;
+  -fx-text-fill: -text-color;
+  -fx-background-radius: 6;
+  -fx-padding: 7 12;
+  -fx-min-width: 140;
+  -fx-pref-width: 140;
+  -fx-max-width: 140;
+  -fx-pref-height: 28;
+  -fx-max-height: 28;
+  -fx-alignment: CENTER;
+}
+/* ── NOTICE OVERLAY ─────────────────────────────────────────────── */
+.notice-container {
+  -fx-padding: 0 0 30 0;
+}
+
+.notice-container-dialog {
+  -fx-padding: 0 0 24 0;
+}
+
+/* ── STATUS BAR / FOOTER ────────────────────────────────────────── */
+.status-bar {
+  -fx-background-color: -sidebar-bg;
+  -fx-border-color: -border-color;
+  -fx-border-width: 1 0 0 0;
+}
+
+.status-storage-row {
+  -fx-padding: 4 16;
+}
+
+.status-warning-text-row {
+  -fx-min-width: 0;
+  -fx-spacing: 4;
+}
+
+.status-warning-strip {
+  -fx-border-color: -border-color;
+  -fx-border-width: 0 1 0 0;
+  -fx-padding: 4 16;
+}
+
+.status-warning-strip-active {
+  -fx-background-color: -warn-strip-bg;
+  -fx-border-color: -warn-strip-border;
+}
+
+.status-warning-label {
+  -fx-text-fill: -warning-color;
+  -fx-font-size: 13px;
+}
+
+/* ── STORAGE PANELS ─────────────────────────────────────────────── */
+.storage-title {
+  -fx-font-size: 13px;
+  -fx-font-weight: 600;
+}
+
+.storage-percent {
+  -fx-font-size: 13px;
+}
+
+.storage-detail {
+  -fx-font-size: 13px;
+  -fx-font-weight: 700;
+}
+
+.storage-progress {
+  -fx-pref-height: 15px;
+  -fx-min-height: 15px;
+  -fx-max-height: 15px;
+  -fx-background-radius: 4;
+  -fx-accent: -primary;
+}
+
+.storage-progress>.bar {
+  -fx-background-radius: 4;
+  -fx-background-insets: 0;
+}
+
+.storage-progress>.track {
+  -fx-background-radius: 4;
+  -fx-background-insets: 0;
+  -fx-background-color: -storage-track;
+}
+
+.storage-progress.storage-warn {
+  -fx-accent: -warning-color;
+}
+
+.storage-progress.storage-critical {
+  -fx-accent: -danger;
+}
+
+.storage-separator {
+  -fx-background-color: transparent;
+  -fx-border-color: -border-color;
+  -fx-border-width: 0 1 0 0;
+  -fx-pref-width: 1;
+  -fx-padding: 0 0;
+}
+
+.drive-conflict-row {
+  -fx-padding: 0 20 5 20;
+}
+
+/* ── FILTER BAR ─────────────────────────────────────────────────── */
+.filter-bar {
+  -fx-font-size: 13px;
+  -fx-pref-height: 30;
+  -fx-min-height: 30;
+  -fx-max-height: 30;
+}
+
+.filter-bar .label {
+  -fx-font-size: 13px;
+}
+
+.filter-bar .button {
+  -fx-font-size: 13px;
+  -fx-pref-height: 30;
+  -fx-padding: 4 10;
+}
+
+.filter-bar .combo-box {
+  -fx-font-size: 13px;
+  -fx-pref-height: 30;
+  -fx-min-height: 30;
+}
+
+.filter-bar .date-picker {
+  -fx-font-size: 13px;
+  -fx-pref-height: 30;
+  -fx-max-height: 30;
+  -fx-pref-width: 130;
+  -fx-max-width: 130;
+}
+
+.filter-bar .date-picker .text-field {
+  -fx-pref-height: 30;
+  -fx-min-height: 30;
+  -fx-max-height: 30;
+  -fx-font-size: 13px;
+  -fx-padding: 4 4 4 7;
+}
+
+.filter-bar .date-picker .arrow-button {
+  -fx-pref-height: 30;
+  -fx-padding: 4 6;
+}
+
+.filter-bar .text-field {
+  -fx-font-size: 13px;
+  -fx-pref-height: 30;
+  -fx-min-height: 30;
+  -fx-max-height: 30;
+  -fx-padding: 4 8;
+}
+
+.date-arrow {
+  -fx-font-size: 13px;
+  -fx-text-fill: -text-color;
+}
+
+/* ── PAGINATION BAR ─────────────────────────────────────────────── */
+.pagination-bar {
+  -fx-font-size: 13px;
+}
+
+.pagination-bar .btn-pagination {
+  -fx-pref-height: 20;
+  -fx-min-height: 20;
+  -fx-pref-width: 20;
+  -fx-min-width: 20;
+  -fx-padding: 0;
+}
+
+
+.pagination-bar .combo-box {
+  -fx-pref-height: 20;
+  -fx-min-height: 20;
+}
+
+.combo-box.page-size-combo {
+  -fx-pref-width: 65;
+  -fx-pref-height: 30;
+}
+
+.combo-box.page-size-combo .arrow-button {
+  -fx-padding: 0 10 0 0;
+  -fx-pref-width: 10;
+}
+
+/* ── PAGE NUMBER INPUT ─────────────────────── */
+.page-number-input {
+  -fx-pref-width: 20;
+  -fx-pref-height: 20;
+  -fx-min-height: 20;
+  -fx-max-height: 20;
+  -fx-font-size:13px;
+  -fx-alignment: CENTER;
+  -fx-padding: 1 2;
+  -fx-background-radius: 2;
+  -fx-border-radius: 2;
+}
+
+.page-total-label {
+  -fx-font-size: 13px;
+  -fx-text-fill: -text-color;
+}
+
+/* ── SETTINGS WARNING ───────────────────────────────────────────── */
+.settings-warning {
+  -fx-font-size: 13px;
+}
+
+/* ── CONTEXT MENU ───────────────────────────────────────────────── */
 .user-menu {
-    -fx-background-color: -card-bg;
-    -fx-text-fill: -text-color;
-    -fx-pref-width: 140;
-    -fx-min-width: 140;
-    -fx-max-width: 140;
+  -fx-background-color: -card-bg;
+  -fx-text-fill: -text-color;
+  -fx-pref-width: 210;
+  -fx-min-width: 210;
+  -fx-max-width: 210;
 }
 
-/* USER MENU POPUP */
 .context-menu {
-    -fx-pref-width: 140;
-    -fx-min-width: 140;
+  -fx-pref-width: 210;
+  -fx-min-width: 210;
 }
 
 .context-menu .menu-item {
-    -fx-pref-width: 140;
-    -fx-text-fill: -text-color;
+  -fx-pref-width: 210;
+  -fx-text-fill: -text-color;
 }
 
-/* HEADER TAB BUTTON */
-.menu-tab-btn {
-    -fx-background-color: transparent;
-    -fx-text-fill: -text-color;
-    -fx-background-radius: 6;
-    -fx-padding: 8 14;
+/* ── DASHBOARD LAYOUT ───────────────────────────────────────────── */
+.device-panel {
+  -fx-pref-width: -1;
+  -fx-min-width: 0;
+  -fx-max-width: -1;
+  -fx-padding: 0 10 0 0;
+}
+
+.file-list-pane {
+  -fx-padding: 0 0 0 16;
+}
+
+.btn-login {
+  -fx-font-size: 13px;
+  -fx-background-color: -primary;
+  -fx-text-fill: white;
+  -fx-background-radius: 6;
+  -fx-padding: 6 12;
+  -fx-min-width: 96;
+  -fx-pref-width: 96;
+  -fx-cursor: hand;
 }

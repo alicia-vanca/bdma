@@ -1,7 +1,78 @@
 .content {
-    -fx-background-color: -card-bg;
+  -fx-background-color: -card-bg;
+  -fx-border-color: -border-color;
+  -fx-border-width: 1;
+  -fx-border-radius: 8;
+  -fx-background-radius: 8;
 }
 
-.label {
-    -fx-text-fill: -text-color;
+.panel-title {
+  -fx-font-weight: bold;
+  -fx-font-size: 14px;
+  -fx-padding: 0 0 8 0;
+}
+
+#deviceListView {
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
+}
+
+#deviceListView .list-cell {
+  -fx-background-color: transparent;
+  -fx-border-color: transparent;
+  -fx-border-width: 2px;
+  -fx-border-radius: 4px;
+  -fx-border-style: solid;
+}
+
+#deviceListView .list-cell:odd {
+  -fx-background-color: derive(-card-bg, -5%);
+}
+
+#deviceListView .list-cell:hover {
+  -fx-background-color: derive(-card-bg, -10%);
+}
+
+#deviceListView .list-cell:selected {
+  -fx-border-color: -primary;
+}
+
+#deviceListView .list-cell:empty,
+#deviceListView .list-cell:empty:odd {
+  -fx-background-color: transparent;
+}
+
+.device-cell-row {
+  -fx-padding: 6 4;
+}
+
+.device-cell-name {
+  -fx-font-weight: bold;
+  -fx-font-size: 13px;
+}
+
+.device-cell-camera-id {
+    -fx-font-size: 13px;
+    -fx-opacity: 0.55;
+}
+
+.device-cell-connected {
+  -fx-font-size: 13px;
+}
+
+.device-cell-offline {
+  -fx-font-size: 13px;
+}
+
+.device-cell-unvalidated {
+  -fx-font-size: 13px;
+}
+
+.edit-icon-svg {
+  -fx-fill: #888;
+  -fx-cursor: hand;
+}
+
+.edit-icon-svg:hover {
+  -fx-fill: #000;
 }

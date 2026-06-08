@@ -1,10 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
-<VBox spacing="10"
-      alignment="CENTER"
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.control.Button?>
+<HBox fx:id="root" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.app.admin.layout.controllers.DashboardController"
       styleClass="content">
-
-    <Label text="%menu.dashboard" styleClass="title"/>
-    <Label text="%dashboard.welcome"/>
-
-</VBox>
+    <VBox fx:id="devicePanel" styleClass="device-panel" HBox.hgrow="NEVER">
+        <Label text="%dashboard.devices" styleClass="panel-title"/>
+        <ListView fx:id="deviceListView" VBox.vgrow="ALWAYS"/>
+    </VBox>
+    <Separator orientation="VERTICAL"/>
+    <VBox fx:id="fileListPane" spacing="16" HBox.hgrow="ALWAYS" alignment="TOP_LEFT" styleClass="file-list-pane">
+        <padding>
+            <Insets top="0" right="0" bottom="0" left="18"/>
+        </padding>
+        <StackPane fx:id="fileListContainer" VBox.vgrow="ALWAYS"/>
+    </VBox>
+</HBox>

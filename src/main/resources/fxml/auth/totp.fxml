@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<StackPane xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.app.auth.totp.controllers.TotpController"
+           styleClass="root"
+           alignment="CENTER">
+    <VBox spacing="12" alignment="TOP_CENTER" styleClass="login-card" maxHeight="-Infinity">
+        <Label fx:id="lblHeader" styleClass="title"/>
+        <Label fx:id="spacingPlaceholder"/>
+        <VBox spacing="10" alignment="CENTER">
+            <HBox spacing="7" alignment="CENTER" styleClass="totp-row">
+                <TextField fx:id="digit1" styleClass="totp-digit" alignment="CENTER"/>
+                <TextField fx:id="digit2" styleClass="totp-digit" alignment="CENTER"/>
+                <TextField fx:id="digit3" styleClass="totp-digit" alignment="CENTER"/>
+                <TextField fx:id="digit4" styleClass="totp-digit" alignment="CENTER"/>
+                <TextField fx:id="digit5" styleClass="totp-digit" alignment="CENTER"/>
+                <TextField fx:id="digit6" styleClass="totp-digit" alignment="CENTER"/>
+            </HBox>
+        </VBox>
+        <Label fx:id="message" visible="false" styleClass="message-error"/>
+        <Button fx:id="btnBack" text="%common.back" onAction="#handleBack"
+                maxWidth="1.7976931348623157E308" styleClass="totp-back-btn"/>
+    </VBox>
+</StackPane>

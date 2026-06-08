@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.app.common.modules.queuemanager.controllers.ExportQueueController"
+      spacing="5">
+    <padding>
+        <Insets top="10" right="0" bottom="0" left="0"/>
+    </padding>
+    <TreeTableView fx:id="exportTreeTable" VBox.vgrow="ALWAYS">
+        <columnResizePolicy>
+            <TreeTableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+        </columnResizePolicy>
+        <columns>
+            <TreeTableColumn fx:id="exportColName" text="%queue.column.name" prefWidth="55"/>
+            <TreeTableColumn fx:id="exportColStatus" text="%queue.column.status" prefWidth="45"/>
+        </columns>
+    </TreeTableView>
+</VBox>
