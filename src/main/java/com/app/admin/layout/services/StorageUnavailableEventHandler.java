@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
+import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.helpers.AlertHelper;
@@ -22,7 +23,9 @@ import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.foldermanager.services.StorageHealthMonitor;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
+import com.app.common.services.AppConfigService;
 import com.app.common.services.AppNoticeService;
+import com.app.common.services.UserSettingService;
 
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
@@ -38,6 +41,7 @@ public class StorageUnavailableEventHandler {
     private static final String STATUS_SYNC_DRIVE = "status.syncDrive";
     private static final String STATUS_BACKUP_DRIVE = "status.backupDrive";
     private static final String STATUS_EXPORT_DRIVE = "status.exportDrive";
+    private static final String STATUS_DECRYPT_OUTPUT_FOLDER = "status.decryptOutputFolder";
     private static final String DIALOG_REASON_LOW_SPACE = "low-space";
     private static final String DIALOG_REASON_UNAVAILABLE = "unavailable";
     private static final String I18N_STORAGE_LOW_SPACE_TITLE = "storage.unavailable.dialog.low_space.title";
@@ -46,12 +50,16 @@ public class StorageUnavailableEventHandler {
     private static final String I18N_STORAGE_DRIVE_MISSING_TITLE = "storage.unavailable.dialog.drive_missing.title";
     private static final String I18N_STORAGE_DRIVE_MISSING_USER_MESSAGE = "storage.unavailable.dialog.drive_missing.user.message";
     private static final String I18N_STORAGE_DRIVE_MISSING_ADMIN_MESSAGE = "storage.unavailable.dialog.drive_missing.admin.message";
-    // Export-specific dialog messages include the failing path ({0}) and remaining
+    // Job-specific dialog messages include the failing path ({0}) and remaining
     // file count ({1}).
     private static final String I18N_STORAGE_EXPORT_DRIVE_MISSING_TITLE = "storage.unavailable.dialog.export.drive_missing.title";
     private static final String I18N_STORAGE_EXPORT_DRIVE_MISSING_ADMIN_MESSAGE = "storage.unavailable.dialog.export.drive_missing.admin.message";
     private static final String I18N_STORAGE_EXPORT_LOW_SPACE_TITLE = "storage.unavailable.dialog.export.low_space.title";
     private static final String I18N_STORAGE_EXPORT_LOW_SPACE_ADMIN_MESSAGE = "storage.unavailable.dialog.export.low_space.admin.message";
+    private static final String I18N_STORAGE_DECRYPT_DRIVE_MISSING_TITLE = "storage.unavailable.dialog.decrypt.drive_missing.title";
+    private static final String I18N_STORAGE_DECRYPT_DRIVE_MISSING_ADMIN_MESSAGE = "storage.unavailable.dialog.decrypt.drive_missing.admin.message";
+    private static final String I18N_STORAGE_DECRYPT_LOW_SPACE_TITLE = "storage.unavailable.dialog.decrypt.low_space.title";
+    private static final String I18N_STORAGE_DECRYPT_LOW_SPACE_ADMIN_MESSAGE = "storage.unavailable.dialog.decrypt.low_space.admin.message";
     private static final String I18N_SETTING_STORAGE_BTN_CHOOSE = "setting.storage.btn.choose";
     private static final String I18N_STORAGE_ACTION_LATER = "storage.unavailable.action.later";
     private static final String I18N_SETTING_STORAGE_CHOOSER_TITLE = "setting.storage.chooser.title";
@@ -65,18 +73,23 @@ public class StorageUnavailableEventHandler {
     private final FolderManagerService folderManagerService;
     private final StorageHealthMonitor storageHealthMonitor;
     private final AdminSettingsDialogService adminSettingsService;
+    private final AppConfigService appConfigService;
+    private final UserSettingService userSettingService;
     private final AppNoticeService appNoticeService;
 
     private boolean syncLowSpaceDialogVisible;
     private boolean backupLowSpaceDialogVisible;
     private boolean exportLowSpaceDialogVisible;
+    private boolean decryptLowSpaceDialogVisible;
     private boolean syncUnavailableDialogVisible;
     private boolean backupUnavailableDialogVisible;
     private boolean exportUnavailableDialogVisible;
+    private boolean decryptUnavailableDialogVisible;
     private volatile StorageIssueReason syncStorageBlocked;
     private CountDownLatch syncDialogLatch;
     private CountDownLatch backupDialogLatch;
     private CountDownLatch exportDialogLatch;
+    private CountDownLatch decryptDialogLatch;
 
     @SuppressWarnings("unused")
     private volatile StorageIssueReason backupStorageBlocked;
@@ -84,7 +97,10 @@ public class StorageUnavailableEventHandler {
     @SuppressWarnings("unused")
     private volatile StorageIssueReason exportStorageBlocked;
 
-    private record FolderSelectionResult(boolean saved, String rejectionMessage) {
+    @SuppressWarnings("unused")
+    private volatile StorageIssueReason decryptStorageBlocked;
+
+    private record FolderSelectionResult(boolean saved, String rejectionMessage, File selectedFolder) {
     }
 
     public StorageUnavailableEventHandler(Session session,
@@ -92,12 +108,16 @@ public class StorageUnavailableEventHandler {
             FolderManagerService folderManagerService,
             StorageHealthMonitor storageHealthMonitor,
             AdminSettingsDialogService adminSettingsService,
+            AppConfigService appConfigService,
+            UserSettingService userSettingService,
             AppNoticeService appNoticeService) {
         this.session = session;
         this.publisher = publisher;
         this.folderManagerService = folderManagerService;
         this.storageHealthMonitor = storageHealthMonitor;
         this.adminSettingsService = adminSettingsService;
+        this.appConfigService = appConfigService;
+        this.userSettingService = userSettingService;
         this.appNoticeService = appNoticeService;
     }
 
@@ -106,6 +126,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncStorageBlocked != null;
             case BACKUP -> backupStorageBlocked != null;
             case EXPORT -> exportStorageBlocked != null;
+            case DECRYPT -> decryptStorageBlocked != null;
         };
     }
 
@@ -114,6 +135,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncLowSpaceDialogVisible;
             case BACKUP -> backupLowSpaceDialogVisible;
             case EXPORT -> exportLowSpaceDialogVisible;
+            case DECRYPT -> decryptLowSpaceDialogVisible;
         };
     }
 
@@ -122,6 +144,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncUnavailableDialogVisible;
             case BACKUP -> backupUnavailableDialogVisible;
             case EXPORT -> exportUnavailableDialogVisible;
+            case DECRYPT -> decryptUnavailableDialogVisible;
         };
     }
 
@@ -130,6 +153,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncLowSpaceDialogVisible = visible;
             case BACKUP -> backupLowSpaceDialogVisible = visible;
             case EXPORT -> exportLowSpaceDialogVisible = visible;
+            case DECRYPT -> decryptLowSpaceDialogVisible = visible;
         }
     }
 
@@ -138,6 +162,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncUnavailableDialogVisible = visible;
             case BACKUP -> backupUnavailableDialogVisible = visible;
             case EXPORT -> exportUnavailableDialogVisible = visible;
+            case DECRYPT -> decryptUnavailableDialogVisible = visible;
         }
     }
 
@@ -146,6 +171,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncDialogLatch;
             case BACKUP -> backupDialogLatch;
             case EXPORT -> exportDialogLatch;
+            case DECRYPT -> decryptDialogLatch;
         };
     }
 
@@ -154,6 +180,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncDialogLatch = latch;
             case BACKUP -> backupDialogLatch = latch;
             case EXPORT -> exportDialogLatch = latch;
+            case DECRYPT -> decryptDialogLatch = latch;
         }
     }
 
@@ -162,6 +189,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> STATUS_SYNC_DRIVE;
             case BACKUP -> STATUS_BACKUP_DRIVE;
             case EXPORT -> STATUS_EXPORT_DRIVE;
+            case DECRYPT -> STATUS_DECRYPT_OUTPUT_FOLDER;
         };
     }
 
@@ -183,6 +211,7 @@ public class StorageUnavailableEventHandler {
             case SYNC -> syncStorageBlocked = reason;
             case BACKUP -> backupStorageBlocked = reason;
             case EXPORT -> exportStorageBlocked = reason;
+            case DECRYPT -> decryptStorageBlocked = reason;
         }
     }
 
@@ -299,8 +328,8 @@ public class StorageUnavailableEventHandler {
             setStorageBlocked(target, event.getReason());
             String targetDrive = resolveTargetLabel(event);
 
-            // Non-admin can't change sync/backup storage but can change export dir
-            if (!session.isAdmin() && event.getTarget() != FolderType.EXPORT) {
+            // Non-admin can't change sync/backup storage but can choose job output dirs.
+            if (!session.isAdmin() && event.getTarget() != FolderType.EXPORT && event.getTarget() != FolderType.DECRYPT) {
                 String header = "";
                 String message = "";
                 if (event.getReason() == StorageIssueReason.LOW_SPACE) {
@@ -333,15 +362,20 @@ public class StorageUnavailableEventHandler {
         String targetDrive = resolveTargetLabel(event);
         String header;
         String content;
-        if (event.getTarget() == FolderType.EXPORT) {
-            // Export-specific messages include the folder path and remaining file count.
+        if (event.getTarget() == FolderType.EXPORT || event.getTarget() == FolderType.DECRYPT) {
+            // Job-specific messages include the folder path and remaining file count.
             int remaining = event.getRemainingCount();
+            boolean decryptTarget = event.getTarget() == FolderType.DECRYPT;
             if (event.getReason() == StorageIssueReason.LOW_SPACE) {
-                header = I18n.get(I18N_STORAGE_EXPORT_LOW_SPACE_TITLE);
-                content = I18n.get(I18N_STORAGE_EXPORT_LOW_SPACE_ADMIN_MESSAGE, targetDrive, remaining);
+                header = I18n.get(decryptTarget ? I18N_STORAGE_DECRYPT_LOW_SPACE_TITLE : I18N_STORAGE_EXPORT_LOW_SPACE_TITLE);
+                content = I18n.get(
+                        decryptTarget ? I18N_STORAGE_DECRYPT_LOW_SPACE_ADMIN_MESSAGE : I18N_STORAGE_EXPORT_LOW_SPACE_ADMIN_MESSAGE,
+                        targetDrive, remaining);
             } else {
-                header = I18n.get(I18N_STORAGE_EXPORT_DRIVE_MISSING_TITLE);
-                content = I18n.get(I18N_STORAGE_EXPORT_DRIVE_MISSING_ADMIN_MESSAGE, targetDrive, remaining);
+                header = I18n.get(decryptTarget ? I18N_STORAGE_DECRYPT_DRIVE_MISSING_TITLE : I18N_STORAGE_EXPORT_DRIVE_MISSING_TITLE);
+                content = I18n.get(
+                        decryptTarget ? I18N_STORAGE_DECRYPT_DRIVE_MISSING_ADMIN_MESSAGE : I18N_STORAGE_EXPORT_DRIVE_MISSING_ADMIN_MESSAGE,
+                        targetDrive, remaining);
             }
         } else if (event.getReason() == StorageIssueReason.LOW_SPACE) {
             header = I18n.get(I18N_STORAGE_LOW_SPACE_TITLE, targetDrive);
@@ -411,7 +445,7 @@ public class StorageUnavailableEventHandler {
 
         if (result.saved()) {
             logDebug("Storage folder updated successfully from unavailable dialog. target={}", event.getTarget());
-            handleSuccessfulFolderSave(event);
+            handleSuccessfulFolderSave(event, result.selectedFolder());
             return true;
         }
 
@@ -433,7 +467,7 @@ public class StorageUnavailableEventHandler {
         return false;
     }
 
-    private void handleSuccessfulFolderSave(StorageUnavailableEvent event) {
+    private void handleSuccessfulFolderSave(StorageUnavailableEvent event, File selectedFolder) {
         setStorageBlocked(event.getTarget(), null);
         publisher.publishEvent(new StorageRestoredEvent(event.getTarget()));
     }
@@ -463,7 +497,7 @@ public class StorageUnavailableEventHandler {
             if (log.isDebugEnabled()) {
                 log.debug("Folder chooser canceled. target={}", target);
             }
-            return new FolderSelectionResult(false, null);
+            return new FolderSelectionResult(false, null, null);
         }
 
         if (log.isDebugEnabled()) {
@@ -473,7 +507,7 @@ public class StorageUnavailableEventHandler {
 
         String rejection = validateSelectedStorageFolder(target, selected, event.getRequiredBytes());
         if (rejection != null) {
-            return new FolderSelectionResult(false, rejection);
+            return new FolderSelectionResult(false, rejection, null);
         }
 
         saveSelectedStorageFolder(target, selected);
@@ -482,7 +516,7 @@ public class StorageUnavailableEventHandler {
             log.info("Storage folder changed from unavailable dialog. target={} path={}",
                     target, selected.getAbsolutePath());
         }
-        return new FolderSelectionResult(true, null);
+        return new FolderSelectionResult(true, null, selected);
     }
 
     private Optional<File> resolveInitialChooserDirectory(StorageUnavailableEvent event) {
@@ -492,9 +526,9 @@ public class StorageUnavailableEventHandler {
         if (event.getFailingDir() != null && event.getFailingDir().toFile().exists()) {
             return Optional.of(event.getFailingDir().toFile());
         }
-        if (target == FolderType.EXPORT) {
-            // For export the failing dir is usually unavailable; fall back to Downloads
-            // so the chooser opens in a writable location.
+        if (target == FolderType.EXPORT || target == FolderType.DECRYPT) {
+            // For job output dirs the failing dir is usually unavailable; fall back to
+            // Downloads so the chooser opens in a writable location.
             File downloads = new File(System.getProperty("user.home"), "Downloads");
             return downloads.exists() ? Optional.of(downloads) : Optional.empty();
         }
@@ -507,10 +541,20 @@ public class StorageUnavailableEventHandler {
             // Export uses a per-user last-chosen dir; no managed subfolder or health
             // monitor.
             adminSettingsService.saveLastExportDir(session.getCurrentUserId(), selected.getAbsolutePath());
+        } else if (target == FolderType.DECRYPT) {
+            saveDecryptOutputFolder(selected.getAbsolutePath());
         } else {
             adminSettingsService.saveFolder(target, selected.getAbsolutePath());
             folderManagerService.init(target);
             storageHealthMonitor.checkNow(target);
+        }
+    }
+
+    private void saveDecryptOutputFolder(String selectedPath) {
+        if (session.isGuest()) {
+            appConfigService.saveConfigValue(AppConstants.DECRYPT_OUTPUT_DIR, selectedPath);
+        } else {
+            userSettingService.saveConfigValue(session.getCurrentUserId(), AppConstants.DECRYPT_OUTPUT_DIR, selectedPath);
         }
     }
 
@@ -535,8 +579,8 @@ public class StorageUnavailableEventHandler {
     }
 
     private String validateSelectedStorageFolder(FolderType target, File selectedRoot, long requiredBytes) {
-        if (target == FolderType.EXPORT) {
-            // Export writes directly to the chosen dir — no managed subfolder.
+        if (target == FolderType.EXPORT || target == FolderType.DECRYPT) {
+            // Job output writes directly to the chosen dir — no managed subfolder.
             if (!folderManagerService.isDriveAccessible(selectedRoot)) {
                 return I18n.get(I18N_SETTING_STORAGE_DRIVE_MISSING);
             }

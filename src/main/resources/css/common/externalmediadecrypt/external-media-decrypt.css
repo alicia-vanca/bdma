@@ -1,0 +1,106 @@
+.align-label {
+    -fx-min-width: 80px;
+    -fx-alignment: CENTER;
+}
+
+.decrypt-listview {
+    -fx-background-color: -input-bg;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+    -fx-padding: 8;
+}
+
+.decrypt-listview .list-cell {
+    -fx-background-color: -input-bg;
+    -fx-text-fill: -text-color;
+    -fx-cell-size: 34;
+    -fx-font-size: 13;
+}
+
+.progress-container {
+    -fx-pref-width: 560px;
+    -fx-padding: 10px;
+    -fx-spacing: 10px;
+    -fx-background-color: -input-bg;
+    -fx-background-radius: 8;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-background-insets: 0;
+}
+
+.progress-container .label {
+    -fx-text-overrun: ellipsis;
+}
+
+.progress-container .progress-percent-label {
+    -fx-font-weight: 700;
+    -fx-text-fill: -primary;
+}
+
+.progress-container .progress-bar {
+    -fx-pref-width: 540px;
+    -fx-min-height: 7px;
+    -fx-pref-height: 7px;
+}
+
+.progress-container .progress-bar>.track {
+    -fx-background-color: -border-color;
+    -fx-background-radius: 99;
+}
+
+.progress-container .progress-bar>.bar {
+    -fx-background-color: -primary;
+    -fx-background-insets: 0;
+    -fx-background-radius: 99;
+    -fx-padding: 0.25em;
+}
+
+.progress-container .button {
+    -fx-background-insets: 0;
+    -fx-border-insets: 0;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-padding: 6 14 6 14;
+}
+
+.progress-container .btn-danger {
+    -fx-background-color: -danger;
+    -fx-text-fill: white;
+}
+
+.progress-container .btn-danger:hover {
+    -fx-background-color: derive(-danger, -12%);
+}
+
+.delete-button {
+    -fx-background-color: transparent;
+    -fx-cursor: hand;
+    -fx-padding: 4 8 4 8;
+    -fx-background-radius: 6;
+}
+
+.delete-button:hover {
+    -fx-background-color: rgba(220, 38, 38, 0.24);
+}
+
+.close-icon {
+    -fx-pref-width: 12px;
+    -fx-pref-height: 12px;
+    -fx-min-width: 12px;
+    -fx-min-height: 12px;
+    -fx-max-width: 12px;
+    -fx-max-height: 12px;
+}
+
+.close-line {
+    -fx-background-color: -danger;
+    -fx-pref-width: 12px;
+    -fx-pref-height: 2px;
+    -fx-min-width: 12px;
+    -fx-min-height: 2px;
+    -fx-max-width: 12px;
+    -fx-max-height: 2px;
+    -fx-background-radius: 99;
+}

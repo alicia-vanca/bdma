@@ -3,7 +3,7 @@ package com.app.common.modules.datasync;
 import org.springframework.stereotype.Component;
 
 import com.app.common.modules.datasync.workers.DataSyncWorker;
-import com.app.common.services.DeviceTracker;
+import com.app.common.modules.device.services.DeviceTracker;
 
 import jakarta.annotation.PreDestroy;
 
@@ -50,58 +50,40 @@ public class DataSyncRunner {
         }
     }
 
-    public synchronized void resetForLogout() {
+    /**
+     * Asks the sync worker to finish current work before the Spring context closes.
+     */
+    @PreDestroy
+    public synchronized void gracefulShutdown() {
         shuttingDown = true;
 
-        if (trackerThread != null) {
-            trackerThread.interrupt();
-            trackerThread = null;
-        }
+        try {
+            if (trackerThread != null) {
+                trackerThread.interrupt();
+                trackerThread = null;
+            }
 
-        if (syncThread == null) {
-            tracker.stopTrackingAndResetState();
+            if (syncThread != null) {
+                worker.requestShutdown();
+                // Idle workers block on the queue; interrupt only when no sync is active so
+                // shutdown does not wait for the join timeout.
+                if (worker.isIdleForShutdown()) {
+                    syncThread.interrupt();
+                }
+                waitForThreadToStop(syncThread);
+                syncThread = null;
+            }
+        } finally {
             shuttingDown = false;
             notifyAll();
-            return;
         }
-
-        // Request graceful shutdown without blocking UI
-        worker.requestShutdown();
-        Thread shutdownThread = syncThread;
-        syncThread = null;
-
-        // Clean up in background to avoid blocking logout UI
-        new Thread(() -> {
-            try {
-                shutdownThread.join(5000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            // Force interrupt if still running after timeout
-            if (shutdownThread.isAlive()) {
-                shutdownThread.interrupt();
-            }
-            synchronized (this) {
-                tracker.stopTrackingAndResetState();
-                shuttingDown = false;
-                notifyAll();
-            }
-        }, "sync-shutdown").start();
     }
 
-    // Stop the tracker and worker threads when Spring context closes.
-    @PreDestroy
-    public synchronized void shutdown() {
-        tracker.shutdown();
-
-        if (trackerThread != null) {
-            trackerThread.interrupt();
-            trackerThread = null;
-        }
-
-        if (syncThread != null) {
-            syncThread.interrupt();
-            syncThread = null;
+    private void waitForThreadToStop(Thread thread) {
+        try {
+            thread.join(5000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

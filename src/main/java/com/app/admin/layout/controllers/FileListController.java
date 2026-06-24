@@ -1,5 +1,6 @@
 package com.app.admin.layout.controllers;
 
+import java.text.MessageFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -11,33 +12,47 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Scope;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import com.app.common.modules.datarestore.events.FileRestoredEvent;
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileListFilterState;
 import com.app.common.dtos.FileView;
+import com.app.common.events.UserAutoCreatedEvent;
 import com.app.common.helpers.DialogHelper;
+import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.dataexport.services.DataExportService;
+import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.media.services.MediaViewerService;
 import com.app.common.modules.queuemanager.controllers.QueueDialogController;
+import com.app.common.modules.queuemanager.dtos.QueueProgressSummary;
+import com.app.common.modules.queuemanager.enums.QueueType;
+import com.app.common.modules.queuemanager.events.QueueProgressChangedEvent;
+import com.app.common.modules.queuemanager.events.QueueStatusChangedEvent;
 import com.app.common.modules.session.Session;
 import com.app.common.services.FileService;
 import com.app.common.services.UserService;
 
+import javafx.animation.Animation;
+import javafx.animation.FadeTransition;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.geometry.Pos;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -45,6 +60,7 @@ import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.DateCell;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
@@ -53,13 +69,14 @@ import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import javafx.util.StringConverter;
 import lombok.Setter;
 
 @Component
-@Scope("prototype")
 public class FileListController {
 
     private static final Logger log = LoggerFactory.getLogger(FileListController.class);
@@ -68,6 +85,14 @@ public class FileListController {
             .ofPattern(AppConstants.DATE_PICKER_FORMAT);
     private static final DateTimeFormatter DATE_DISPLAY_FORMATTER = DateTimeFormatter
             .ofPattern(AppConstants.DATE_DISPLAY_FORMAT);
+    private static final Duration PROGRESS_BAR_COMPLETION_GRACE = Duration.seconds(5);
+    private static final Duration PROGRESS_BAR_FADE_DURATION = Duration.millis(180);
+    private static final double PROGRESS_BAR_IDLE_OPACITY = 0.62;
+    private static final double PROGRESS_BAR_ACTIVE_OPACITY = 1.0;
+    private static final String STYLE_IDLE = "idle";
+    private static final String STYLE_SYNCING = "syncing";
+    private static final String STYLE_EXPORTING = "exporting";
+    private static final String STYLE_COMPLETE = "complete";
 
     @FXML
     private DatePicker dateFromPicker;
@@ -117,6 +142,18 @@ public class FileListController {
     private Button btnFirst;
     @FXML
     private Button btnLast;
+    @FXML
+    private Button btnOpenQueueDialog;
+    @FXML
+    private HBox progressBarHeader;
+    @FXML
+    private Label lblProgressBarTitle;
+    @FXML
+    private Region progressBarSpacer;
+    @FXML
+    private Label lblProgressBarPercent;
+    @FXML
+    private ProgressBar progressBar;
 
     private final FileService fileService;
     private final UserService userService;
@@ -139,6 +176,13 @@ public class FileListController {
     private final Map<String, FileView> cachedFileViews = new ConcurrentHashMap<>();
     private final Map<String, SimpleBooleanProperty> selectionStateByKey = new ConcurrentHashMap<>();
     private final CheckBox selectAllCheckBox = new CheckBox();
+    private final PauseTransition progressBarCompletionGrace = new PauseTransition(PROGRESS_BAR_COMPLETION_GRACE);
+    private final AtomicReference<QueueProgressSummary> latestSyncProgress = new AtomicReference<>();
+    private final AtomicReference<QueueProgressSummary> latestExportProgress = new AtomicReference<>();
+    private FadeTransition progressBarFade;
+    private QueueProgressSummary visibleProgress;
+    private boolean visibleProgressComplete;
+    private double progressBarTargetOpacity = Double.NaN;
     private boolean refreshingSelectAllState;
     private boolean applyingPageSelection;
     private String selectionAnchorKey;
@@ -176,6 +220,7 @@ public class FileListController {
         setupRowDoubleClick();
         setupDatePickers();
         setupSelectionHeader();
+        setupProgressBarButton();
 
         boolean isAdmin = session.isAdmin();
         userFilterCombo.setVisible(isAdmin);
@@ -550,6 +595,216 @@ public class FileListController {
         dataExportService.exportSelectedFiles(selected);
     }
 
+    private void setupProgressBarButton() {
+        progressBarCompletionGrace.setOnFinished(event -> finishProgressGrace());
+        makeProgressGraphicClickThrough();
+        renderPreferredProgress();
+    }
+
+    /**
+     * Lets the button receive clicks anywhere in the compact progress graphic,
+     * including the embedded progress bar skin nodes.
+     */
+    private void makeProgressGraphicClickThrough() {
+        Node graphic = btnOpenQueueDialog.getGraphic();
+        if (graphic != null) {
+            graphic.setMouseTransparent(true);
+        }
+    }
+
+    @EventListener
+    public void onQueueProgressChanged(QueueProgressChangedEvent event) {
+        Platform.runLater(() -> {
+            rememberProgress(event.summary());
+            renderPreferredProgress();
+        });
+    }
+
+    @EventListener
+    public void onQueueStatusChanged(QueueStatusChangedEvent event) {
+        Platform.runLater(() -> {
+            if (isProgressBarViewReady()) {
+                resetRemovedSyncProgress(event);
+            }
+        });
+    }
+
+    private void resetRemovedSyncProgress(QueueStatusChangedEvent event) {
+        if (event.getQueueType() != QueueType.SYNC
+                || !event.isFullRefreshRequired()
+                || visibleProgress == null
+                || visibleProgressComplete
+                || visibleProgress.kind() != QueueProgressSummary.Kind.SYNC) {
+            return;
+        }
+
+        // Preflight disconnect removes active sync work without a successful result.
+        latestSyncProgress.set(null);
+        visibleProgress = null;
+        progressBarCompletionGrace.stop();
+        renderPreferredProgress();
+    }
+
+    private void rememberProgress(QueueProgressSummary progress) {
+        if (progress == null) {
+            return;
+        }
+        if (progress.complete() && !isProgressBarViewReady()) {
+            clearRememberedProgress(progress);
+            return;
+        }
+
+        if (progress.kind() == QueueProgressSummary.Kind.SYNC) {
+            latestSyncProgress.set(progress);
+        } else if (progress.kind() == QueueProgressSummary.Kind.EXPORT) {
+            latestExportProgress.set(progress);
+        } else {
+            log.warn("Unhandled progress kind: {}", progress.kind());
+        }
+    }
+
+    private void renderPreferredProgress() {
+        if (!isProgressBarViewReady()) {
+            return;
+        }
+
+        if (progressBarCompletionGrace.getStatus() == Animation.Status.RUNNING && visibleProgress != null) {
+            applyProgress(visibleProgress, true);
+            return;
+        }
+
+        QueueProgressSummary preferredProgress = choosePreferredProgress();
+        if (preferredProgress == null) {
+            visibleProgress = null;
+            visibleProgressComplete = false;
+            applyIdleProgress();
+            return;
+        }
+
+        boolean complete = preferredProgress.complete();
+        visibleProgress = preferredProgress;
+        visibleProgressComplete = complete;
+        applyProgress(preferredProgress, complete);
+
+        if (complete) {
+            clearRememberedProgress(preferredProgress);
+            progressBarCompletionGrace.playFromStart();
+        }
+    }
+
+    private QueueProgressSummary choosePreferredProgress() {
+        QueueProgressSummary syncProgress = latestSyncProgress.get();
+        if (syncProgress != null) {
+            return syncProgress;
+        }
+        return latestExportProgress.get();
+    }
+
+    /**
+     * Drops completed compact progress from local candidates immediately. The
+     * visible snapshot stays alive for the grace window only, so page refresh or
+     * language re-render cannot replay finished progress from remembered state.
+     */
+    private void clearRememberedProgress(QueueProgressSummary progress) {
+        if (progress.kind() == QueueProgressSummary.Kind.SYNC) {
+            latestSyncProgress.set(null);
+        } else if (progress.kind() == QueueProgressSummary.Kind.EXPORT) {
+            latestExportProgress.set(null);
+        }
+    }
+
+    private void finishProgressGrace() {
+        visibleProgress = null;
+        visibleProgressComplete = false;
+        renderPreferredProgress();
+    }
+
+    private void applyIdleProgress() {
+        lblProgressBarTitle.setText(I18n.get("progress.bar.idle"));
+        lblProgressBarPercent.setText("");
+        lblProgressBarPercent.setManaged(false);
+        lblProgressBarPercent.setVisible(false);
+        progressBarSpacer.setManaged(false);
+        progressBarSpacer.setVisible(false);
+        progressBarHeader.setAlignment(Pos.CENTER);
+        progressBar.setProgress(0);
+
+        btnOpenQueueDialog.getStyleClass().removeAll(STYLE_IDLE, STYLE_SYNCING, STYLE_EXPORTING, STYLE_COMPLETE);
+        btnOpenQueueDialog.getStyleClass().add(STYLE_IDLE);
+        animateProgressBarOpacity(PROGRESS_BAR_IDLE_OPACITY);
+    }
+
+    private void applyProgress(QueueProgressSummary progress, boolean complete) {
+        if (!isProgressBarViewReady()) {
+            return;
+        }
+
+        lblProgressBarTitle.setText(resolveProgressTitle(progress, complete));
+        lblProgressBarPercent.setText(progress.progress() + "%");
+        lblProgressBarPercent.setManaged(true);
+        lblProgressBarPercent.setVisible(true);
+        progressBarSpacer.setManaged(true);
+        progressBarSpacer.setVisible(true);
+        progressBarHeader.setAlignment(Pos.CENTER_LEFT);
+        progressBar.setProgress(progress.progress() / 100.0);
+
+        btnOpenQueueDialog.getStyleClass().removeAll(STYLE_IDLE, STYLE_SYNCING, STYLE_EXPORTING, STYLE_COMPLETE);
+        if (complete) {
+            btnOpenQueueDialog.getStyleClass().add(STYLE_COMPLETE);
+        } else {
+            btnOpenQueueDialog.getStyleClass().add(progress.kind() == QueueProgressSummary.Kind.SYNC
+                    ? STYLE_SYNCING
+                    : STYLE_EXPORTING);
+        }
+        animateProgressBarOpacity(PROGRESS_BAR_ACTIVE_OPACITY);
+    }
+
+    private String resolveProgressTitle(QueueProgressSummary progress, boolean complete) {
+        if (progress.kind() == QueueProgressSummary.Kind.SYNC) {
+            return complete
+                    ? MessageFormat.format(I18n.get("progress.bar.sync.complete"), progress.name())
+                    : MessageFormat.format(I18n.get("progress.bar.syncing"), progress.name());
+        }
+        return complete
+                ? I18n.get("progress.bar.export.complete")
+                : MessageFormat.format(I18n.get("progress.bar.exporting"), progress.total());
+    }
+
+    /**
+     * Smooths progress bar state changes so idle and active states do not snap
+     * between opacity values. Page reloads inject a new button into the reused
+     * controller, so the node's current opacity must also match the target.
+     */
+    private void animateProgressBarOpacity(double targetOpacity) {
+        if (Double.compare(progressBarTargetOpacity, targetOpacity) == 0
+                && Double.compare(btnOpenQueueDialog.getOpacity(), targetOpacity) == 0) {
+            return;
+        }
+
+        progressBarTargetOpacity = targetOpacity;
+        if (progressBarFade != null) {
+            progressBarFade.stop();
+        }
+
+        progressBarFade = new FadeTransition(PROGRESS_BAR_FADE_DURATION, btnOpenQueueDialog);
+        progressBarFade.setFromValue(btnOpenQueueDialog.getOpacity());
+        progressBarFade.setToValue(targetOpacity);
+        progressBarFade.play();
+    }
+
+    /**
+     * Queue events can arrive while this Spring controller exists but before its
+     * FXML fields are injected, for example during nested login dialogs.
+     */
+    private boolean isProgressBarViewReady() {
+        return btnOpenQueueDialog != null
+                && progressBarHeader != null
+                && lblProgressBarTitle != null
+                && progressBarSpacer != null
+                && lblProgressBarPercent != null
+                && progressBar != null;
+    }
+
     @FXML
     private void onOpenQueueDialog() {
         // Keep a single shared queue window while this view is active.
@@ -626,19 +881,43 @@ public class FileListController {
 
                 fileVerificationCache.put(syncedPath, newStatus);
 
-                // Update UI on JavaFX thread
-                Platform.runLater(() -> fileTable.refresh());
+                // Update UI only while this Spring controller has an active FXML view.
+                Platform.runLater(this::refreshFileTableIfReady);
             } catch (Exception e) {
                 log.error("File verification failed: {}", syncedPath, e);
                 fileVerificationCache.put(syncedPath, VerificationStatus.ERROR);
-                Platform.runLater(() -> fileTable.refresh());
+                Platform.runLater(this::refreshFileTableIfReady);
             }
         });
+    }
+
+    private void refreshFileTableIfReady() {
+        if (isViewReady()) {
+            fileTable.refresh();
+        }
+    }
+
+    private boolean isViewReady() {
+        return dateFromPicker != null
+                && dateToPicker != null
+                && userFilterCombo != null
+                && typeFilterCombo != null
+                && fileTable != null;
     }
 
     public void filterByDevice(String cameraId) {
         this.activeCameraId = cameraId;
         filterState.get().setCameraId(cameraId);
+        refresh(buildFilter());
+    }
+
+    public String getActiveCameraId() {
+        return activeCameraId;
+    }
+
+    public void clearDeviceFilter() {
+        this.activeCameraId = null;
+        filterState.get().setCameraId(null);
         refresh(buildFilter());
     }
 
@@ -921,7 +1200,11 @@ public class FileListController {
     public void reloadUserFilter() {
         if (!session.isAdmin())
             return;
-        Platform.runLater(this::loadUsers);
+        Platform.runLater(() -> {
+            if (isViewReady()) {
+                loadUsers();
+            }
+        });
     }
 
     // Auto-refresh file list when any filter changes, skip during initial setup to
@@ -965,23 +1248,48 @@ public class FileListController {
         options.add(new TypeOption(null, I18n.get("filter.allTypes")));
 
         AppConstants.MEDIA_TYPES.stream()
-                .sorted(String.CASE_INSENSITIVE_ORDER)
-                .forEach(type -> options.add(new TypeOption(type, I18n.get("file.type." + type))));
+                .map(type -> new TypeOption(type, I18n.get("file.type." + type)))
+                .sorted((left, right) -> left.label().compareToIgnoreCase(right.label()))
+                .forEach(options::add);
 
         typeFilterCombo.setItems(FXCollections.observableArrayList(options));
         typeFilterCombo.getSelectionModel().selectFirst();
     }
 
-    public void onFileSyncCompleted(String syncedPath) {
+    @EventListener
+    public void onUserAutoCreated(UserAutoCreatedEvent event) {
+        reloadUserFilter();
+    }
+
+    @EventListener
+    public void onFileSyncCompleted(FileSyncCompletedEvent event) {
+        refreshAfterFileSync(event.getSyncedPath());
+    }
+
+    public void refreshAfterFileSync(String syncedPath) {
         if (syncedPath != null && !syncedPath.isEmpty()) {
             fileVerificationCache.put(syncedPath, VerificationStatus.EXISTS);
         }
-        Platform.runLater(() -> refresh(buildFilter()));
+        Platform.runLater(this::refreshCurrentFilterIfReady);
     }
 
+    @EventListener(FileBackupCompletedEvent.class)
     public void onFileBackupCompleted() {
-        fileVerificationCache.clear();
-        Platform.runLater(() -> refresh(buildFilter()));
+        Platform.runLater(this::refreshCurrentFilterIfReady);
+    }
+
+    @EventListener
+    public void onFileRestored(FileRestoredEvent event) {
+        if (event.syncedPath() != null && !event.syncedPath().isBlank()) {
+            fileVerificationCache.remove(event.syncedPath());
+        }
+        Platform.runLater(this::refreshCurrentFilterIfReady);
+    }
+
+    private void refreshCurrentFilterIfReady() {
+        if (isViewReady()) {
+            refresh(buildFilter());
+        }
     }
 
     private String selectionKey(FileView fileView) {
@@ -1008,16 +1316,14 @@ public class FileListController {
     }
 
     /**
-     * Cleanup resources when controller is no longer needed.
-     * Shuts down the verification executor to prevent thread leaks.
-     * Called during logout to ensure proper resource cleanup.
+     * Clears view-scoped state during logout while keeping this reusable Spring
+     * controller able to verify files after the next login.
      */
     public void cleanup() {
         closeQueueDialog();
         filterState.clear();
         resetSelectionState();
         cachedFileViews.clear();
-        verificationExecutor.shutdownNow();
         fileVerificationCache.clear();
     }
 
@@ -1056,4 +1362,5 @@ public class FileListController {
             return row;
         });
     }
+
 }

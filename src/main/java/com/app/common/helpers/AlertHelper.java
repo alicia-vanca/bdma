@@ -52,8 +52,8 @@ public final class AlertHelper {
     private static final int TABLE_COLUMN_WIDTH = 300;
     private static final int TABLE_SCROLL_HEIGHT = 400;
     // actual row height after CSS is applied, used for dynamic height calculation
-    private static final double TABLE_HEADER_HEIGHT = 31;
-    private static final double TABLE_ROW_HEIGHT = 30;
+    private static final double TABLE_HEADER_HEIGHT = 41;
+    private static final double TABLE_ROW_HEIGHT = 32.5;
 
     private static final int DIALOG_PREFERRED_WIDTH = 1000;
     private static final int LOGO_SIZE = 48;
@@ -83,6 +83,12 @@ public final class AlertHelper {
 
     public static Alert createInformation(String title, String header, String content) {
         Alert alert = create(Alert.AlertType.INFORMATION, title, header, content);
+        styleButtons(alert, ButtonType.OK);
+        return alert;
+    }
+
+    public static Alert createError(String title, String header, String content) {
+        Alert alert = create(Alert.AlertType.ERROR, title, header, content);
         styleButtons(alert, ButtonType.OK);
         return alert;
     }
@@ -221,6 +227,7 @@ public final class AlertHelper {
 
     // Compute dialog width from the longest content line while keeping no-wrap
     // labels.
+    @SuppressWarnings("java:S6885")
     private static void applyDynamicContentWidth(Alert alert, Stage stage) {
         String contentText = alert.getContentText();
         if (contentText == null || contentText.isBlank()) {

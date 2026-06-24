@@ -45,10 +45,12 @@ public class MediaViewerService {
                 .filter(f -> isViewable(f.type()))
                 .toList();
 
-        if (viewableList.isEmpty()) return;
+        if (viewableList.isEmpty())
+            return;
 
         int index = viewableList.indexOf(clicked);
-        if (index < 0) index = 0;
+        if (index < 0)
+            index = 0;
         final int startIndex = index;
 
         if (viewerStage == null) {
@@ -71,8 +73,7 @@ public class MediaViewerService {
 
     private void initStage(Stage owner) {
         try {
-            ViewLoader.LoadResult<MediaViewerController> result =
-                    viewLoader.loadView(ViewPaths.MEDIA_VIEWER);
+            ViewLoader.LoadResult<MediaViewerController> result = viewLoader.loadView(ViewPaths.MEDIA_VIEWER);
 
             if (result == null) {
                 log.error("Failed to load media-viewer FXML");
@@ -114,15 +115,15 @@ public class MediaViewerService {
     private void dispatchLoad(FileView file) {
         if (isImage(file.type())) {
             controller.loadImage(file);
-        } else if (isVideo(file.type())) {
-            controller.loadVideo(file); // placeholder, implement sau
+        } else if (isVideo(file.type()) || isAudio(file.type())) {
+            controller.loadVideo(file);
         }
     }
 
     // ── Type helpers ──────────────────────────────────────────────────────────
 
     public boolean isViewable(String type) {
-        return isImage(type) || isVideo(type);
+        return isImage(type) || isVideo(type) || isAudio(type);
     }
 
     private boolean isImage(String type) {
@@ -130,9 +131,19 @@ public class MediaViewerService {
     }
 
     private boolean isVideo(String type) {
-        if (type == null) return false;
+        if (type == null)
+            return false;
         return switch (type) {
-            case "video", "IMP" -> true;
+            case "video", "IMP", "SOS" -> true;
+            default -> false;
+        };
+    }
+
+    public boolean isAudio(String type) {
+        if (type == null)
+            return false;
+        return switch (type) {
+            case "audio", "mp3" -> true;
             default -> false;
         };
     }

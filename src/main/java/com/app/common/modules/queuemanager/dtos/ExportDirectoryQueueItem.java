@@ -2,6 +2,7 @@ package com.app.common.modules.queuemanager.dtos;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -30,7 +31,7 @@ public class ExportDirectoryQueueItem {
     public ExportDirectoryQueueItem(Path exportDir) {
         this.exportDir = exportDir;
         this.status = ItemStatus.QUEUED;
-        this.files = new ArrayList<>();
+        this.files = Collections.synchronizedList(new ArrayList<>());
     }
 
     /**
@@ -102,9 +103,11 @@ public class ExportDirectoryQueueItem {
      * Orders leaf rows by sort size while keeping unknown sizes at the end.
      */
     public void sortFiles() {
-        files.sort(Comparator.comparingLong(file -> file.getSortSize() != null
-                ? file.getSortSize()
-                : Long.MAX_VALUE));
+        synchronized (files) {
+            files.sort(Comparator.comparingLong(file -> file.getSortSize() != null
+                    ? file.getSortSize()
+                    : Long.MAX_VALUE));
+        }
     }
 
     /**

@@ -3,6 +3,7 @@ package com.app.common.modules.queuemanager.dtos;
 import com.app.common.modules.queuemanager.enums.ItemStatus;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -32,7 +33,7 @@ public class DeviceQueueItem {
         this.cameraId = cameraId;
         this.deviceName = deviceName;
         this.status = ItemStatus.QUEUED;
-        this.files = new ArrayList<>();
+        this.files = Collections.synchronizedList(new ArrayList<>());
     }
 
     /**

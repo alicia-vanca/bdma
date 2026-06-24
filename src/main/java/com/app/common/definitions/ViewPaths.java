@@ -13,8 +13,11 @@ public final class ViewPaths {
     public static final String DEV_SETTINGS_DIALOG = "/fxml/dev/dev-settings-dialog.fxml";
     public static final String ADMIN_SETTINGS_DIALOG = "/fxml/admin/admin-settings-dialog.fxml";
     public static final String USER_INFO = "/fxml/user/user-info.fxml";
+    public static final String EXTERNAL_MEDIA_DECRYPT =
+        "/fxml/common/externalmediadecrypt/external-media-decrypt.fxml";
     public static final String USER_LIST = "/fxml/admin/usermanagement/user-management.fxml";
     public static final String USER_FORM = "/fxml/admin/usermanagement/user-management-form.fxml";
+    public static final String DEVICE_LIST = "/fxml/admin/devicemanagement/device-management.fxml";
     public static final String USER_ACCOUNT_DIALOG = USER_FORM;
     public static final String USER_SETTINGS_DIALOG = "/fxml/user/user-settings-dialog.fxml";
     public static final String PRE_LOGIN_SETTINGS_POPUP = "/fxml/common/prelogin-settings-popup.fxml";

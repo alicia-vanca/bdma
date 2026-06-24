@@ -20,26 +20,46 @@
 #deviceListView .list-cell {
   -fx-background-color: transparent;
   -fx-border-color: transparent;
+  -fx-padding: 0 10 8 0;
+}
+
+.device-card {
+  -fx-padding: 10;
+  -fx-background-color: -default-card-bg;
+  -fx-border-color: -border-color;
   -fx-border-width: 2px;
   -fx-border-radius: 4px;
   -fx-border-style: solid;
+  -fx-background-radius: 4px;
+  -fx-cursor: hand;
 }
 
-#deviceListView .list-cell:odd {
-  -fx-background-color: derive(-card-bg, -5%);
+.device-card.connected,
+.device-card.unvalidated {
+  -fx-background-color: -connecting-card-bg;
 }
 
-#deviceListView .list-cell:hover {
-  -fx-background-color: derive(-card-bg, -10%);
+.device-card.connected {
+  -fx-border-color: -connected-border;
 }
 
-#deviceListView .list-cell:selected {
+.device-card.unvalidated {
+  -fx-border-color: -badge-warning-border;
+}
+
+#deviceListView .list-cell:hover .device-card,
+#deviceListView .list-cell:selected .device-card {
   -fx-border-color: -primary;
 }
 
-#deviceListView .list-cell:empty,
-#deviceListView .list-cell:empty:odd {
+#deviceListView .list-cell:selected .device-card {
+  -fx-background-color: -selected-card-bg;
+}
+
+#deviceListView .list-cell:empty {
   -fx-background-color: transparent;
+  -fx-border-color: transparent;
+  -fx-padding: 0;
 }
 
 .device-cell-row {
@@ -52,27 +72,99 @@
 }
 
 .device-cell-camera-id {
-    -fx-font-size: 13px;
-    -fx-opacity: 0.55;
+  -fx-font-size: 13px;
+  -fx-opacity: 0.55;
+}
+
+.device-cell-connected,
+.device-cell-offline,
+.device-cell-unvalidated,
+.device-cell-queued,
+.device-cell-syncing {
+  -fx-font-size: 13px;
+  -fx-border-radius: 12;
+  -fx-background-radius: 12;
+  -fx-padding: 2 8 2 8;
 }
 
 .device-cell-connected {
-  -fx-font-size: 13px;
+  -fx-border-color: -badge-success-border;
+  -fx-background-color: -badge-success-bg;
 }
 
 .device-cell-offline {
+  -fx-border-color: -badge-muted-border;
+  -fx-background-color: -badge-muted-bg;
+}
+
+.device-cell-unvalidated,
+.device-cell-queued {
+  -fx-border-color: -badge-warning-border;
+  -fx-background-color: -badge-warning-bg;
+}
+
+.device-cell-syncing {
+  -fx-border-color: -badge-info-border;
+  -fx-background-color: -badge-info-bg;
+}
+
+.device-spec-header {
+  -fx-font-size: 13px;
+  -fx-text-fill: -text-color;
+  -fx-opacity: 0.6;
+}
+
+.device-spec-value-battery {
+  -fx-font-size: 13px;
+  -fx-text-fill: -device-battery;
+}
+
+/* Red for low battery — add .low style class in code when level < 20% */
+.device-spec-value-battery.low {
+  -fx-text-fill: -device-warning;
+}
+
+.device-spec-value-storage {
+  -fx-font-size: 13px;
+  -fx-text-fill: -primary;
+}
+
+.device-spec-value-storage.max-storage {
+  -fx-text-fill: -device-warning;
+}
+
+.device-spec-value-unknown {
+  -fx-text-fill: -text-color;
+  -fx-opacity: 0.4;
   -fx-font-size: 13px;
 }
 
-.device-cell-unvalidated {
+.device-spec-sub {
   -fx-font-size: 13px;
+  -fx-text-fill: -text-color;
+  -fx-opacity: 0.65;
+  -fx-padding: 1 0 0 0;
 }
 
-.edit-icon-svg {
-  -fx-fill: #888;
-  -fx-cursor: hand;
+.battery-icon {
+  -fx-icon-size: 13;
+  -fx-icon-color: -device-battery;
 }
 
-.edit-icon-svg:hover {
-  -fx-fill: #000;
+.battery-icon.low {
+  -fx-icon-color: -device-warning;
+}
+
+.storage-icon {
+  -fx-icon-size: 13;
+  -fx-icon-color: -device-storage;
+}
+
+.camera-icon {
+  -fx-icon-size: 13;
+  -fx-icon-color: -primary;
+}
+
+.camera-icon.offline {
+  -fx-icon-color: -badge-muted-border;
 }

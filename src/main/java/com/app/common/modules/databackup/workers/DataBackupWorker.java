@@ -20,10 +20,10 @@ import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.queuemanager.services.QueueManagerService;
-import com.app.common.services.DeviceMiniStatus;
+import com.app.common.modules.device.services.DeviceMiniStatus;
 
 /**
- * Worker thread responsible for backing up files from dataDir to backupDir.
+ * Worker thread responsible for backing up files from syncDir to backupDir.
  * Waits for sync to complete before processing backup queue.
  * Pauses if sync becomes active mid-backup (finishes current file first).
  * Flow:
@@ -298,7 +298,10 @@ public class DataBackupWorker implements Runnable {
 
     /**
      * Wait until sync is not active (SYNCING or QUEUED).
+     * Polling is intentional because sync state is owned by the device status
+     * service.
      */
+    @SuppressWarnings("BusyWait")
     private void waitForSyncToComplete() throws InterruptedException {
         while (isSyncActive() && !shutdownRequested) {
             Thread.sleep(5000);
@@ -318,6 +321,13 @@ public class DataBackupWorker implements Runnable {
     public void requestShutdown() {
         log.info("Shutdown requested, stopping backup worker");
         shutdownRequested = true;
+    }
+
+    /**
+     * Returns true when the worker is only waiting for new queue entries.
+     */
+    public boolean isIdleForShutdown() {
+        return !dataBackupQueue.isActive();
     }
 
     /**

@@ -33,15 +33,17 @@ public class ValidatedDeviceRepository {
         device.setWhitelistId(rs.wasNull() ? null : whitelistId);
         device.setValidatedAt(rs.getString("validated_at"));
         device.setLastSeenAt(rs.getString("last_seen_at"));
+        device.setLastSyncAt(rs.getString("last_sync_at"));
         device.setCameraId(rs.getString("camera_id"));
+        device.setActive(rs.getBoolean("is_active"));
         return device;
     }
 
     public ValidatedDevice saveOrUpdate(String cameraId, String hardwareId, Long whitelistId) {
         return jdbcTemplate.queryForObject(
-                "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) "
+                "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id, is_active) "
                         +
-                        "VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), ?) " +
+                        "VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), ?, TRUE) " +
                         "ON CONFLICT (camera_id) DO UPDATE SET " +
                         "hardware_id = excluded.hardware_id, " +
                         "whitelist_id = excluded.whitelist_id, " +
@@ -56,14 +58,16 @@ public class ValidatedDeviceRepository {
 
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, validated_at, last_seen_at, camera_id) "
+                    "INSERT INTO validated_device (device_name, hardware_id, whitelist_id, last_seen_at, camera_id, is_active) "
                             +
-                            "VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), ?)",
+                            "VALUES (?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, validatedDevice.getDeviceName());
             ps.setObject(2, validatedDevice.getHardwareId());
             ps.setObject(3, validatedDevice.getWhitelistId());
-            ps.setString(4, validatedDevice.getCameraId());
+            ps.setString(4, validatedDevice.getLastSeenAt());
+            ps.setString(5, validatedDevice.getCameraId());
+            ps.setBoolean(6, validatedDevice.isActive());
             return ps;
         }, keyHolder);
 
@@ -82,7 +86,7 @@ public class ValidatedDeviceRepository {
 
     public List<ValidatedDevice> findAll() {
         return jdbcTemplate.query(
-                "SELECT * FROM validated_device ORDER BY last_seen_at DESC",
+                "SELECT * FROM validated_device ORDER BY CASE WHEN device_name IS NULL OR device_name = '' THEN camera_id ELSE device_name END",
                 this::mapRow);
     }
 
@@ -90,6 +94,30 @@ public class ValidatedDeviceRepository {
         jdbcTemplate.update(
                 "UPDATE validated_device SET device_name = ? WHERE id = ?",
                 deviceName,
+                id);
+    }
+
+    /**
+     * Records completion time for a device sync while preserving connection
+     * history.
+     *
+     * @param cameraId stable camera identifier for the synced device
+     */
+    public void markLastSync(String cameraId) {
+        jdbcTemplate.update(
+                "UPDATE validated_device SET last_sync_at = datetime('now', 'localtime') WHERE camera_id = ?",
+                cameraId);
+    }
+
+    public void deactivate(Long id) {
+        jdbcTemplate.update(
+                "UPDATE validated_device SET is_active = FALSE WHERE id = ?",
+                id);
+    }
+
+    public void reactivate(Long id) {
+        jdbcTemplate.update(
+                "UPDATE validated_device SET is_active = TRUE WHERE id = ?",
                 id);
     }
 }

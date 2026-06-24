@@ -8,9 +8,9 @@
 }
 
 .header-shell {
-  -fx-background-color: -sidebar-bg;
-  -fx-padding: 8 23;
-  fx-alignment: center;
+  -fx-background-color: -header-bg;
+  -fx-padding: 8 12 8 23;
+  -fx-alignment: center;
 }
 
 .top-bar {
@@ -23,19 +23,30 @@
 }
 
 .tabs-row {
-  -fx-pref-height: 28;
-  -fx-max-height: 28;
-  -fx-min-height: 28;
+  -fx-pref-height: 90;
+  -fx-min-height: 90;
   -fx-padding: 0 0 3 0;
+  -fx-alignment: CENTER_LEFT;
 }
 
 .top-right-actions {
   -fx-alignment: CENTER_RIGHT;
 }
 
-.greeting-label {
+.user-profile-box {
+  -fx-padding: 4 16 4 10;
+}
+
+.greeting-prefix {
   -fx-font-size: 13px;
-  -fx-font-weight: 600;
+  -fx-text-fill: -text-color;
+  -fx-opacity: 0.8;
+}
+
+.greeting-username {
+  -fx-font-size: 16px;
+  -fx-font-weight: 700;
+  -fx-text-fill: -text-color;
 }
 
 .btn-logout {
@@ -54,22 +65,28 @@
 }
 
 /* ── TAB BUTTONS ────────────────────────────────────────────────── */
-.menu-tab-btn {
-  -fx-font-size: 13px;
+.square-nav-btn {
+  -fx-font-size: 11px;
   -fx-background-color: transparent;
   -fx-text-fill: -text-color;
+  -fx-border-color: -nav-btn-border;
+  -fx-border-radius: 6;
   -fx-background-radius: 6;
-  -fx-padding: 7 12;
-  -fx-min-width: 140;
-  -fx-pref-width: 140;
-  -fx-max-width: 140;
-  -fx-pref-height: 28;
-  -fx-max-height: 28;
+  -fx-padding: 8 4 8 4;
+  -fx-min-width: 90;
+  -fx-pref-width: 90;
+  -fx-max-width: 90;
+  -fx-pref-height: 90;
+  -fx-max-height: 90;
+  -fx-content-display: top;
   -fx-alignment: CENTER;
+  -fx-cursor: hand;
+  -fx-background-insets: 0;
 }
+
 /* ── NOTICE OVERLAY ─────────────────────────────────────────────── */
 .notice-container {
-  -fx-padding: 0 0 30 0;
+  -fx-padding: 0 0 60 0;
 }
 
 .notice-container-dialog {
@@ -255,7 +272,7 @@
   -fx-pref-height: 20;
   -fx-min-height: 20;
   -fx-max-height: 20;
-  -fx-font-size:13px;
+  -fx-font-size: 13px;
   -fx-alignment: CENTER;
   -fx-padding: 1 2;
   -fx-background-radius: 2;
@@ -296,7 +313,7 @@
   -fx-pref-width: -1;
   -fx-min-width: 0;
   -fx-max-width: -1;
-  -fx-padding: 0 10 0 0;
+  -fx-padding: 0;
 }
 
 .file-list-pane {
