@@ -2,6 +2,7 @@ package com.app.admin.settingsdialog.services;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
+import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppConfigService;
@@ -10,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,6 +25,7 @@ import java.util.Optional;
 public class AdminSettingsDialogService {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSettingsDialogService.class);
+    private static final Path REG_EXE_PATH = Path.of("C:", "Windows", "System32", "reg.exe");
 
     private final AppConfigService appConfigService;
     private final FolderManagerService folderManagerService;
@@ -31,10 +34,10 @@ public class AdminSettingsDialogService {
     private final Session session;
 
     public AdminSettingsDialogService(AppConfigService appConfigService,
-                                      FolderManagerService folderManagerService,
-                                      RestoreService restoreService,
-                                      UserSettingService userSettingService,
-                                      Session session) {
+            FolderManagerService folderManagerService,
+            RestoreService restoreService,
+            UserSettingService userSettingService,
+            Session session) {
         this.appConfigService = appConfigService;
         this.folderManagerService = folderManagerService;
         this.restoreService = restoreService;
@@ -179,7 +182,8 @@ public class AdminSettingsDialogService {
     private boolean checkRegistryEntryExists() {
         try {
             Process proc = new ProcessBuilder(
-                    "reg", "query", AppConstants.STARTUP_REG_KEY, "/v", AppConstants.STARTUP_REG_VALUE)
+                    REG_EXE_PATH.toString(), "query", AppConstants.STARTUP_REG_KEY, "/v",
+                    AppConstants.STARTUP_REG_VALUE)
                     .redirectErrorStream(true)
                     .start();
             return proc.waitFor() == 0;
@@ -200,7 +204,7 @@ public class AdminSettingsDialogService {
             ProcessBuilder pb;
             if (enable) {
                 String exePath = resolveAppExePath();
-                java.io.File exeFile = new java.io.File(exePath);
+                File exeFile = new File(exePath);
                 if (!exeFile.exists()) {
                     log.error("Launcher executable not found at: {}", exePath);
                     return new RegistryCommandResult(false,
@@ -209,14 +213,14 @@ public class AdminSettingsDialogService {
                 // Wrap in quotes so Windows handles paths with spaces correctly.
                 String quotedExePath = "\"" + exePath + "\"";
                 pb = new ProcessBuilder(
-                        "reg", "add", AppConstants.STARTUP_REG_KEY,
+                        REG_EXE_PATH.toString(), "add", AppConstants.STARTUP_REG_KEY,
                         "/v", AppConstants.STARTUP_REG_VALUE,
                         "/t", "REG_SZ",
                         "/d", quotedExePath,
                         "/f");
             } else {
                 pb = new ProcessBuilder(
-                        "reg", "delete", AppConstants.STARTUP_REG_KEY,
+                        REG_EXE_PATH.toString(), "delete", AppConstants.STARTUP_REG_KEY,
                         "/v", AppConstants.STARTUP_REG_VALUE,
                         "/f");
             }
@@ -252,7 +256,7 @@ public class AdminSettingsDialogService {
         // there).
         String javaHome = System.getProperty("java.home");
         if (javaHome != null) {
-            java.io.File exeCandidate = new java.io.File(javaHome, "../../bdma.exe")
+            File exeCandidate = new File(javaHome, "../../bdma.exe")
                     .toPath().normalize().toFile();
             if (exeCandidate.exists()) {
                 return exeCandidate.getAbsolutePath();

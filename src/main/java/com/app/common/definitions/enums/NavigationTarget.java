@@ -2,5 +2,5 @@ package com.app.common.definitions.enums;
 
 public enum NavigationTarget {
     DASHBOARD,
-    USER
+    EXTERNAL_MEDIA_DECRYPT
 }

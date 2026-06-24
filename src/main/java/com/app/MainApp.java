@@ -7,28 +7,39 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Properties;
 
+import com.app.common.helpers.AlertHelper;
+import com.app.common.helpers.CssLoader;
+import com.app.common.helpers.NavigationHelper;
+import com.app.common.helpers.SpringContextHolder;
+import com.app.common.helpers.ViewLoader;
+import com.app.common.modules.databaserecovery.services.DatabaseRecoveryService;
+import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.common.modules.datasync.DataSyncRunner;
+import com.app.common.modules.externalmediadecrypt.services.ExternalMediaDecryptService;
+import com.app.common.modules.queuemanager.services.QueueManagerService;
 import com.app.guest.services.AppStartupService;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.flywaydb.core.api.exception.FlywayValidateException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import com.app.common.configs.AppRuntimeInitializer;
+
+import ch.qos.logback.classic.LoggerContext;
 import com.app.common.configs.LogbackConfigInitializer;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.exceptions.AppException;
 import com.app.common.exceptions.GlobalExceptionHandler;
-import com.app.common.helpers.CssLoader;
-import com.app.common.helpers.NavigationHelper;
-import com.app.common.helpers.SpringContextHolder;
-import com.app.common.helpers.ViewLoader;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.loggly.LogglyQueuedAppender;
 import com.app.common.modules.theme.ThemeManager;
-import com.app.common.services.DeviceTracker;
+import com.app.common.modules.device.services.DeviceTracker;
 import com.app.common.utils.StageUtil;
 
 import javafx.application.Application;
@@ -38,6 +49,7 @@ import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import lombok.Getter;
+
 
 public class MainApp extends Application {
 
@@ -52,11 +64,16 @@ public class MainApp extends Application {
 
     private ConfigurableApplicationContext springContext;
     private FolderManagerService folderManagerService;
+    private RestoreService restoreService;
+    private QueueManagerService queueManagerService;
+    private ExternalMediaDecryptService stateService;
+    private RuntimeException startupFailure;
 
     @Getter
     private static Stage primaryStage;
     @Getter
     private static Scene scene;
+    private boolean forceClosing;
 
     private static void setPrimaryStage(Stage stage) {
         primaryStage = stage;
@@ -82,16 +99,41 @@ public class MainApp extends Application {
             return;
         }
 
+        prepareDatabaseBeforeSpringStartup();
+
         AppRuntimeInitializer.initialize();
+
         SpringApplication application = new SpringApplication(SpringBootApp.class);
         application.setDefaultProperties(loadBundledApplicationProperties());
-        springContext = application.run();
+        try {
+            springContext = application.run();
+        } catch (RuntimeException e) {
+            startupFailure = e;
+            log.error("Application startup failed", e);
+            return;
+        }
         LogglyQueuedAppender.setSpringReady(true);
 
         GlobalExceptionHandler handler = springContext.getBean(GlobalExceptionHandler.class);
         Thread.setDefaultUncaughtExceptionHandler(handler);
 
         folderManagerService = springContext.getBean(FolderManagerService.class);
+        restoreService = springContext.getBean(RestoreService.class);
+        queueManagerService = springContext.getBean(QueueManagerService.class);
+        stateService = springContext.getBean(ExternalMediaDecryptService.class);
+    }
+
+    /**
+     * Restores the SQLite database before runtime initialization, Spring
+     * DataSource,
+     * and Flyway can create or validate an empty source database file.
+     */
+    private void prepareDatabaseBeforeSpringStartup() {
+        try {
+            new DatabaseRecoveryService().prepareDatabase();
+        } catch (Exception e) {
+            log.error("Failed to prepare database before startup", e);
+        }
     }
 
     @Override
@@ -103,6 +145,7 @@ public class MainApp extends Application {
         }
 
         setPrimaryStage(stage);
+        configureCloseHandler();
         StageUtil.applyAppIcon(primaryStage);
         I18n.loadSavedLocale();
 
@@ -112,6 +155,11 @@ public class MainApp extends Application {
         CssLoader.applyBase(getScene());
         ThemeManager.apply(getScene());
 
+        if (startupFailure != null) {
+            handleStartupFailure(startupFailure);
+            return;
+        }
+
         log.info("App started");
         AppStartupService startupService = springContext.getBean(AppStartupService.class);
         startupService.initialize();
@@ -120,6 +168,42 @@ public class MainApp extends Application {
         DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
         dataSyncRunner.startDeviceTracker();
         showAdmin();
+    }
+
+    /**
+     * Shows startup-specific guidance before closing when Spring cannot start.
+     * Flyway validation failures mean existing local data no longer matches the
+     * bundled database migrations.
+     */
+    private void handleStartupFailure(RuntimeException failure) {
+        if (isFlywayValidationFailure(failure)) {
+            showFatalStartupMessage(
+                    "Database Not Compatible",
+                    "The existing database is not compatible with this version of BDMA.",
+                    "Please contact an administrator for assistance.\n"
+                            + "Do not delete app data unless you are sure the existing local data is no longer needed.");
+        } else {
+            showFatalStartupMessage(
+                    "Startup Failed",
+                    "BDMA could not start.",
+                    "Please contact admin.");
+        }
+        Platform.exit();
+    }
+
+    private boolean isFlywayValidationFailure(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof FlywayValidateException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void showFatalStartupMessage(String title, String header, String content) {
+        AlertHelper.createError(title, header, content).showAndWait();
     }
 
     @Override
@@ -139,7 +223,28 @@ public class MainApp extends Application {
 
         if (folderManagerService != null)
             folderManagerService.shutdown();
+
+        try {
+            new DatabaseRecoveryService().backupSourceToBackup();
+        } catch (Exception e) {
+            log.error("Failed to back up database before shutdown", e);
+        }
+
         log.info("App stopped");
+        shutdownLoggingSystem();
+
+        // Stop all non-daemon threads that may be keeping the JVM running in
+        // background after the JavaFX application has been stopped.
+        System.exit(0);
+    }
+
+    /**
+     * Stops Logback before the packaged JVM exits so async appenders can flush
+     * queued events and Loggly can run its final drain deterministically.
+     */
+    private static void shutdownLoggingSystem() {
+        LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+        loggerContext.stop();
     }
 
     public static void showLogin() {
@@ -288,4 +393,98 @@ public class MainApp extends Application {
             log.info("Brought existing window to front.");
         }
     }
+
+    private void configureCloseHandler() {
+        primaryStage.setOnCloseRequest(event -> {
+            if (forceClosing) {
+                return;
+            }
+            if (springContext == null
+                    || queueManagerService == null
+                    || stateService == null
+                    || restoreService == null) {
+                return;
+            }
+            boolean syncRunning = queueManagerService.hasRunningSyncTask();
+            boolean exportRunning = queueManagerService.hasRunningExportTask();
+            boolean decryptRunning = stateService.isRunning();
+            boolean restoreRunning = restoreService.isRunning();
+
+            if (!syncRunning && !exportRunning && !restoreRunning && !decryptRunning) {
+                return;
+            }
+
+            // Keep the window open until the user confirms closing active work.
+            event.consume();
+            if (syncRunning) {
+                checkProcess(
+                        "app.close.syncRunning.header",
+                        "app.close.syncRunning.message");
+                return;
+            }
+
+            if (exportRunning) {
+                checkProcess(
+                        "app.close.exportRunning.header",
+                        "app.close.exportRunning.message");
+                return;
+            }
+            if (decryptRunning) {
+                checkProcess(
+                        "app.close.decryptRunning.header",
+                        "app.close.decryptRunning.message");
+                return;
+            }
+            checkProcess(
+                    "app.close.restoreRunning.header",
+                    "app.close.restoreRunning.message");
+        });
+    }
+
+    private void continueCloseRequest() {
+        forceClosing = true;
+        primaryStage.close();
+    }
+
+    /**
+     * Shows a confirmation dialog before closing while queue work is still running.
+     *
+     * @param header  resource key for the dialog header
+     * @param message resource key for the dialog message
+     */
+    public void checkProcess(String header, String message) {
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> checkProcess(header, message));
+            return;
+        }
+
+        showCheckProcess(header, message);
+    }
+
+    private void showCheckProcess(String header, String message) {
+        Alert alert = AlertHelper.createConfirmation(
+                I18n.get("app.close.processRunning.title"),
+                I18n.get(header),
+                I18n.get(message));
+
+        ButtonType okButton = new ButtonType(I18n.get("app.close.ok"), ButtonBar.ButtonData.OK_DONE);
+
+        ButtonType cancelButton = new ButtonType(I18n.get("app.close.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+
+        AlertHelper.setButtons(alert, okButton, cancelButton);
+
+        alert.setOnShown(event -> {
+            var node = alert.getDialogPane().lookup(".button-bar");
+            if (node instanceof ButtonBar buttonBar) {
+                buttonBar.setButtonOrder(ButtonBar.BUTTON_ORDER_NONE);
+            }
+        });
+
+        alert.showAndWait().ifPresent(result -> {
+            if (result == okButton) {
+                continueCloseRequest();
+            }
+        });
+    }
+
 }

@@ -39,42 +39,36 @@ public class DataBackupRunner {
         }
     }
 
-    public synchronized void resetForLogout() {
+    /**
+     * Asks the backup worker to finish current work before the Spring context
+     * closes.
+     */
+    @PreDestroy
+    public synchronized void gracefulShutdown() {
         shuttingDown = true;
 
-        if (backupThread == null) {
+        try {
+            if (backupThread != null) {
+                worker.requestShutdown();
+                // Idle workers block on the queue; interrupt only when no backup is active so
+                // shutdown does not wait for the join timeout.
+                if (worker.isIdleForShutdown()) {
+                    backupThread.interrupt();
+                }
+                waitForThreadToStop(backupThread);
+                backupThread = null;
+            }
+        } finally {
             shuttingDown = false;
             notifyAll();
-            return;
         }
-
-        worker.requestShutdown();
-        Thread shutdownThread = backupThread;
-        backupThread = null;
-
-        // Clean up in background to avoid blocking logout UI
-        new Thread(() -> {
-            try {
-                shutdownThread.join(5000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            // Force interrupt if still running after timeout
-            if (shutdownThread.isAlive()) {
-                shutdownThread.interrupt();
-            }
-            synchronized (this) {
-                shuttingDown = false;
-                notifyAll();
-            }
-        }, "backup-shutdown").start();
     }
 
-    @PreDestroy
-    public synchronized void shutdown() {
-        if (backupThread != null) {
-            backupThread.interrupt();
-            backupThread = null;
+    private void waitForThreadToStop(Thread thread) {
+        try {
+            thread.join(5000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

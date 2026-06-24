@@ -88,6 +88,8 @@
                 <Pane fx:id="mediaViewWrapper" maxWidth="Infinity" maxHeight="Infinity">
                     <MediaView fx:id="mediaView" preserveRatio="true"/>
                 </Pane>
+                <Label fx:id="lblAudioPlaceholder" text="🎵"
+                       visible="false" managed="false" StackPane.alignment="CENTER"/>
                 <VBox alignment="BOTTOM_CENTER" StackPane.alignment="BOTTOM_CENTER" styleClass="video-controls-overlay">
                     <Slider fx:id="videoSlider" styleClass="video-slider"/>
                     <HBox alignment="CENTER_LEFT" spacing="8" styleClass="video-controls-bar">

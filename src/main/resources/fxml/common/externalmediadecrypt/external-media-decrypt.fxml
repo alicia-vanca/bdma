@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<HBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.app.common.modules.externalmediadecrypt.controllers.ExternalMediaDecryptController"
+      styleClass="content">
+    <Region minWidth="0"
+            prefWidth="200"
+            maxWidth="200"
+            HBox.hgrow="ALWAYS"/>
+    <VBox spacing="16"
+          minWidth="700"
+          HBox.hgrow="ALWAYS">
+        <HBox spacing="12" alignment="CENTER_LEFT">
+            <Label text="%externalMediaDecrypt.input"
+                   styleClass="align-label"
+                   style="-fx-alignment: CENTER_RIGHT;"
+                   minWidth="90"
+                   prefWidth="90"
+                   maxWidth="90"/>
+            <ListView fx:id="inputFileListView"
+                      HBox.hgrow="ALWAYS"
+                      VBox.vgrow="ALWAYS"
+                      styleClass="decrypt-listview"/>
+            <VBox spacing="8"
+                  alignment="CENTER"
+                  minWidth="140"
+                  prefWidth="140"
+                  maxWidth="140">
+                <Button fx:id="chooseInputFilesButton"
+                        onAction="#onChooseInputFiles"
+                        styleClass="btn-secondary"
+                        text="%externalMediaDecrypt.choose"
+                        maxWidth="Infinity"/>
+                <Button fx:id="clearInputFilesButton"
+                        onAction="#onClearInputFiles"
+                        styleClass="btn-secondary"
+                        text="%externalMediaDecrypt.clear"
+                        visible="false"
+                        managed="false"
+                        maxWidth="Infinity"/>
+            </VBox>
+        </HBox>
+        <HBox spacing="12" alignment="CENTER_LEFT">
+            <Label text="%externalMediaDecrypt.output"
+                   styleClass="align-label"
+                   style="-fx-alignment: CENTER_RIGHT;"
+                   minWidth="90"
+                   prefWidth="90"
+                   maxWidth="90"/>
+            <TextField fx:id="outputFolderField"
+                       editable="false"
+                       styleClass="input"
+                       HBox.hgrow="ALWAYS"/>
+            <Button fx:id="chooseOutputFolderButton"
+                    onAction="#onChooseOutputFolder"
+                    styleClass="btn-secondary"
+                    text="%externalMediaDecrypt.choose"
+                    minWidth="140"
+                    prefWidth="140"
+                    maxWidth="140"/>
+        </HBox>
+        <HBox spacing="26" alignment="CENTER">
+            <Button fx:id="decryptButton"
+                    onAction="#onDecrypt"
+                    styleClass="btn-primary"
+                    text="%externalMediaDecrypt.button"/>
+        </HBox>
+        <StackPane fx:id="progressCardHost">
+            <VBox fx:id="progressContainer"
+                  alignment="CENTER"
+                  spacing="10"
+                  managed="false"
+                  visible="false"
+                  prefWidth="560"
+                  styleClass="progress-container">
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Label fx:id="progressFileNameLabel"
+                           maxWidth="Infinity"
+                           HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="progressCountLabel"
+                           minWidth="72"/>
+                </HBox>
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Label fx:id="progressOutputFolderLabel"
+                           maxWidth="Infinity"
+                           HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="progressPercentLabel"
+                           minWidth="48"
+                           styleClass="progress-percent-label"
+                           text="100%"/>
+                </HBox>
+                <HBox alignment="CENTER" spacing="10">
+                    <ProgressBar fx:id="progressBar"
+                                 HBox.hgrow="ALWAYS"
+                                 maxWidth="Infinity"/>
+                </HBox>
+                <Button onAction="#onCancelDecrypt"
+                        text="%externalMediaDecrypt.cancel"
+                        styleClass="btn-danger"/>
+            </VBox>
+        </StackPane>
+    </VBox>
+    <Region minWidth="0"
+            prefWidth="200"
+            maxWidth="200"
+            HBox.hgrow="ALWAYS"/>
+</HBox>

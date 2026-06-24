@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 import com.app.MainApp;
 import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
-import com.app.admin.settingsdialog.services.RestoreService;
+import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
@@ -216,7 +216,7 @@ public class AdminSettingsDialogController {
 
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.checkbox"));
-        lsbCheckVersion.setText(I18n.get("setting.startWithWindows.checkversion",getVersionCurrent()));
+        lsbCheckVersion.setText(I18n.get("setting.startWithWindows.checkversion", getVersionCurrent()));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
         btnRetryFailedRestore.setText(I18n.get("setting.storage.btn.retry"));
     }
@@ -679,6 +679,9 @@ public class AdminSettingsDialogController {
                 case SYNC -> refreshStoragePathField(txtSavePath, FolderType.SYNC);
                 case BACKUP -> refreshStoragePathField(txtBackupPath, FolderType.BACKUP);
                 case EXPORT -> refreshStoragePathField(txtExportPath, FolderType.EXPORT);
+                case DECRYPT -> {
+                    // Decrypt storage is managed by its own module and has no field in this dialog.
+                }
             }
             if (txtSavePath != null && txtBackupPath != null && lblDriveConflictWarning != null) {
                 checkAndShowDriveConflict();
@@ -687,7 +690,8 @@ public class AdminSettingsDialogController {
     }
 
     /**
-     * Refreshes a storage path field only when its FXML control is currently loaded.
+     * Refreshes a storage path field only when its FXML control is currently
+     * loaded.
      */
     private void refreshStoragePathField(TextField textField, FolderType folderType) {
         if (textField == null) {

@@ -16,7 +16,7 @@
     <VBox spacing="12">
         <HBox spacing="8" alignment="CENTER_LEFT" styleClass="filter-bar">
             <TextField fx:id="txtSearch" promptText="%user.search"
-                       styleClass="input" HBox.hgrow="ALWAYS"/>
+                       styleClass="input" minWidth="220" prefWidth="280" maxWidth="340"/>
             <ComboBox fx:id="cbRole" promptText="%filter.allRoles"/>
             <ComboBox fx:id="cbStatus" promptText="%filter.allStatus"/>
             <Button text="%filter.reset"  onAction="#onReset" styleClass="btn-secondary"/>

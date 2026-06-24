@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.app.common.configs.AppContext;
+import com.app.common.definitions.AppConstants;
 
 @Service
 public class TotpService {
@@ -24,7 +25,6 @@ public class TotpService {
     private static final int TIME_STEP_SECONDS = 30;
     private static final int DIGITS = 6;
     private static final int WINDOW = 1;
-    private static final String DEV_VERSION = "dev";
     private static final String HMAC_ALGORITHM = "HmacSHA1";
     private static final char[] BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
 
@@ -88,7 +88,7 @@ public class TotpService {
 
     private boolean acceptAnyOtpForDevVersion() {
         String version = AppContext.getVersion();
-        if (DEV_VERSION.equalsIgnoreCase(version == null ? "" : version.trim())) {
+        if (AppConstants.VERSION_DEV.equalsIgnoreCase(version == null ? "" : version.trim())) {
             log.warn("Accepting any OTP because app.dev.totp.accept-any is enabled for dev version");
             return true;
         }
@@ -97,8 +97,11 @@ public class TotpService {
         return false;
     }
 
+    @SuppressWarnings("java:S4790")
     private String generate(byte[] decodedSecret, long timeStep) {
         try {
+            // HmacSHA1 is required for compatibility with RFC 6238 TOTP clients and is not
+            // used as a password hash.
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(decodedSecret, HMAC_ALGORITHM));
             byte[] hash = mac.doFinal(ByteBuffer.allocate(Long.BYTES).putLong(timeStep).array());

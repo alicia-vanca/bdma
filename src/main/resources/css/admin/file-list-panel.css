@@ -13,44 +13,77 @@
     -fx-font-size: 15px;
 }
 
-.table-view .column-header-background,
-.table-view .filler,
-.table-view .column-header {
-    -fx-background-color: -table-bg;
-    -fx-pref-height: 36;
-    -fx-min-height: 36;
-}
-
-.table-view .column-header .label {
-    -fx-font-size: 13px;
-}
-
-.table-view {
-    -fx-background-color: -table-bg;
+.progress-bar-button {
+    -fx-min-width: 260px;
+    -fx-pref-width: 340px;
+    -fx-padding: 7 10;
+    -fx-cursor: hand;
+    -fx-background-color: -input-bg;
     -fx-border-color: -border-color;
-    -fx-table-cell-border-color: -border-color;
-    -fx-table-header-border-color: -border-color;
+    -fx-border-width: 1;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
 }
 
-.table-view .table-cell {
-    -fx-alignment: CENTER-LEFT;
-    -fx-border-color: transparent -border-color transparent transparent;
-    -fx-padding: 0 12;
-    -fx-font-size: 16px;
-}
-
-.table-row-cell {
-    -fx-background-color: -table-bg;
-}
-
-.table-row-cell:odd {
-    -fx-background-color: -table-odd;
-}
-
-.table-row-cell:hover {
+.progress-bar-button:hover {
     -fx-background-color: -table-hover;
+    -fx-border-color: -primary;
 }
 
-.table-row-cell:selected {
-    -fx-background-color: -table-selected;
+.progress-bar-button.idle,
+.progress-bar-button.syncing,
+.progress-bar-button.exporting {
+    -fx-border-color: -border-color;
+}
+
+.progress-bar-button.complete {
+    -fx-border-color: -primary;
+}
+
+.progress-bar-content {
+    -fx-alignment: CENTER_LEFT;
+    -fx-fill-width: true;
+    -fx-min-width: 238px;
+    -fx-pref-width: 318px;
+    -fx-max-width: 318px;
+}
+
+.progress-bar-header {
+    -fx-min-width: 238px;
+    -fx-pref-width: 318px;
+    -fx-max-width: 318px;
+}
+
+.progress-bar-title {
+    -fx-font-size: 12px;
+    -fx-font-weight: 600;
+    -fx-text-fill: -text-color;
+    -fx-max-width: 250px;
+    -fx-text-overrun: ellipsis;
+}
+
+.progress-bar-percent {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -primary;
+}
+
+.progress-bar {
+    -fx-min-width: 238px;
+    -fx-pref-width: 318px;
+    -fx-max-width: 318px;
+    -fx-min-height: 7px;
+    -fx-pref-height: 7px;
+}
+
+.progress-bar>.track {
+    -fx-background-color: -border-color;
+    -fx-background-radius: 99;
+}
+
+.progress-bar>.bar {
+    -fx-background-color: -primary;
+    -fx-background-insets: 0;
+    -fx-background-radius: 99;
+    -fx-padding: 0.25em;
 }

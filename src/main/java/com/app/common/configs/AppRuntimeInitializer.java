@@ -1,5 +1,6 @@
 package com.app.common.configs;
 
+import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.exceptions.AppException;
 import org.slf4j.Logger;
@@ -112,7 +113,7 @@ public final class AppRuntimeInitializer {
 
         String version = AppRuntimeInitializer.class.getPackage().getImplementationVersion();
         if (version == null) {
-            version = System.getProperty("app.version", "dev");
+            version = System.getProperty("app.version", AppConstants.VERSION_DEV);
         }
         AppContext.setVersion(version);
     }
@@ -260,21 +261,36 @@ public final class AppRuntimeInitializer {
     private static boolean resolveDbEncryptionEnabled() {
         String value = System.getProperty(DB_ENCRYPTION_ENABLED_PROPERTY);
         if (value != null && !value.isBlank()) {
-            return parseDbEncryptionEnabled(value, "system property");
+            return allowDisabledOnlyForDev(parseDbEncryptionEnabled(value, "system property"));
         }
 
         value = System.getenv(DB_ENCRYPTION_ENABLED_ENV);
         if (value != null && !value.isBlank()) {
-            return parseDbEncryptionEnabled(value, "environment variable");
+            return allowDisabledOnlyForDev(parseDbEncryptionEnabled(value, "environment variable"));
         }
 
         Properties properties = loadApplicationProperties();
         value = properties.getProperty(DB_ENCRYPTION_ENABLED_PROPERTY);
         if (value != null && !value.isBlank()) {
-            return parseDbEncryptionEnabled(value, "application.properties");
+            return allowDisabledOnlyForDev(parseDbEncryptionEnabled(value, "application.properties"));
         }
 
         return true;
+    }
+
+    private static boolean allowDisabledOnlyForDev(boolean enabled) {
+        if (enabled || isDevVersion()) {
+            return enabled;
+        }
+
+        log.error("Ignoring {}=false because app version is not dev: {}", DB_ENCRYPTION_ENABLED_PROPERTY,
+                AppContext.getVersion());
+        return true;
+    }
+
+    private static boolean isDevVersion() {
+        String version = AppContext.getVersion();
+        return AppConstants.VERSION_DEV.equalsIgnoreCase(version == null ? "" : version.trim());
     }
 
     private static Properties loadApplicationProperties() {

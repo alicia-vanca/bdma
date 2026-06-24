@@ -92,8 +92,8 @@ public class LoginController {
      */
     private void setupPasswordPeek() {
         passwordIconView = new ImageView();
-        passwordIconView.setFitWidth(27);
-        passwordIconView.setFitHeight(27);
+        passwordIconView.setFitWidth(20);
+        passwordIconView.setFitHeight(20);
         btnPeekPassword.setGraphic(passwordIconView);
 
         // Load initial icon based on current theme
