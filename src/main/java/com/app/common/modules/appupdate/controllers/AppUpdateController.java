@@ -47,10 +47,6 @@ public class AppUpdateController {
     // ── Public API ───────────────────────────────────────────────────────────
 
     public void checkOnStartup() {
-        if (!appUpdateService.shouldCheckThisWeek())
-            return;
-        appUpdateService.saveCheckDate();
-
         Task<AppUpdateInfo> task = new Task<>() {
             @Override
             protected AppUpdateInfo call() {
@@ -63,8 +59,7 @@ public class AppUpdateController {
             if (info == null || !info.hasUpdate())
                 return;
 
-            String skipped = appUpdateService.getSkippedVersion();
-            if (info.latestVersion().equals(skipped))
+            if (appUpdateService.shouldSuppressReminderThisWeek(info.latestVersion()))
                 return;
 
             Platform.runLater(() -> showAvailableUpdateDialog(info));
@@ -152,8 +147,8 @@ public class AppUpdateController {
                 log.info("User chose to update to version {}", info.latestVersion());
                 downloadAndInstall(info);
             } else if (result == btnSkip) {
-                log.info("User skipped version {}", info.latestVersion());
-                appUpdateService.saveSkippedVersion(info.latestVersion());
+                log.info("User postponed update version {} until next week", info.latestVersion());
+                appUpdateService.saveRemindNextWeekVersion(info.latestVersion());
             }
         });
     }

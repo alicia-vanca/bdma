@@ -52,8 +52,8 @@ public final class AppConstants {
     public static final String KEY_IS_START_WITH_WINDOWS = "appConfig.isStartWithWindows";
     public static final String KEY_LANGUAGE = "appConfig.language";
     public static final String KEY_THEME = "appConfig.theme";
-    public static final String KEY_LAST_CHECK_DATE = "appUpdate.lastCheckDate";
-    public static final String KEY_SKIPPED_VERSION = "appUpdate.skippedVersion";
+    public static final String KEY_REMIND_UPDATE_VERSION = "appUpdate.remindVersion";
+    public static final String KEY_REMIND_UPDATE_DATE = "appUpdate.remindDate";
     public static final String KEY_LAST_RESTORE_PROGRESS = "last.restore.progress";
     public static final String DECRYPT_OUTPUT_DIR = "decrypt.output.lastDir";
     public static final String DECRYPT_INPUT_DIR = "decrypt.input.lastDir";
