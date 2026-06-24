@@ -94,7 +94,7 @@ public final class AppConstants {
     public static final String DATE_DISPLAY_FORMAT = "dd/MM/yyyy";
 
     // ────────────── Update ──────────────
-    public static final String GITHUB_API = "https://github.com/alicia-vanca/bdma/releases";
+    public static final String GITHUB_API = "https://api.github.com/repos/alicia-vanca/bdma/releases";
     public static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     // ────────────── Default password ──────────────
