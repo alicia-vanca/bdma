@@ -25,7 +25,6 @@ public class AppUpdateController {
 
     private static final Logger log = LoggerFactory.getLogger(AppUpdateController.class);
     private static final String INSTALLER_AUTO_UPDATE_ARGUMENT = "/BDMA_AUTO_UPDATE";
-    private static final String LOCAL_TEST_INSTALLER_NAME = "BDMA-1.0.0-Setup.exe";
 
     private final AppUpdateService appUpdateService;
     private final AppNoticeService appNoticeService;
@@ -209,15 +208,6 @@ public class AppUpdateController {
             log.error("Failed to queue installer launch", e);
             appNoticeService.showError(I18n.get("update.install.launch.failed"));
         }
-    }
-
-    private File getLocalTestInstaller() throws IOException {
-        File installer = new File(System.getProperty("user.home"),
-                "Downloads" + File.separator + LOCAL_TEST_INSTALLER_NAME);
-        if (!installer.isFile()) {
-            throw new IOException("Local test installer not found: " + installer.getAbsolutePath());
-        }
-        return installer;
     }
 
     /**
