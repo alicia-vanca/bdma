@@ -16,8 +16,8 @@
 #deviceGrid {
     -fx-background-color: transparent;
     -fx-border-color: transparent;
-    -fx-hgap: 10;
-    -fx-vgap: 10;
+    -fx-hgap: 12;
+    -fx-vgap: 12;
     -fx-padding: 4;
 }
 
@@ -60,30 +60,55 @@
 
 /* ── Device Card (VBox) ── */
 .device-card {
+    -fx-background-color: -default-card-bg;
     -fx-border-color: -border-color;
-    -fx-border-radius: 8;
-    -fx-background-radius: 8;
-    -fx-padding: 12;
-    -fx-background-color: -card-bg;
-    -fx-border-width: 1;
+    -fx-border-width: 2;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 14;
+    -fx-spacing: 20;
+}
+
+.device-card.connected,
+.device-card.unvalidated {
+    -fx-background-color: -connecting-card-bg;
+}
+
+.device-card.connected {
+    -fx-border-color: -connected-border;
+}
+
+.device-card.unvalidated {
+    -fx-border-color: -badge-warning-border;
 }
 
 .device-card:hover {
-    -fx-background-color: derive(-card-bg, -5%);
     -fx-border-color: -primary;
-    -fx-border-width: 2;
+}
+
+.device-card.connected:hover {
+    -fx-border-color: -primary;
     -fx-cursor: hand;
 }
 
 /* ── Device Card Header (HBox: dot + info) ── */
 .device-card-header {
-    -fx-spacing: 8;
-    -fx-alignment: CENTER_LEFT;
+    -fx-spacing: 10;
+    -fx-alignment: TOP_LEFT;
 }
 
-/* ── Device Info Box (VBox: name, camera, status) ── */
+.device-card-top-row {
+    -fx-spacing: 8;
+    -fx-alignment: TOP_LEFT;
+}
+
+.device-name-box {
+    -fx-spacing: 2;
+}
+
+/* ── Device Info Box (VBox: name/camera, status, specs) ── */
 .device-info-box {
-    -fx-spacing: 4;
+    -fx-spacing: 8;
     -fx-padding: 0 8 0 8;
 }
 
@@ -113,4 +138,121 @@
 
 .device-flow {
     -fx-padding: 12;
+}
+
+/* ── Spec Row (HBox wrapping the two bordered cells) ── */
+.device-spec-row {
+    -fx-border-color: -border-color;
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-background-color: transparent;
+}
+
+/* ── Individual Spec Cell (battery or storage) ── */
+.device-spec-cell {
+    -fx-padding: 8 12;
+    -fx-spacing: 2;
+    -fx-background-color: transparent;
+}
+
+.device-spec-header {
+    -fx-font-size: 16px;
+    -fx-text-fill: -text-color;
+    -fx-opacity: 0.6;
+}
+
+.device-spec-value-battery {
+    -fx-font-size: 16px;
+    -fx-padding: 1 0 0 0;
+    -fx-text-fill: -device-battery;
+}
+
+/* Red for low battery — add .low style class in code when level < 20% */
+.device-spec-value-battery.low {
+    -fx-text-fill: -device-warning;
+}
+
+.device-spec-value-storage {
+    -fx-font-size: 16px;
+    -fx-padding: 1 0 0 0;
+    -fx-text-fill: -primary;
+}
+
+.device-spec-value-storage.max-storage {
+    -fx-text-fill: -device-warning;
+}
+
+.device-spec-value-unknown {
+    -fx-text-fill: -text-color;
+    -fx-opacity: 0.4;
+    -fx-font-size: 13px;
+}
+
+.device-spec-sub {
+    -fx-font-size: 13px;
+    -fx-text-fill: -text-color;
+    -fx-opacity: 0.65;
+    -fx-padding: 1 0 0 0;
+}
+
+.battery-icon {
+    -fx-icon-size: 16;
+    -fx-icon-color: -device-battery;
+}
+
+.battery-icon-offline {
+    -fx-icon-size: 16;
+    -fx-icon-color: -device-offline;
+}
+
+.battery-icon.low {
+    -fx-icon-color: -device-warning;
+}
+
+.storage-icon {
+    -fx-icon-size: 16;
+    -fx-icon-color: -device-storage;
+}
+
+.storage-icon-offline {
+    -fx-icon-size: 16;
+    -fx-icon-color: -device-offline;
+}
+
+.battery-cell {
+    -fx-border-color: transparent -border-color;
+    -fx-border-width: 0 1 0 0;
+}
+
+.device-cell-connected,
+.device-cell-offline,
+.device-cell-unvalidated,
+.device-cell-queued,
+.device-cell-syncing {
+    -fx-font-size: 13px;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 2 8 2 8;
+}
+
+.device-cell-connected {
+    -fx-border-color: -badge-success-border;
+    -fx-background-color: -badge-success-bg;
+}
+
+.device-cell-offline {
+    -fx-border-color: -badge-muted-border;
+    -fx-background-color: -badge-muted-bg;
+}
+
+.device-cell-unvalidated,
+.device-cell-queued {
+    -fx-border-color: -badge-warning-border;
+    -fx-background-color: -badge-warning-bg;
+}
+
+.device-cell-syncing {
+    -fx-border-color: -badge-info-border;
+    -fx-background-color: -badge-info-bg;
 }

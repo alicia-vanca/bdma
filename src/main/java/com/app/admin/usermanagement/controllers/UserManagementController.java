@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.MainApp;
@@ -13,12 +14,12 @@ import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.Role;
 import com.app.common.definitions.enums.UserStatus;
+import com.app.common.events.UserAutoCreatedEvent;
 import com.app.common.exceptions.CannotDeleteSelfException;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
 import com.app.common.models.User;
-import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
@@ -89,7 +90,6 @@ public class UserManagementController {
     private final ViewLoader viewLoader;
     private final Session session;
     private final AppNoticeService appNoticeService;
-    private final DataSyncService dataSyncService;
 
     private List<User> allUsers = new ArrayList<>();
     private List<User> filteredUsers = new ArrayList<>();
@@ -109,13 +109,11 @@ public class UserManagementController {
     public UserManagementController(UserService userService,
             ViewLoader viewLoader,
             Session session,
-            AppNoticeService appNoticeService,
-            DataSyncService dataSyncService) {
+            AppNoticeService appNoticeService) {
         this.userService = userService;
         this.viewLoader = viewLoader;
         this.session = session;
         this.appNoticeService = appNoticeService;
-        this.dataSyncService = dataSyncService;
     }
 
     // ── Init ────────────────────────────────────────────────────────────────
@@ -138,8 +136,15 @@ public class UserManagementController {
         // Re-apply filters after restoring UI state to keep table consistent with
         // filter controls
         onSearch();
-        // Refresh user list when sync auto-creates a new account
-        dataSyncService.setOnUserAutoCreated(username -> Platform.runLater(this::loadData));
+    }
+
+    @EventListener
+    public void onUserAutoCreated(UserAutoCreatedEvent event) {
+        Platform.runLater(() -> {
+            if (isViewReady()) {
+                loadData();
+            }
+        });
     }
 
     private void setupRoleComboBox() {
@@ -246,11 +251,19 @@ public class UserManagementController {
     // ── Data ────────────────────────────────────────────────────────────────
 
     private void loadData() {
+        if (!isViewReady()) {
+            return;
+        }
+
         allUsers = userService.findAll().stream()
                 .filter(user -> user.getRole() != Role.DEV)
                 .toList();
         filteredUsers = new ArrayList<>(allUsers);
         setupPagination();
+    }
+
+    private boolean isViewReady() {
+        return table != null;
     }
 
     // ── Handlers ────────────────────────────────────────────────────────────

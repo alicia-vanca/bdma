@@ -7,6 +7,7 @@ import java.time.format.DateTimeFormatter;
 import org.json.JSONObject;
 
 import com.app.common.configs.AppContext;
+import com.app.common.definitions.AppConstants;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.IThrowableProxy;
@@ -20,7 +21,6 @@ import ch.qos.logback.core.LayoutBase;
 public class LogglyJsonLayout extends LayoutBase<ILoggingEvent> {
 
     private static final String APP_NAME = "bdma";
-    private static final String DEFAULT_VERSION = "dev";
     private static final ZoneId APP_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final DateTimeFormatter TIMESTAMP_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
@@ -52,7 +52,7 @@ public class LogglyJsonLayout extends LayoutBase<ILoggingEvent> {
     private void addRuntimeContext(JSONObject json) {
         json.put("deviceId", valueOrEmpty(AppContext.getDeviceId()));
         json.put("deviceName", valueOrEmpty(AppContext.getDeviceName()));
-        json.put("version", valueOrDefault(AppContext.getVersion(), DEFAULT_VERSION));
+        json.put("version", valueOrDefault(AppContext.getVersion(), AppConstants.VERSION_DEV));
     }
 
     private String valueOrEmpty(String value) {

@@ -29,6 +29,7 @@ public class CssLoader {
     public static void applyLogin(Scene scene) {
         scene.getStylesheets().removeIf(s -> s.contains("admin.css")
                 || s.contains("/css/admin/")
+                || s.contains("/css/common/")
                 || s.contains("/css/dev/")
                 || s.contains("/css/user/"));
         addIfAbsent(scene, "/css/auth/login.css");
@@ -46,7 +47,10 @@ public class CssLoader {
 
         // Clear all module CSS before applying the current module stylesheet.
         scene.getStylesheets()
-                .removeIf(s -> s.contains("/css/admin/") || s.contains("/css/dev/") || s.contains("/css/user/"));
+                .removeIf(s -> s.contains("/css/admin/")
+                        || s.contains("/css/common/")
+                        || s.contains("/css/dev/")
+                        || s.contains("/css/user/"));
 
         // Rebuild in stable order: base → theme → admin → module.
         List<String> ordered = new ArrayList<>();

@@ -24,19 +24,14 @@ public class DataExportRunner {
         this.worker = worker;
     }
 
-    /**
-     * Stops all pending exports and prepares the worker for the next login
-     * session.
-     */
-    public void resetForLogout() {
-        worker.cancelAndCleanup();
-        worker.resetExecutor();
-        log.info("Export worker reset for logout");
-    }
-
     @PreDestroy
     public void shutdown() {
-        worker.cancelAndCleanup();
-        log.info("Export runner shut down");
+        try {
+            worker.cancelAndCleanup();
+        } catch (Exception e) {
+            log.error("Error during export worker shutdown", e);
+        } finally {
+            log.info("Export runner shut down");
+        }
     }
 }

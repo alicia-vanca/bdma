@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
-import com.app.admin.settingsdialog.services.RestoreService;
+import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.auth.totp.services.DevOtpGuardService;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.databackup.queues.DataBackupQueue;

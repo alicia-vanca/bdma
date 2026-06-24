@@ -11,6 +11,7 @@
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Tooltip?>
 <StackPane fx:id="root" xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.app.admin.layout.controllers.AdminLayoutController" styleClass="root">
     <BorderPane minWidth="800">
@@ -26,18 +27,42 @@
                         <HBox.margin>
                             <Insets left="30"/>
                         </HBox.margin>
-                        <Button fx:id="btnDashboard" text="%menu.dashboard" onAction="#goDashboard"
-                                styleClass="menu-tab-btn"/>
-                        <Button fx:id="btnUser" text="%menu.user" onAction="#goUser" styleClass="menu-tab-btn"/>
-                        <Button fx:id="btnImportPatch" text="%menu.dev.importPatch" onAction="#goImportPatch" styleClass="menu-tab-btn"/>
-                        <Button fx:id="btnCreatePatch" text="%menu.dev.createPatch" onAction="#goCreatePatch" styleClass="menu-tab-btn"/>
+                        <Button fx:id="btnDashboard" text="%menu.dashboard" onAction="#goDashboard" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconDashboard"/></graphic>
+                        </Button>
+                        <Button fx:id="btnUser" text="%menu.user" onAction="#goUser" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconUser"/></graphic>
+                        </Button>
+                        <Button fx:id="btnDevice" text="%menu.device" onAction="#goDevice" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconDevice"/></graphic>
+                        </Button>
+                        <Button fx:id="btnDecrypt" text="%menu.decrypt" onAction="#goDecrypt" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconDecrypt"/></graphic>
+                        </Button>
+                        <Button fx:id="btnImportPatch" text="%menu.dev.importPatch" onAction="#goImportPatch" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconImportPatch"/></graphic>
+                        </Button>
+                        <Button fx:id="btnCreatePatch" text="%menu.dev.createPatch" onAction="#goCreatePatch" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconCreatePatch"/></graphic>
+                        </Button>
                     </HBox>
                     <Region HBox.hgrow="ALWAYS"/>
                     <HBox spacing="12" alignment="CENTER_RIGHT" styleClass="top-right-actions">
-                        <Label fx:id="labelGreeting" styleClass="greeting-label"/>
-                        <Button fx:id="btnSettings" text="⚙" onAction="#openSettingsPopup" styleClass="icon-btn"/>
-                        <Button fx:id="btnLogout" text="%top.logout" onAction="#logout" styleClass="btn-logout"/>
-                        <Button fx:id="btnLogin" text="%top.login" onAction="#showLoginPopup" styleClass="btn-login"/>
+                        <HBox fx:id="userProfileBox" spacing="10" alignment="CENTER" styleClass="user-profile-box">
+                            <VBox alignment="CENTER_LEFT" spacing="0">
+                                <Label fx:id="labelGreeting" styleClass="greeting-prefix"/>
+                                <Label fx:id="labelUsername" styleClass="greeting-username"/>
+                            </VBox>
+                        </HBox>
+                        <Button fx:id="btnSettings" text="%settings.title" onAction="#openSettingsPopup" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconSettings"/></graphic>
+                        </Button>
+                        <Button fx:id="btnLogout" text="%top.logout" onAction="#logout" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconLogout"/></graphic>
+                        </Button>
+                        <Button fx:id="btnLogin" text="%top.login" onAction="#showLoginPopup" styleClass="square-nav-btn">
+                            <graphic><ImageView fx:id="iconLogin"/></graphic>
+                        </Button>
                     </HBox>
                 </HBox>
             </VBox>

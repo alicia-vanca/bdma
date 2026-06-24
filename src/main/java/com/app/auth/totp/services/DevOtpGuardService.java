@@ -62,7 +62,7 @@ public class DevOtpGuardService {
     }
 
     public boolean promptCreatePatchUnlock() {
-        boolean verified = promptProtectedAction(() -> session.unlockCreatePatch());
+        boolean verified = promptProtectedAction(session::unlockCreatePatch);
         if (verified || !session.isDevOtpFresh()) {
             scheduleTimeoutPrompt();
         }

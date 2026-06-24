@@ -1,19 +1,23 @@
 package com.app.admin.layout.controllers;
 
 import java.io.File;
+import java.net.URL;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
-import java.util.Objects;
-
 import com.app.auth.login.controllers.LoginController;
+import com.app.common.definitions.enums.DeviceEventType;
+import com.app.common.definitions.enums.DeviceStatus;
 import com.app.common.definitions.enums.NavigationTarget;
+import com.app.common.modules.externalmediadecrypt.controllers.ExternalMediaDecryptController;
 import com.app.common.modules.preloginsettingspopup.helpers.PreLoginSettingsPopupHelper;
 import com.app.guest.controllers.GuestDashboardController;
 import com.app.guest.services.NavigationIntentService;
@@ -21,19 +25,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-
 import com.app.MainApp;
 import com.app.admin.layout.services.StorageUnavailableEventHandler;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
-import com.app.admin.settingsdialog.services.RestoreService;
+import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.auth.totp.services.DevOtpGuardService;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
-import com.app.common.dtos.DeviceSummary;
-import com.app.common.dtos.DeviceValidationResult;
+import com.app.common.modules.device.dtos.DeviceSummary;
+import com.app.common.modules.device.dtos.DeviceValidationResult;
 import com.app.common.dtos.SyncContext;
-import com.app.common.events.DeviceEvent;
+import com.app.common.modules.device.events.DeviceEvent;
 import com.app.common.events.FailureSummaryRequestedEvent;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
@@ -41,10 +44,10 @@ import com.app.common.helpers.ViewLoader;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
+import com.app.admin.devicemanagement.services.DeviceManagementService;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
-import com.app.common.modules.datasync.services.DataSyncService;
 import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
@@ -52,15 +55,14 @@ import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.media.services.MediaViewerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppNoticeService;
-import com.app.common.services.DeviceMiniStatus;
-import com.app.common.services.DeviceTracker;
-import com.app.common.services.DeviceValidationService;
-import com.app.common.services.DeviceListState;
+import com.app.common.modules.device.services.DeviceTracker;
+import com.app.common.modules.device.services.DeviceValidationService;
+import com.app.common.modules.device.services.DeviceListState;
+import com.app.common.utils.DateTimeUtil;
 import com.app.common.utils.FileUtil;
 import com.app.dev.settingsdialog.controllers.DevSettingsDialogController;
 import com.app.user.settingsdialog.controllers.UserSettingsDialogController;
 import com.app.user.userdetail.controllers.UserInfoController;
-
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.geometry.Rectangle2D;
@@ -107,27 +109,34 @@ public class AdminLayoutController extends BaseLayoutController {
     private final AppNoticeService appNoticeService;
     private final DeviceSyncQueue deviceSyncQueue;
     private final DeviceTracker deviceTracker;
-    private final DeviceMiniStatus deviceMiniStatus;
     private final FolderManagerService folderManagerService;
     private final RestoreService restoreService;
-    private final DataSyncService dataSyncService;
     private final AdminSettingsDialogService adminSettingsService;
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
     private final MediaViewerService mediaViewerService;
     private final DevOtpGuardService devOtpGuardService;
     private final NavigationIntentService navigationIntentService;
     private final DeviceListState deviceListState;
+    private final DeviceManagementService deviceManagementService;
 
     @FXML
     private StackPane contentArea;
     @FXML
     private Label labelGreeting;
     @FXML
+    private Label labelUsername;
+    @FXML
+    private HBox userProfileBox;
+    @FXML
     private Button btnSettings;
     @FXML
     private Button btnDashboard;
     @FXML
     private Button btnUser;
+    @FXML
+    private Button btnDevice;
+    @FXML
+    private Button btnDecrypt;
     @FXML
     private Button btnImportPatch;
     @FXML
@@ -159,6 +168,24 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private ImageView nteIcon;
     @FXML
+    private ImageView iconDashboard;
+    @FXML
+    private ImageView iconUser;
+    @FXML
+    private ImageView iconDevice;
+    @FXML
+    private ImageView iconDecrypt;
+    @FXML
+    private ImageView iconImportPatch;
+    @FXML
+    private ImageView iconCreatePatch;
+    @FXML
+    private ImageView iconSettings;
+    @FXML
+    private ImageView iconLogout;
+    @FXML
+    private ImageView iconLogin;
+    @FXML
     private Button btnLogout;
     @FXML
     private Button btnLogin;
@@ -170,6 +197,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final Set<String> pendingStorageSyncs = new HashSet<>();
     private final Queue<FailureSummaryRequestedEvent> pendingFailureSummaries = new ArrayDeque<>();
     private boolean failureSummaryVisible;
+    private boolean shouldShowPendingValidateDevice = true;
 
     public AdminLayoutController(ViewLoader viewLoader,
             AppUpdateController appUpdateController,
@@ -178,16 +206,15 @@ public class AdminLayoutController extends BaseLayoutController {
             AppNoticeService appNoticeService,
             DeviceSyncQueue deviceSyncQueue,
             DeviceTracker deviceTracker,
-            DeviceMiniStatus deviceMiniStatus,
             FolderManagerService folderManagerService,
             RestoreService restoreService,
-            DataSyncService dataSyncService,
             AdminSettingsDialogService adminSettingsService,
             StorageUnavailableEventHandler storageUnavailableEventHandler,
             MediaViewerService mediaViewerService,
             DevOtpGuardService devOtpGuardService,
             NavigationIntentService navigationIntentService,
-            DeviceListState deviceListState) {
+            DeviceListState deviceListState,
+            DeviceManagementService deviceManagementService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.session = session;
@@ -195,16 +222,15 @@ public class AdminLayoutController extends BaseLayoutController {
         this.appNoticeService = appNoticeService;
         this.deviceSyncQueue = deviceSyncQueue;
         this.deviceTracker = deviceTracker;
-        this.deviceMiniStatus = deviceMiniStatus;
         this.folderManagerService = folderManagerService;
         this.restoreService = restoreService;
-        this.dataSyncService = dataSyncService;
         this.adminSettingsService = adminSettingsService;
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
         this.mediaViewerService = mediaViewerService;
         this.devOtpGuardService = devOtpGuardService;
         this.navigationIntentService = navigationIntentService;
         this.deviceListState = deviceListState;
+        this.deviceManagementService = deviceManagementService;
     }
 
     @Override
@@ -217,7 +243,14 @@ public class AdminLayoutController extends BaseLayoutController {
         if (session.isDev()) {
             return List.of(btnImportPatch, btnCreatePatch);
         }
-        return List.of(btnDashboard, btnUser);
+        if (session.isAdmin()) {
+            return List.of(btnDashboard, btnUser, btnDevice, btnDecrypt);
+        }
+        if (session.isGuest()) {
+            return List.of(btnDashboard, btnDecrypt);
+        }
+        return List.of(btnDashboard, btnUser, btnDecrypt);
+
     }
 
     @FXML
@@ -226,7 +259,6 @@ public class AdminLayoutController extends BaseLayoutController {
 
         if (session.isGuest()) {
             currentDashboardController = null;
-            appUpdateController.setOnStatusChange(null);
             appUpdateController.checkOnStartup();
         } else {
             guestDashboardController = null;
@@ -235,7 +267,6 @@ public class AdminLayoutController extends BaseLayoutController {
         // Keep header buttons responsive while update checks are running.
         appUpdateController.setOnCheckStart(() -> btnSettings.setDisable(true));
         appUpdateController.setOnCheckEnd(() -> btnSettings.setDisable(false));
-        appUpdateController.setOnStatusChange(msg -> log.info("Update status: {}", msg));
 
         settingsPopupHelper = new PreLoginSettingsPopupHelper(
                 "guest",
@@ -247,15 +278,19 @@ public class AdminLayoutController extends BaseLayoutController {
                 null);
         settingsPopupHelper.initialize();
 
-        labelGreeting.setText(!session.isGuest() ?
-                I18n.get("top.hello", session.getUser().getUsername()) : I18n.get("top.hello.guest"));
+        if (session.isGuest()) {
+            userProfileBox.setVisible(false);
+            userProfileBox.setManaged(false);
+        } else {
+            labelGreeting.setText(I18n.get("top.hello.guest"));
+            labelUsername.setText(session.getUser().getUsername());
+        }
 
         appNoticeService.bindNoticeContainer(noticeContainer);
 
-        deviceMiniStatus.setOnProgressChanged(this::refreshDashboardIfActive);
-
         devOtpGuardService.start(this::logout);
         setIconNte();
+        setNavIcons();
         openDefaultTab();
         if (!session.isDev()) {
             refreshStorageStatus();
@@ -276,7 +311,7 @@ public class AdminLayoutController extends BaseLayoutController {
     public void setIconNte() {
         Image image = new Image(
                 Objects.requireNonNull(getClass()
-                                .getResource("/image/NTE_Logo.png"))
+                        .getResource("/image/NTE_Logo.png"))
                         .toExternalForm());
         nteIcon.setImage(image);
         nteIcon.setFitWidth(150);
@@ -284,10 +319,36 @@ public class AdminLayoutController extends BaseLayoutController {
         nteIcon.setPreserveRatio(true);
     }
 
+    private void setNavIcons() {
+        setIcon(iconDashboard, "/image/control.png");
+        setIcon(iconUser, "/image/user.png");
+        setIcon(iconDevice, "/image/device.png");
+        setIcon(iconDecrypt, "/image/decrypt.png");
+        setIcon(iconImportPatch, "/image/import-patch.png");
+        setIcon(iconCreatePatch, "/image/export-patch.png");
+        setIcon(iconSettings, "/image/setting.png");
+        setIcon(iconLogout, "/image/logout.png");
+        setIcon(iconLogin, "/image/login.png");
+    }
+
+    private void setIcon(ImageView view, String resourcePath) {
+        URL url = getClass().getResource(resourcePath);
+        if (url == null) {
+            log.warn("Icon resource not found: {}", resourcePath);
+            return;
+        }
+        view.setImage(new Image(url.toExternalForm()));
+        view.setFitWidth(40);
+        view.setFitHeight(40);
+        view.setPreserveRatio(true);
+    }
+
     private void configureRoleVisibility() {
         boolean isDev = session.isDev();
         setVisibleManaged(btnDashboard, !isDev);
-        setVisibleManaged(btnUser, !isDev);
+        setVisibleManaged(btnDecrypt, !isDev);
+        setVisibleManaged(btnUser, !isDev && !session.isGuest());
+        setVisibleManaged(btnDevice, !isDev && session.isAdmin());
         setVisibleManaged(btnImportPatch, isDev);
         setVisibleManaged(btnCreatePatch, isDev);
         setVisibleManaged(btnSettings, true);
@@ -306,7 +367,7 @@ public class AdminLayoutController extends BaseLayoutController {
     public void goDashboard() {
         if (session.isGuest()) {
             navigationIntentService.setPendingTarget(NavigationTarget.DASHBOARD);
-            showLoginPopup();
+            showGuestDashboard();
             return;
         }
         if (session.isDev()) {
@@ -318,15 +379,9 @@ public class AdminLayoutController extends BaseLayoutController {
             currentDashboardController = result.controller();
             currentDashboardController.setOnRequestValidate(this::handleRequestValidate);
             currentDashboardController.setOnRequestSync(this::handleRequestSync);
-            dataSyncService.setOnUserAutoCreated(username -> Platform.runLater(() -> {
-                if (currentDashboardController != null) {
-                    currentDashboardController.onUserAutoCreated();
-                }
-            }));
             setContent(result.node());
         }
         setActiveButton(getMenuButtons(), btnDashboard);
-        Platform.runLater(this::showPendingUnvalidatedDevices);
     }
 
     private void handleRequestValidate(DeviceSummary summary) {
@@ -353,19 +408,11 @@ public class AdminLayoutController extends BaseLayoutController {
         if (!summary.isConnected()) {
             return;
         }
-        if (session.isGuest()) {
-            return;
-        }
         showSyncConfirmation(summary.getHardwareId(), summary.getDeviceName(), summary.getCameraId());
     }
 
     @FXML
     private void goUser() {
-        if (session.isGuest()) {
-            navigationIntentService.setPendingTarget(NavigationTarget.USER);
-            showLoginPopup();
-            return;
-        }
         if (session.isDev()) {
             goImportPatch();
             return;
@@ -380,6 +427,40 @@ public class AdminLayoutController extends BaseLayoutController {
         } else {
             openMyProfile();
         }
+    }
+
+    @FXML
+    private void goDevice() {
+        if (session.isGuest()) {
+            showLoginPopup();
+            return;
+        }
+        if (!session.isAdmin()) {
+            goDashboard();
+            return;
+        }
+        if (currentDashboardController != null) {
+            currentDashboardController.resetFileSelectionState();
+        }
+        setActiveButton(getMenuButtons(), btnDevice);
+        setContent(loadView(ViewPaths.DEVICE_LIST));
+    }
+
+    @FXML
+    private void goDecrypt() {
+        if (session.isGuest()) {
+            navigationIntentService.setPendingTarget(NavigationTarget.EXTERNAL_MEDIA_DECRYPT);
+        }
+        if (currentDashboardController != null) {
+            currentDashboardController.resetFileSelectionState();
+        }
+        setActiveButton(getMenuButtons(), btnDecrypt);
+        var result = loadViewWithController(ViewPaths.EXTERNAL_MEDIA_DECRYPT, ExternalMediaDecryptController.class);
+        if (result == null) {
+            log.error("Failed to load encrypt-video view");
+            return;
+        }
+        setContent(result.node());
     }
 
     @FXML
@@ -414,8 +495,7 @@ public class AdminLayoutController extends BaseLayoutController {
     public void showLoginPopup() {
         DialogHelper.Dialog<LoginController> dialog = DialogHelper.createDialog(
                 ViewPaths.LOGIN,
-                "BDMA"
-        );
+                "BDMA");
         Stage stage = dialog.stage();
         stage.setResizable(false);
         stage.setWidth(480);
@@ -429,13 +509,12 @@ public class AdminLayoutController extends BaseLayoutController {
         devOtpGuardService.stop();
         mediaViewerService.close();
         if (currentDashboardController != null) {
-            currentDashboardController.closeQueueDialog();
+            currentDashboardController.cleanup();
             currentDashboardController.setOnRequestValidate(null);
-            currentDashboardController.setOnRequestValidate(null);
+            currentDashboardController.setOnRequestSync(null);
         }
-
         failureSummaryVisible = false;
-
+        shouldShowPendingValidateDevice = true;
         session.clear();
         MainApp.showAdmin();
     }
@@ -444,8 +523,10 @@ public class AdminLayoutController extends BaseLayoutController {
         var result = loadViewWithController(ViewPaths.GUEST_DASHBOARD, GuestDashboardController.class);
         if (result != null) {
             guestDashboardController = result.controller();
+            guestDashboardController.setOnRequestSync(this::handleRequestSync);
             setContent(result.node());
         }
+        setActiveButton(getMenuButtons(), btnDashboard);
     }
 
     @FXML
@@ -469,7 +550,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private void openAdminSettingsDialog() {
         DialogHelper.Dialog<AdminSettingsDialogController> dialog = DialogHelper.createDialog(
                 ViewPaths.ADMIN_SETTINGS_DIALOG,
-                "⚙ " + I18n.get(I18N_SETTINGS_TITLE));
+                I18n.get(I18N_SETTINGS_TITLE));
         dialog.controller().setOnLanguageChangedAction(this::reloadUI);
         configureSettingsDialogStage(dialog.stage());
     }
@@ -477,7 +558,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private void openUserSettingsDialog() {
         DialogHelper.Dialog<UserSettingsDialogController> dialog = DialogHelper.createDialog(
                 ViewPaths.USER_SETTINGS_DIALOG,
-                "⚙ " + I18n.get(I18N_SETTINGS_TITLE));
+                I18n.get(I18N_SETTINGS_TITLE));
         dialog.controller().setOnLanguageChangedAction(this::reloadUI);
         configureSettingsDialogStage(dialog.stage());
     }
@@ -485,7 +566,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private void openDevSettingsDialog() {
         DialogHelper.Dialog<DevSettingsDialogController> dialog = DialogHelper.createDialog(
                 ViewPaths.DEV_SETTINGS_DIALOG,
-                "⚙ " + I18n.get(I18N_SETTINGS_TITLE));
+                I18n.get(I18N_SETTINGS_TITLE));
         dialog.controller().setOnLanguageChangedAction(this::reloadUI);
         configureSettingsDialogStage(dialog.stage());
     }
@@ -529,23 +610,16 @@ public class AdminLayoutController extends BaseLayoutController {
      */
     @EventListener
     public void onFailureSummaryRequested(FailureSummaryRequestedEvent event) {
-        if (event == null || event.getRows().isEmpty() || session.getUser() == null) {
+        if (event == null || event.getRows().isEmpty()) {
             return;
         }
         Platform.runLater(() -> {
-            if (session.getUser() == null) {
-                return;
-            }
             pendingFailureSummaries.add(event);
             showNextFailureSummaryIfIdle();
         });
     }
 
     private void showNextFailureSummaryIfIdle() {
-        if (session.getUser() == null) {
-            pendingFailureSummaries.clear();
-            return;
-        }
         if (failureSummaryVisible) {
             return;
         }
@@ -576,9 +650,9 @@ public class AdminLayoutController extends BaseLayoutController {
     // Handle device connection/disconnection events from DeviceTracker
     @EventListener
     public void onDeviceEvent(DeviceEvent event) {
-        if (event.type() == DeviceEvent.EventType.CONNECTED) {
+        if (event.type() == DeviceEventType.CONNECTED) {
             Platform.runLater(() -> handleValidatedResult(event.validationResult()));
-        } else if (event.type() == DeviceEvent.EventType.DISCONNECTED) {
+        } else if (event.type() == DeviceEventType.DISCONNECTED) {
             removeDeviceSyncQueue(event);
             removePendingStorageSync(event);
             Platform.runLater(() -> closeDialogForHardwareId(event.hardwareId()));
@@ -616,6 +690,11 @@ public class AdminLayoutController extends BaseLayoutController {
                     result.getHardwareId(),
                     result.getMatchedWhitelistId());
 
+            if (!deviceManagementService.isActive(cameraId)) {
+                handleDeactivatedDeviceConnection(result);
+                return;
+            }
+
             showNoticeSuccess(I18n.get("device.connected.saved", result.getDeviceName()));
             if (!restoreService.isRunning()) {
                 registerDeviceForSync(cameraId);
@@ -629,19 +708,73 @@ public class AdminLayoutController extends BaseLayoutController {
         }
     }
 
+    private void handleDeactivatedDeviceConnection(DeviceValidationResult result) {
+        deviceListState.setDeviceActive(result.getCameraId(), false);
+        if (!session.isAdmin()) {
+            return;
+        }
+
+        Optional<ValidatedDevice> savedDevice = deviceValidationService.findValidatedDevice(result.getCameraId());
+        if (savedDevice.isEmpty()) {
+            return;
+        }
+
+        ValidatedDevice device = savedDevice.get();
+        var latestDeactivation = deviceManagementService.findLatestDeactivation(device.getId());
+        String deactivatedAt = latestDeactivation
+                .map(history -> DateTimeUtil.formatSqliteDateTimeForDisplay(
+                        history.getChangedAt(),
+                        I18n.get("common.unknown")))
+                .orElse(I18n.get("common.unknown"));
+        String changedBy = latestDeactivation
+                .flatMap(deviceManagementService::findOtherDeactivationAdmin)
+                .map(username -> " " + I18n.get("device.deactivated.by", username))
+                .orElse("");
+
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("device.deactivated.connected.title"),
+                I18n.get("device.deactivated.connected.header", device.getDeviceName()),
+                I18n.get("device.deactivated.connected.content", result.getCameraId(),
+                        deactivatedAt) + changedBy);
+        ButtonType reactivateButton = new ButtonType(I18n.get("device.action.reactivate"),
+                ButtonBar.ButtonData.OK_DONE);
+        ButtonType keepButton = new ButtonType(I18n.get("device.action.keepDeactivated"),
+                ButtonBar.ButtonData.CANCEL_CLOSE);
+        AlertHelper.setButtons(confirm, reactivateButton, keepButton);
+
+        registerAlert(result.getHardwareId(), confirm);
+        Optional<ButtonType> chosen;
+        try {
+            chosen = confirm.showAndWait();
+        } finally {
+            unregisterAlert(result.getHardwareId(), confirm);
+        }
+        if (chosen.isEmpty() || chosen.get() != reactivateButton) {
+            return;
+        }
+
+        try {
+            deviceManagementService.reactivate(device.getId());
+            deviceListState.setDeviceActive(result.getCameraId(), true);
+            refreshDashboardIfActive();
+            registerDeviceForSync(result.getCameraId());
+        } catch (Exception ex) {
+            log.error("Failed to reactivate deactivated device {} after connection", result.getCameraId(), ex);
+            showNoticeError(I18n.get("device.toggle.error"));
+        }
+    }
+
     private void showContactAdminToSaveDeviceDialog(DeviceValidationResult result) {
         Alert info = AlertHelper.createInformation(
                 I18n.get("device.save.contact_admin.title"),
                 I18n.get("device.save.contact_admin.header"),
-                I18n.get("device.save.contact_admin.content",
-                        result.getCameraId(),
-                        result.getMatchedModelName()));
+                I18n.get("device.save.contact_admin.content", result.getCameraId()));
         ButtonType closeButton = new ButtonType(I18n.get("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
         AlertHelper.setButtons(info, closeButton);
         info.showAndWait();
     }
 
-    private void showSaveDeviceConfirmation(DeviceValidationResult result) {
+    public void showSaveDeviceConfirmation(DeviceValidationResult result) {
         if (result == null || !result.isValid()) {
             showNoticeError(I18n.get("device.validation.failed"));
             return;
@@ -651,10 +784,7 @@ public class AdminLayoutController extends BaseLayoutController {
         Alert confirm = AlertHelper.createConfirmation(
                 I18n.get("device.save.title"),
                 I18n.get("device.save.header"),
-                I18n.get(
-                        "device.save.content",
-                        cameraId,
-                        result.getMatchedModelName()));
+                I18n.get("device.save.content", cameraId));
 
         ButtonType yesButton = new ButtonType(I18n.get(I18N_COMMON_YES), ButtonBar.ButtonData.YES);
         ButtonType noButton = new ButtonType(I18n.get(I18N_COMMON_NO), ButtonBar.ButtonData.NO);
@@ -675,9 +805,7 @@ public class AdminLayoutController extends BaseLayoutController {
                 cameraId,
                 result.getHardwareId(),
                 result.getMatchedWhitelistId());
-        if (currentDashboardController != null) {
-            currentDashboardController.markDeviceSaved(result, saved.getDeviceName());
-        }
+        deviceListState.markDeviceSaved(result, saved.getDeviceName());
         showNoticeSuccess(I18n.get("device.saved.success", saved.getDeviceName()));
         registerDeviceForSync(cameraId);
         refreshDashboardIfActive();
@@ -712,7 +840,6 @@ public class AdminLayoutController extends BaseLayoutController {
             // Move from pending storage retry list to the active sync queue when present.
             pendingStorageSyncs.remove(cameraId);
             registerDeviceForSync(cameraId);
-            refreshDashboardIfActive();
         } finally {
             unregisterAlert(hardwareId, confirm);
         }
@@ -751,6 +878,11 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         ValidatedDevice device = savedDevice.get();
+        if (!device.isActive()) {
+            log.warn("Cannot queue sync because camera {} is deactivated", cameraId);
+            showNoticeError(I18n.get(I18N_DEVICE_SYNC_QUEUE_FAILED));
+            return;
+        }
         String hardwareId = device.getHardwareId();
         String deviceName = device.getDeviceName();
         if (!isDeviceConnectedForSync(hardwareId, cameraId)) {
@@ -793,22 +925,13 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private void openDefaultTab() {
-        if (session.isGuest()) {
-            showGuestDashboard();
-            return;
-        }
-        if (session.isDev()) {
-            goImportPatch();
-            return;
-        }
         NavigationTarget target = navigationIntentService.consumePendingTarget();
-        Platform.runLater(() -> {
-            if (target == NavigationTarget.USER) {
-                goUser();
-            } else {
-                goDashboard();
-            }
-        });
+        if (target == NavigationTarget.EXTERNAL_MEDIA_DECRYPT && !session.isDev()) {
+            goDecrypt();
+        } else {
+            goDashboard();
+        }
+        Platform.runLater(this::showPendingUnvalidatedDevices);
     }
 
     @Override
@@ -817,6 +940,8 @@ public class AdminLayoutController extends BaseLayoutController {
         // restore the correct active-button highlight after a language change reload.
         return switch (fxml) {
             case ViewPaths.USER_LIST, ViewPaths.USER_INFO -> btnUser;
+            case ViewPaths.DEVICE_LIST -> btnDevice;
+            case ViewPaths.EXTERNAL_MEDIA_DECRYPT -> btnDecrypt;
             case ViewPaths.IMPORT_PATCH_PAGE -> btnImportPatch;
             case ViewPaths.CREATE_PATCH_PAGE -> btnCreatePatch;
             default -> null;
@@ -833,22 +958,12 @@ public class AdminLayoutController extends BaseLayoutController {
 
     @EventListener
     public void onFileSyncCompleted(FileSyncCompletedEvent event) {
-        Platform.runLater(() -> {
-            if (currentDashboardController != null) {
-                currentDashboardController.onFileSyncCompleted(event.getSyncedPath());
-            }
-            refreshStorageStatus();
-        });
+        refreshStorageStatus();
     }
 
     @EventListener(FileBackupCompletedEvent.class)
     public void onFileBackupCompleted() {
-        Platform.runLater(() -> {
-            if (currentDashboardController != null) {
-                currentDashboardController.onFileBackupCompleted();
-            }
-            refreshStorageStatus();
-        });
+        refreshStorageStatus();
     }
 
     public void refreshStorageStatus() {
@@ -856,19 +971,19 @@ public class AdminLayoutController extends BaseLayoutController {
             return;
         }
         Platform.runLater(() -> {
-            File dataDir = folderManagerService.getSyncDir();
+            File syncDir = folderManagerService.getSyncDir();
             File backupDir = folderManagerService.getBackupDir();
 
-            boolean sameParent = isSameParentFolder(dataDir, backupDir);
+            boolean sameParent = isSameParentFolder(syncDir, backupDir);
 
             String warningText = sameParent ? I18n.get("setting.storage.warn.same_drive") : "";
 
-            int dataState = updateStorageBar(STATUS_SYNC_DRIVE, pbDataStorage,
-                    lblDataStorageTitle, lblDataStoragePercent, lblDataStorageUsage, dataDir);
+            int syncState = updateStorageBar(STATUS_SYNC_DRIVE, pbDataStorage,
+                    lblDataStorageTitle, lblDataStoragePercent, lblDataStorageUsage, syncDir);
             int backupState = updateStorageBar(STATUS_BACKUP_DRIVE, pbBackupStorage,
                     lblBackupStorageTitle, lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
 
-            String storageWarning = resolveStorageWarningKey(dataState, backupState);
+            String storageWarning = resolveStorageWarningKey(syncState, backupState);
             if (storageWarning != null) {
                 String msg = I18n.get(storageWarning);
                 warningText = warningText.isEmpty() ? msg : warningText + " | " + msg;
@@ -885,36 +1000,36 @@ public class AdminLayoutController extends BaseLayoutController {
         });
     }
 
-    private boolean isSameParentFolder(File dataDir, File backupDir) {
-        if (dataDir == null || backupDir == null) {
+    private boolean isSameParentFolder(File syncDir, File backupDir) {
+        if (syncDir == null || backupDir == null) {
             return false;
         }
-        Path dataRoot = Path.of(dataDir.getAbsolutePath()).getRoot();
+        Path syncRoot = Path.of(syncDir.getAbsolutePath()).getRoot();
         Path backupRoot = Path.of(backupDir.getAbsolutePath()).getRoot();
-        if (dataRoot == null || backupRoot == null) {
+        if (syncRoot == null || backupRoot == null) {
             return false;
         }
-        return dataRoot.toString().equalsIgnoreCase(backupRoot.toString());
+        return syncRoot.toString().equalsIgnoreCase(backupRoot.toString());
     }
 
-    private String resolveStorageWarningKey(int dataState, int backupState) {
-        if (dataState == STORAGE_OK && backupState == STORAGE_OK) {
+    private String resolveStorageWarningKey(int syncState, int backupState) {
+        if (syncState == STORAGE_OK && backupState == STORAGE_OK) {
             return null;
         }
-        if (dataState == STORAGE_UNAVAILABLE && backupState == STORAGE_UNAVAILABLE) {
+        if (syncState == STORAGE_UNAVAILABLE && backupState == STORAGE_UNAVAILABLE) {
             return "status.storage.both.unavailable";
         }
-        if (dataState == STORAGE_UNAVAILABLE) {
+        if (syncState == STORAGE_UNAVAILABLE) {
             return "status.storage.syncDrive.unavailable";
         }
         if (backupState == STORAGE_UNAVAILABLE) {
             return "status.storage.backupDrive.unavailable";
         }
 
-        if (dataState == STORAGE_CRITICAL && backupState == STORAGE_CRITICAL) {
+        if (syncState == STORAGE_CRITICAL && backupState == STORAGE_CRITICAL) {
             return "status.storage.both.critical";
         }
-        if (dataState == STORAGE_CRITICAL) {
+        if (syncState == STORAGE_CRITICAL) {
             return "status.storage.syncDrive.critical";
         }
         return "status.storage.backupDrive.critical";
@@ -1059,7 +1174,6 @@ public class AdminLayoutController extends BaseLayoutController {
         }
         Platform.runLater(() -> {
             if (currentDashboardController != null) {
-                currentDashboardController.onFileBackupCompleted();
                 currentDashboardController.mergeSavedDevices();
                 currentDashboardController.refresh();
             }
@@ -1068,10 +1182,17 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
     private void showPendingUnvalidatedDevices() {
-        deviceListState.getDeviceItems().stream()
-                .filter(summary -> summary.getStatus() == DeviceSummary.Status.UNVALIDATED)
+        if (!shouldShowPendingValidateDevice || session.isGuest()) {
+            return;
+        }
+
+        new ArrayList<>(deviceListState.getDeviceFxItems()).stream()
+                .filter(summary -> summary.getStatus() == DeviceStatus.UNVALIDATED)
                 .map(DeviceSummary::getValidationResult)
                 .filter(Objects::nonNull)
-                .forEach(session.isAdmin() ? this::showSaveDeviceConfirmation : this::showContactAdminToSaveDeviceDialog);
+                .forEach(session.isAdmin() ? this::showSaveDeviceConfirmation
+                        : this::showContactAdminToSaveDeviceDialog);
+        shouldShowPendingValidateDevice = false;
     }
+
 }

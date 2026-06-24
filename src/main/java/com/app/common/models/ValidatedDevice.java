@@ -14,5 +14,7 @@ public class ValidatedDevice {
     private Long whitelistId;
     private String validatedAt;
     private String lastSeenAt;
+    private String lastSyncAt;
     private String cameraId;
+    private boolean active = true;
 }

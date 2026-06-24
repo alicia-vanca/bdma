@@ -29,7 +29,9 @@ import com.app.common.configs.AppContext;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.exceptions.AppException;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.LoggingEvent;
 import ch.qos.logback.core.UnsynchronizedAppenderBase;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -183,23 +185,44 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
 
     @Override
     public void stop() {
-        if (retryExecutor != null) {
-            stopping = true;
-            // Do not accept new drain requests and stop the scheduled sender.
-            retryExecutor.shutdown();
-            if (springReady.get()) {
-                // Runtime shutdown may flush remaining queued events; pre-ready reloads only
-                // enqueue.
-                drainUntilEmptyOrFailed();
+        boolean wasInterrupted = Thread.interrupted();
+        try {
+            if (retryExecutor != null) {
+                stopping = true;
+                // Do not accept new drain requests and stop the scheduled sender.
+                retryExecutor.shutdown();
+                if (springReady.get()) {
+                    sendFinalShutdownMarker(drainUntilEmptyOrFailed());
+                }
+            }
+            if (layout != null) {
+                layout.stop();
+            }
+            if (signingKey != null) {
+                Arrays.fill(signingKey, (byte) 0);
+            }
+            super.stop();
+        } finally {
+            if (wasInterrupted) {
+                Thread.currentThread().interrupt();
             }
         }
-        if (layout != null) {
-            layout.stop();
+    }
+
+    private void sendFinalShutdownMarker(DrainResult finalDrainResult) {
+        LoggingEvent markerEvent = new LoggingEvent();
+        markerEvent.setTimeStamp(System.currentTimeMillis());
+        markerEvent.setLevel(finalDrainResult == DrainResult.EMPTY ? Level.INFO : Level.WARN);
+        markerEvent.setThreadName(Thread.currentThread().getName());
+        markerEvent.setLoggerName(LogglyQueuedAppender.class.getName());
+        markerEvent.setMessage(finalDrainResult == DrainResult.EMPTY
+                ? "Loggly final drain completed; appender is closing"
+                : "Loggly final drain failed; appender is closing");
+
+        String markerJson = layout.doLayout(markerEvent);
+        if (!sendToLoggly(markerJson)) {
+            addWarn("Final Loggly shutdown marker was not delivered");
         }
-        if (signingKey != null) {
-            Arrays.fill(signingKey, (byte) 0);
-        }
-        super.stop();
     }
 
     @Override
@@ -355,9 +378,9 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
         }
     }
 
-    private void drainUntilEmptyOrFailed() {
+    private DrainResult drainUntilEmptyOrFailed() {
         if (!springReady.get() || !isStarted()) {
-            return;
+            return DrainResult.FAILED;
         }
 
         while (true) {
@@ -374,7 +397,7 @@ public class LogglyQueuedAppender extends UnsynchronizedAppenderBase<ILoggingEve
                 }
 
                 if (result == DrainResult.EMPTY || result == DrainResult.FAILED) {
-                    return;
+                    return result;
                 }
             }
         }

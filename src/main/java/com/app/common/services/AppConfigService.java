@@ -1,7 +1,5 @@
 package com.app.common.services;
 
-import java.util.Map;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -31,7 +29,7 @@ public class AppConfigService {
      */
     public String getConfigValue(FolderType folderType) {
         String key = switch (folderType) {
-            case SYNC -> AppConstants.KEY_DATA_DIR;
+            case SYNC -> AppConstants.KEY_SYNC_DIR;
             case BACKUP -> AppConstants.KEY_BACKUP_DIR;
             default -> AppConstants.KEY_EXPORT_DIR;
         };
@@ -50,17 +48,10 @@ public class AppConfigService {
      */
     public void saveConfigValue(FolderType folderType, String value) {
         String key = switch (folderType) {
-            case SYNC -> AppConstants.KEY_DATA_DIR;
+            case SYNC -> AppConstants.KEY_SYNC_DIR;
             case BACKUP -> AppConstants.KEY_BACKUP_DIR;
             default -> AppConstants.KEY_EXPORT_DIR;
         };
         saveConfigValue(key, value);
-    }
-
-    /**
-     * Gets all config values as a map.
-     */
-    public Map<String, String> getAllConfig() {
-        return repository.findAll();
     }
 }

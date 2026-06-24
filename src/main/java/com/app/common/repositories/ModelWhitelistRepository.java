@@ -25,6 +25,8 @@ public class ModelWhitelistRepository {
         ModelWhitelist whitelist = new ModelWhitelist();
         whitelist.setId(rs.getLong("id"));
         whitelist.setModelName(rs.getString("model_name"));
+        long serviceRuleSetId = rs.getLong("service_rule_set_id");
+        whitelist.setServiceRuleSetId(rs.wasNull() ? null : serviceRuleSetId);
         whitelist.setActive(rs.getInt("is_active") == 1);
         whitelist.setCreatedAt(rs.getString("created_at"));
         whitelist.setRules(new ArrayList<>());
@@ -42,7 +44,7 @@ public class ModelWhitelistRepository {
 
     public List<ModelWhitelist> findAllActiveWithRules() {
         List<ModelWhitelist> whitelists = jdbcTemplate.query(
-                "SELECT id, model_name, is_active, created_at FROM model_whitelist WHERE is_active = 1 ORDER BY id",
+                "SELECT id, model_name, service_rule_set_id, is_active, created_at FROM model_whitelist WHERE is_active = 1 ORDER BY id",
                 this::mapWhitelistRow);
 
         if (whitelists.isEmpty()) {

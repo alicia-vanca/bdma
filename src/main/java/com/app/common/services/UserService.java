@@ -4,16 +4,19 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.LoginResult;
 import com.app.common.definitions.enums.Role;
+import com.app.common.events.UserAutoCreatedEvent;
 import com.app.common.exceptions.CannotDeleteSelfException;
 import com.app.common.exceptions.LastAdminException;
 import com.app.common.exceptions.UserAlreadyExistsException;
 import com.app.common.exceptions.ValidationException;
 import com.app.common.models.User;
+import com.app.common.modules.databaserecovery.services.DatabaseRecoveryService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.UserActivationHistoryRepository;
@@ -27,13 +30,20 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserActivationHistoryRepository activationHistoryRepository;
+    private final DatabaseRecoveryService databaseRecoveryService;
+    private final AppNoticeService appNoticeService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final Session session;
 
     public UserService(UserRepository userRepository, UserActivationHistoryRepository activationHistoryRepository,
-            Session session) {
+            DatabaseRecoveryService databaseRecoveryService, AppNoticeService appNoticeService,
+            ApplicationEventPublisher eventPublisher, Session session) {
         this.userRepository = userRepository;
         this.activationHistoryRepository = activationHistoryRepository;
+        this.databaseRecoveryService = databaseRecoveryService;
+        this.appNoticeService = appNoticeService;
+        this.eventPublisher = eventPublisher;
         this.session = session;
     }
 
@@ -176,6 +186,7 @@ public class UserService {
         user.setPassword(SecurityUtil.hash(user.getPassword()));
 
         User saved = userRepository.save(user);
+        databaseRecoveryService.backupSourceToBackup();
         log.info("User created: '{}'", username);
 
         return saved;
@@ -217,6 +228,7 @@ public class UserService {
         }
 
         userRepository.save(old);
+        databaseRecoveryService.backupSourceToBackup();
         log.info("User updated: '{}'", username);
     }
 
@@ -240,7 +252,53 @@ public class UserService {
         Long currentUserId = session.getCurrentUserId();
         userRepository.deactivate(userId);
         activationHistoryRepository.recordChange(userId, false, currentUserId);
+        databaseRecoveryService.backupSourceToBackup();
         log.info("User deactivated: id={} by user={}", userId, currentUserId);
+    }
+
+    /**
+     * Creates a default sync user with standard hash.
+     * Used by restore and sync services for auto-creating users from filenames.
+     * Shows notification and triggers callback if registered.
+     */
+    public User createDefaultSyncUser(String username) {
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(AppConstants.DEFAULT_SYNC_USER_HASH);
+        user.setRole(Role.USER);
+
+        User saved = userRepository.save(user);
+        log.info("Auto-created sync user '{}'", username);
+
+        // Notify UI layers only for newly-created users.
+        appNoticeService.showSuccess(I18n.get("user.auto.created", username));
+        eventPublisher.publishEvent(new UserAutoCreatedEvent(username));
+
+        return saved;
+    }
+
+    /**
+     * Gets existing user ID or creates a new sync user if not found.
+     * Returns null if user doesn't exist and session is not admin.
+     * Username is normalized before lookup.
+     */
+    public Long getOrCreateSyncUser(String username) {
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+
+        String normalized = normalizeUsername(username);
+        User existing = userRepository.findByUsername(normalized).orElse(null);
+        if (existing != null) {
+            return existing.getId();
+        }
+
+        if (!session.isAdmin()) {
+            return null;
+        }
+
+        User created = createDefaultSyncUser(normalized);
+        return created.getId();
     }
 
     /**
@@ -257,6 +315,7 @@ public class UserService {
         Long currentUserId = session.getCurrentUserId();
         userRepository.reactivate(userId);
         activationHistoryRepository.recordChange(userId, true, currentUserId);
+        databaseRecoveryService.backupSourceToBackup();
         log.info("User reactivated: id={} by user={}", userId, currentUserId);
     }
 

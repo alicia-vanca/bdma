@@ -12,6 +12,7 @@ public final class AppConstants {
 
     // ────────────── Application ──────────────
     public static final int SINGLE_INSTANCE_PORT = 54321;
+    public static final String VERSION_DEV = "dev";
 
     // ────────────── User Validation ──────────────
     public static final int USERNAME_MIN_LENGTH = 4;
@@ -32,7 +33,7 @@ public final class AppConstants {
     public static final String SYNC_FOLDER_NAME = "sync_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
     public static final String BACKUP_FOLDER_NAME = "backup_bdma.{21EC2020-3AEA-1069-A2DD-08002B30309D}";
     public static final String EXPORT_FOLDER_NAME = "export_bdma";
-    public static final String KEY_DATA_DIR = "dataSync.dataDir";
+    public static final String KEY_SYNC_DIR = "dataSync.syncDir";
     public static final String KEY_BACKUP_DIR = "dataBackup.backupDir";
     public static final String KEY_EXPORT_DIR = "dataExport.exportDir";
     // Per-user key stored in user_config; remembers the last directory chosen in
@@ -54,6 +55,8 @@ public final class AppConstants {
     public static final String KEY_LAST_CHECK_DATE = "appUpdate.lastCheckDate";
     public static final String KEY_SKIPPED_VERSION = "appUpdate.skippedVersion";
     public static final String KEY_LAST_RESTORE_PROGRESS = "last.restore.progress";
+    public static final String DECRYPT_OUTPUT_DIR = "decrypt.output.lastDir";
+    public static final String DECRYPT_INPUT_DIR = "decrypt.input.lastDir";
 
     public static final String STARTUP_REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     public static final String STARTUP_REG_VALUE = "BDMA";
@@ -94,11 +97,7 @@ public final class AppConstants {
     public static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
     public static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    // ────────────── Loggly ──────────────
-    public static final int BATCH_SIZE = 50;
-    public static final String SYNC_FILENAME = "loggly-sync.json";
-    public static final String FILES = "files";
-
     // ────────────── Default password ──────────────
+    @SuppressWarnings("secrets:S8215")
     public static final String DEFAULT_SYNC_USER_HASH = "$2a$10$xm8T0M6tezbn5RyrBL8FuOfmHtahqAtmUN.2XVRfllJ17211QBvgu";
 }

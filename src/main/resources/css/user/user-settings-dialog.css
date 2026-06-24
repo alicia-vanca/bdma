@@ -57,7 +57,7 @@
     -fx-border-width: 1;
     -fx-background-insets: 0.5;
 }
-settings-dialog-container .settings-action-btn:hover {
+.settings-dialog-container .settings-action-btn:hover {
     -fx-background-insets: 0.5;
 }
 

@@ -12,6 +12,7 @@ import java.util.List;
 public class ModelWhitelist {
     private Long id;
     private String modelName;
+    private Long serviceRuleSetId;
     private boolean active;
     private String createdAt;
     private List<ModelWhitelistRule> rules;

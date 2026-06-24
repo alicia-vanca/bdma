@@ -7,7 +7,6 @@ import org.springframework.stereotype.Component;
 import com.app.MainApp;
 import com.app.auth.totp.dtos.TotpDialogContext;
 import com.app.auth.totp.services.TotpService;
-import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.models.User;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
@@ -47,7 +46,6 @@ public class TotpController {
 
     private final TotpService totpService;
     private final Session session;
-    private final AppUpdateController appUpdateController;
     private TextField[] digitFields;
     private TotpDialogContext context;
     private boolean updatingFields;
@@ -56,16 +54,13 @@ public class TotpController {
     private boolean windowCloseHandlerRegistered;
 
     public TotpController(TotpService totpService,
-            Session session,
-            AppUpdateController appUpdateController) {
+            Session session) {
         this.totpService = totpService;
         this.session = session;
-        this.appUpdateController = appUpdateController;
     }
 
     @FXML
     public void initialize() {
-        appUpdateController.setOnStatusChange(null);
         cancellationHandled = false;
         verifying = false;
         windowCloseHandlerRegistered = false;
@@ -104,7 +99,7 @@ public class TotpController {
     }
 
     private void logOtpShown() {
-        if (context != null) {
+        if (context != null && log.isInfoEnabled()) {
             log.info("OTP shown: [ {} - {} ]", otpTitle(), otpHeader());
         }
     }
@@ -269,7 +264,9 @@ public class TotpController {
         }
 
         cancellationHandled = true;
-        log.info("OTP cancelled: [ {} - {} ]", otpTitle(), otpHeader());
+        if (log.isInfoEnabled()) {
+            log.info("OTP cancelled: [ {} - {} ]", otpTitle(), otpHeader());
+        }
         if (context != null && context.onCancel() != null) {
             context.onCancel().run();
         }

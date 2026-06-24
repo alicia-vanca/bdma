@@ -26,10 +26,15 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
+import com.app.common.modules.datarestore.services.RestoreService;
+import com.app.common.modules.datarestore.services.RestoreService.BackupSyncResult;
+import com.app.common.modules.datarestore.services.RestoreService.RestoreFailureReason;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.StorageIssueReason;
 import com.app.common.dtos.FileView;
+import com.app.common.exceptions.DiskFullException;
+import com.app.common.exceptions.DriveUnavailableException;
 import com.app.common.events.FailureSummaryRequestedEvent;
 import com.app.common.events.FailureSummaryRequestedEvent.FailureSummaryRow;
 import com.app.common.modules.dataexport.services.DataExportService;
@@ -76,6 +81,7 @@ public class DataExportWorker {
     private final FolderManagerService folderManagerService;
     private final QueueManagerService queueManagerService;
     private final AdminSettingsDialogService adminSettingsDialogService;
+    private final RestoreService restoreService;
     private final AppNoticeService appNoticeService;
     private final ApplicationEventPublisher eventPublisher;
     private final Session session;
@@ -113,21 +119,22 @@ public class DataExportWorker {
     // notice.
     private final AtomicInteger pendingFileCount = new AtomicInteger(0);
 
-    // Missing sources still show size 0 in the UI/free-space check, but sort after
-    // resolvable files so they fail only after valid exports have run.
+    // Sort by known database size only; source lookup and restore happen in the
+    // single-file processing path so queue submission stays cheap.
     private static final Comparator<ExportFileItem> EXPORT_FILE_SIZE_COMPARATOR = Comparator
-            .comparing(ExportFileItem::sourceMissing)
-            .thenComparingLong(ExportFileItem::sortSize);
+            .comparingLong(ExportFileItem::sortSize);
 
     DataExportWorker(FolderManagerService folderManagerService,
             QueueManagerService queueManagerService,
             AdminSettingsDialogService adminSettingsDialogService,
+            RestoreService restoreService,
             AppNoticeService appNoticeService,
             ApplicationEventPublisher eventPublisher,
             Session session) {
         this.folderManagerService = folderManagerService;
         this.queueManagerService = queueManagerService;
         this.adminSettingsDialogService = adminSettingsDialogService;
+        this.restoreService = restoreService;
         this.appNoticeService = appNoticeService;
         this.eventPublisher = eventPublisher;
         this.session = session;
@@ -159,8 +166,6 @@ public class DataExportWorker {
 
     /**
      * Stops the executor, drops all queued tasks, and clears queue state.
-     * Call {@link #resetExecutor()} afterward when the worker should remain
-     * usable.
      */
     public void cancelAndCleanup() {
         cancellationRequested = true;
@@ -187,14 +192,6 @@ public class DataExportWorker {
             }
         }
         activeTmpPaths.clear();
-    }
-
-    /**
-     * Replaces the executor so the worker can accept new tasks after a reset.
-     */
-    public void resetExecutor() {
-        cancellationRequested = false;
-        executorRef.set(newExecutor());
     }
 
     private boolean isCancellationRequested() {
@@ -259,6 +256,7 @@ public class DataExportWorker {
                         resolveFileName(item.fileView()),
                         item.fileSize(), item.sortSize());
             }
+            queueManagerService.allExportFilesAddedToTracker(acceptedItems.size());
             // Re-sort the pending list after appends so an already processing directory
             // continues with the smallest remaining files first.
             directoryQueue.files.sort(EXPORT_FILE_SIZE_COMPARATOR);
@@ -375,6 +373,7 @@ public class DataExportWorker {
                     logProcessedExportFile(resultQueue, result);
                     processedExportRequests.add(result.item().progressTrackerRowId());
                     activeExportPaths.remove(result.item().progressTrackerRowId());
+                    queueManagerService.finishExportForSingleFile();
                     pendingFileCount.decrementAndGet();
                     if (pendingFileCount.get() == 0) {
                         Platform.runLater(this::fireCompletionNotice);
@@ -484,7 +483,11 @@ public class DataExportWorker {
             return resolveSourcePath(item.fileView());
         } catch (IOException ex) {
             String reason = classifyExportError(ex);
-            log.error(LOG_EXPORT_FAILED, fileName, ex);
+            if (ERROR_SOURCE_NOT_FOUND.equals(reason)) {
+                log.warn("Export source file not found: name={}", fileName);
+            } else {
+                log.error(LOG_EXPORT_FAILED, fileName, ex);
+            }
             queueManagerService.markExportFileFailed(progressTrackerRowId, reason);
             return null;
         }
@@ -605,6 +608,7 @@ public class DataExportWorker {
             recordDirectoryResult(directoryQueue, ExportResult.failure(pending, errorMessage));
             processedExportRequests.add(pending.progressTrackerRowId());
             activeExportPaths.remove(pending.progressTrackerRowId());
+            queueManagerService.finishExportForSingleFile();
             pendingFileCount.decrementAndGet();
             if (pendingFileCount.get() == 0) {
                 Platform.runLater(this::fireCompletionNotice);
@@ -614,8 +618,8 @@ public class DataExportWorker {
 
     /**
      * Moves the current processing item and every remaining item in the directory
-     * queue to a new export directory. If that directory already has a queue, the
-     * remaining items are merged into it.
+     * queue to a new export directory. Recovered files keep the old directory's
+     * position so the worker finishes them before moving to the next directory.
      */
     private ExportFileItem moveDirectoryQueue(ExportDirectoryQueue oldQueue, ExportFileItem processingItem,
             Path newDir) {
@@ -626,7 +630,9 @@ public class DataExportWorker {
         }
 
         List<ExportFileItem> pendingItems;
+        int recoveredQueueIndex;
         synchronized (queueLock) {
+            recoveredQueueIndex = directoryQueues.indexOf(oldQueue);
             pendingItems = new ArrayList<>(oldQueue.files);
             oldQueue.files.clear();
             directoryQueues.remove(oldQueue);
@@ -642,6 +648,12 @@ public class DataExportWorker {
             ExportDirectoryQueue targetQueue = getOrCreateDirectoryQueue(normalizedNewDir);
             targetQueue.files.addAll(movedPendingItems);
             targetQueue.files.sort(EXPORT_FILE_SIZE_COMPARATOR);
+
+            // A recovered queue is still the same logical directory run; keep its
+            // turn instead of appending it behind later destination queues.
+            directoryQueues.remove(targetQueue);
+            int insertIndex = recoveredQueueIndex < 0 ? 0 : Math.min(recoveredQueueIndex, directoryQueues.size());
+            directoryQueues.add(insertIndex, targetQueue);
         }
         return updatedProcessingItem;
     }
@@ -658,8 +670,7 @@ public class DataExportWorker {
         activeExportPaths.remove(oldProgressTrackerRowId);
         activeExportPaths.add(newProgressTrackerRowId);
 
-        return new ExportFileItem(item.fileView(), newProgressTrackerRowId, item.sourceMissing(), item.sortSize(),
-                item.fileSize());
+        return new ExportFileItem(item.fileView(), newProgressTrackerRowId, item.sortSize(), item.fileSize());
     }
 
     /**
@@ -1012,23 +1023,8 @@ public class DataExportWorker {
     }
 
     private ExportFileItem createExportFileItem(FileView fileView, String progressTrackerRowId) {
-        boolean sourceMissing = isSourceMissing(fileView);
-        long sortSize = sourceMissing ? Long.MAX_VALUE : fileSizeOrMax(fileView.fileSize());
-        Long fileSize = sourceMissing ? 0L : fileView.fileSize();
-        return new ExportFileItem(fileView, progressTrackerRowId, sourceMissing, sortSize, fileSize);
-    }
-
-    /**
-     * Performs a lightweight source lookup for queue ordering. Missing files are
-     * still enqueued so the normal export path records the final failure reason.
-     */
-    private boolean isSourceMissing(FileView fileView) {
-        try {
-            resolveSourcePath(fileView);
-            return false;
-        } catch (IOException ex) {
-            return true;
-        }
+        Long fileSize = fileView.fileSize();
+        return new ExportFileItem(fileView, progressTrackerRowId, fileSizeOrMax(fileSize), fileSize);
     }
 
     private Path resolveSourcePath(FileView fileView) throws IOException {
@@ -1036,13 +1032,44 @@ public class DataExportWorker {
         if (syncedPath == null || syncedPath.isBlank()) {
             throw new IOException(ERROR_MISSING_SYNCED_PATH);
         }
-        long expectedSize = fileView.fileSize() != null && fileView.fileSize() > 0 ? fileView.fileSize() : 0;
-        PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(syncedPath,
-                expectedSize);
-        if (result.isFound() && result.getPath() != null) {
-            return result.getPath();
+
+        Path resolvedPath = resolveSyncedPath(fileView);
+        if (resolvedPath != null) {
+            return resolvedPath;
         }
-        throw new IOException(ERROR_SOURCE_NOT_FOUND);
+
+        return restoreMissingSource(fileView);
+    }
+
+    private Path resolveSyncedPath(FileView fileView) {
+        long expectedSize = fileView.fileSize() != null && fileView.fileSize() > 0 ? fileView.fileSize() : 0;
+        PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(fileView.syncedPath(),
+                expectedSize);
+        return result.isFound() ? result.getPath() : null;
+    }
+
+    private Path restoreMissingSource(FileView fileView) throws IOException {
+        String backedUpPath = fileView.backedUpPath();
+        if (backedUpPath == null || backedUpPath.isBlank()) {
+            throw new IOException(ERROR_SOURCE_NOT_FOUND);
+        }
+        if (folderManagerService.getSyncDir() == null) {
+            throw new IOException(ERROR_SOURCE_NOT_FOUND);
+        }
+
+        BackupSyncResult result = restoreService.restoreSingleFile(folderManagerService.getSyncDir().getAbsolutePath(),
+                backedUpPath);
+        if (!result.success()) {
+            if (result.failureReason() == RestoreFailureReason.BACKUP_NOT_FOUND) {
+                throw new IOException(ERROR_SOURCE_NOT_FOUND);
+            }
+            String message = result.errorMessage() != null ? result.errorMessage() : ERROR_SOURCE_NOT_FOUND;
+            throw new IOException(message);
+        }
+        if (result.restoredPath() == null || result.restoredPath().isBlank()) {
+            throw new IOException(ERROR_SOURCE_NOT_FOUND);
+        }
+        return Path.of(result.restoredPath());
     }
 
     private long fileSizeOrMax(Long fileSize) {
@@ -1078,8 +1105,7 @@ public class DataExportWorker {
 
     // ── Inner types ───────────────────────────────────────────────────────────
 
-    private record ExportFileItem(FileView fileView, String progressTrackerRowId, boolean sourceMissing, long sortSize,
-            Long fileSize) {
+    private record ExportFileItem(FileView fileView, String progressTrackerRowId, long sortSize, Long fileSize) {
     }
 
     private record ExportResult(ItemStatus status, ExportFileItem item, String displayName, String failureReason) {
@@ -1152,18 +1178,6 @@ public class DataExportWorker {
 
         private ExportDirectoryQueue(Path exportDir) {
             this.exportDir = exportDir;
-        }
-    }
-
-    private static class DiskFullException extends IOException {
-        DiskFullException(String message) {
-            super(message);
-        }
-    }
-
-    private static class DriveUnavailableException extends IOException {
-        DriveUnavailableException(String message) {
-            super(message);
         }
     }
 }

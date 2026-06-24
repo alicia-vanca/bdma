@@ -13,6 +13,7 @@
 
   /* ── BORDER + INPUT ── */
   -border-color: #e2e8f0;
+  -nav-btn-border: transparent;
   -input-bg: #f8fafc;
   -input-focus-bg: #ffffff;
 
@@ -21,6 +22,9 @@
 
   /* ── SIDEBAR ── */
   -sidebar-bg: #e2e8f0;
+
+  /* ── HEADER ── */
+  -header-bg: #e2e8f0;
 
   /* ── TABLE ── */
   -table-bg: #ffffff;
@@ -46,6 +50,36 @@
   -fx-background-color: -app-bg;
   -fx-text-fill: #0f172a;
   -fx-text-base-color: #0f172a;
+
+  /* ── DEVICE CARD ── */
+  -default-card-bg: #F2F2F2;
+  -connecting-card-bg: transparent;
+  -selected-card-bg: #e0f2fe;
+  -connected-border: #22c55e;
+  -device-battery: #4caf50;
+  -device-storage: #42A5F5;
+  -device-warning: #f44336;
+  -device-offline: #666666;
+  -badge-success-border: #16a34a;
+  -badge-success-bg: rgba(22, 163, 74, 0.18);
+  -badge-muted-border: #64748b;
+  -badge-muted-bg: rgba(242, 248, 248, 0.18);
+  -badge-warning-border: #fbbf24;
+  -badge-warning-bg: rgba(251, 191, 36, 0.18);
+  -badge-info-border: #60a5fa;
+  -badge-info-bg: rgba(96, 165, 250, 0.18);
+}
+
+/* ── NAV BAR BUTTON ──*/
+.square-nav-btn:hover,
+.square-nav-btn:pressed {
+  -fx-background-color: rgba(128, 128, 128, 0.1);
+  -nav-btn-border: #94a3b8bb;
+}
+
+.square-nav-btn.active-button {
+  -fx-background-color: rgba(255, 255, 255, 0.7);
+  -nav-btn-border: #94a3b8bb;
 }
 
 /* ── GLOBAL NOTICE ──*/
@@ -104,15 +138,6 @@
 }
 
 .menu-btn.active-button {
-  -fx-background-color: -primary;
-  -fx-text-fill: white;
-}
-
-.menu-tab-btn:hover {
-  -fx-background-color: #cbd5e1;
-}
-
-.menu-tab-btn.active-button {
   -fx-background-color: -primary;
   -fx-text-fill: white;
 }
@@ -288,6 +313,7 @@
   -fx-border-color: -border-color;
   -fx-border-radius: 4;
   -fx-background-radius: 4;
+  -fx-background-insets: 0;
 }
 
 .check-box:selected .mark {
@@ -321,83 +347,7 @@
   -fx-text-fill: #475569;
 }
 
-/* ── ALERT ── */
-.dialog-pane.app-alert {
-  -fx-background-color: -card-bg;
-  -fx-border-color: -border-color;
-  -fx-border-width: 1;
-}
-
-.dialog-pane.app-alert:header .header-panel {
-  -fx-background-color: -card-bg;
-}
-
-.dialog-pane.app-alert:header .header-panel .label {
-  -fx-text-fill: -text-color;
-}
-
-.dialog-pane.app-alert .content.label {
-  -fx-text-fill: -text-color;
-}
-
-.dialog-pane.app-alert>*.button-bar>*.container {
-  -fx-background-color: -app-bg;
-}
-
-.dialog-pane.app-alert .button {
-  -fx-text-fill: -text-color;
-}
-
-.dialog-pane.app-alert .button.btn-primary {
-  -fx-text-fill: white;
-}
-
 /* ── TABLE ── */
-.table-view {
-  -fx-background-color: -table-bg;
-  -fx-border-color: -border-color;
-  -fx-padding: 0;
-}
-
-.table-view .column-header-background,
-.table-view .filler {
-  -fx-background-color: -card-bg;
-}
-
-.table-view .column-header {
-  -fx-background-color: transparent;
-  -fx-border-color: transparent -border-color -border-color transparent;
-}
-
-.table-view .column-header .label {
-  -fx-text-fill: -text-color;
-  -fx-font-weight: bold;
-}
-
-.table-view .table-cell {
-    -fx-border-color: transparent -border-color transparent transparent;
-}
-
-.table-row-cell {
-  -fx-background-color: -table-bg;
-}
-
-.table-view .table-cell {
-  -fx-text-fill: -text-color;
-}
-
-.table-row-cell:odd {
-  -fx-background-color: -table-odd;
-}
-
-.table-row-cell:hover {
-  -fx-background-color: -table-hover;
-}
-
-.table-row-cell:selected {
-  -fx-background-color: -table-selected;
-}
-
 .table-row-cell:selected .table-cell {
   -fx-text-fill: -text-color;
 }
@@ -484,23 +434,29 @@
 }
 
 .device-cell-offline {
-  -fx-text-fill: #94a3b8;
+  -fx-text-fill: #64748b;
 }
 
 .device-cell-unvalidated {
   -fx-text-fill: #d97706;
 }
 
+.device-cell-deactivated {
+  -fx-text-fill: #dc2626;
+}
+
 .device-cell-queued {
-  -fx-text-fill: #f59e0b;
+  -fx-text-fill: #fbbf24;
 }
 
 .device-cell-syncing {
-  -fx-text-fill: #3b82f6;
+  -fx-text-fill: #60a5fa;
 }
 
 .dot-connected {
-  -fx-fill: #16a34a;
+  -fx-fill: #4ade80;
+  -fx-stroke: #94a3b8;
+  -fx-stroke-width: 1;
 }
 
 .dot-offline {
@@ -525,8 +481,16 @@
   -fx-background-color: -primary;
   -fx-text-fill: white;
 }
-.icon-btn-control{
+
+.icon-btn-control {
   -fx-border-color: #cbd5e1;
 }
-.separator .line{
+
+/* ── ICON BUTTON ── */
+.icon-btn {
+  -fx-border-color: #94a3b8;
+}
+
+.separator .line {
+  -fx-border-width: 0.5;
 }
