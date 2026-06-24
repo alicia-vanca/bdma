@@ -25,7 +25,7 @@ public class DataSyncRunner {
         while (shuttingDown) {
             try {
                 // Wait for shutdown to complete before starting new worker
-                // Incase user clicks logout and login quickly, we don't want to start the
+                // In case user clicks logout and login quickly, we don't want to start the
                 // worker until the previous one has fully shut down
                 wait(100);
             } catch (InterruptedException e) {

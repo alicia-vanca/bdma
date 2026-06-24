@@ -62,6 +62,7 @@ Page custom ShowActionDialog ShowActionDialogLeave
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\BDMA.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open BDMA"
+!define MUI_FINISHPAGE_TITLE "BDMA Setup Complete"
 !define MUI_FINISHPAGE_TEXT "BDMA has been installed successfully."
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
@@ -193,6 +194,10 @@ Function EnsureAppClosed
       Pop $0
       Pop $1
       Sleep 1500
+
+      ; Run only after user confirmed closing BDMA.
+      ; /T may already kill child adb.exe, but this catches leftovers.
+      Call KillBundledAdb
   ${EndIf}
 FunctionEnd
 
@@ -275,7 +280,6 @@ FunctionEnd
 
 Function PrepareForSetupChanges
   Call EnsureAppClosed
-  Call KillBundledAdb
 FunctionEnd
 
 ; ── Main section ────────────────────────────────────────────────
