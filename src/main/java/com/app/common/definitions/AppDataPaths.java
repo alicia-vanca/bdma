@@ -34,4 +34,8 @@ public final class AppDataPaths {
     public static File dataFile() {
         return Path.of(APP_DIR, "data.db").toFile();
     }
+
+    public static Path dataBackupDir() {
+        return Path.of(APP_DIR, "db_backup");
+    }
 }

@@ -21,8 +21,12 @@
 !endif
 
 !ifndef APP_DATA_DIR
-!define APP_DATA_DIR "$PROFILE\\.helloworld-app"
+!define APP_DATA_DIR "$LOCALAPPDATA\bdma"
 !endif
+
+!define ACTION_INSTALL_UPDATE "1"
+!define ACTION_UNINSTALL "2"
+!define ACTION_UNINSTALL_DELETE_DATA "3"
 
 !define MUI_ICON "${INSTALLER_ICON}"
 !define MUI_UNICON "${INSTALLER_ICON}"
@@ -47,48 +51,81 @@ Var RadioUninstall
 Var RadioUninstallDelete
 Var UserChoice
 Var IsInstalled
+Var ExistingInstallDir
+Var AutoUpdate
+Var DelayedCleanupNeeded
+Var CleanupLauncherPath
 
-; ── Action selection page (only shown when already installed) ────
+; ── Action selection page only shown when already installed ─────
 Page custom ShowActionDialog ShowActionDialogLeave
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW InstFilesPageShow
 !insertmacro MUI_PAGE_INSTFILES
+!define MUI_FINISHPAGE_RUN "$INSTDIR\BDMA.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Open BDMA"
+!define MUI_FINISHPAGE_TEXT "BDMA has been installed successfully."
+!insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
 
 ; ── Check if already installed ──────────────────────────────────
 Function .onInit
-  ReadRegStr $IsInstalled HKLM "Software\BDMA" "InstallDir"
-  ${If} $IsInstalled == ""
+  ; Default action is install/update.
+  StrCpy $UserChoice ${ACTION_INSTALL_UPDATE}
+  StrCpy $IsInstalled "0"
+  StrCpy $ExistingInstallDir ""
+  StrCpy $AutoUpdate "0"
+  StrCpy $DelayedCleanupNeeded "0"
+  StrCpy $CleanupLauncherPath ""
+
+  ; Detect app-triggered update mode.
+  ${GetParameters} $0
+  ${GetOptions} $0 "/BDMA_AUTO_UPDATE" $1
+  ${IfNot} ${Errors}
+    StrCpy $AutoUpdate "1"
+  ${EndIf}
+
+  ; Keep the install path and the installed flag separate.
+  ReadRegStr $ExistingInstallDir HKLM "Software\BDMA" "InstallDir"
+
+  ${If} $ExistingInstallDir == ""
     Goto notInstalled
   ${EndIf}
 
-  IfFileExists "$IsInstalled\BDMA.exe" installed notInstalled
+  IfFileExists "$ExistingInstallDir\BDMA.exe" installed notInstalled
 
   installed:
+    StrCpy $INSTDIR "$ExistingInstallDir"
     StrCpy $IsInstalled "1"
     Return
 
   notInstalled:
     DeleteRegKey HKLM "Software\BDMA"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BDMA"
+    StrCpy $ExistingInstallDir ""
     StrCpy $IsInstalled "0"
-    StrCpy $UserChoice "1"
 FunctionEnd
 
 ; ── Override instfiles page header based on action ──────────────
 Function InstFilesPageShow
-  ${If} $UserChoice == "2"
-    !insertmacro MUI_HEADER_TEXT "Uninstall BDMA" "Please wait while BDMA is being uninstalled..."
-  ${ElseIf} $UserChoice == "3"
-    !insertmacro MUI_HEADER_TEXT "Uninstall BDMA" "Please wait while BDMA and its data are being removed..."
+  SetDetailsView show
+  SetDetailsPrint both
+
+  ${If} $UserChoice == ${ACTION_UNINSTALL}
+    !insertmacro MUI_HEADER_TEXT "Uninstalling BDMA" "Please wait while BDMA is being uninstalled..."
+  ${ElseIf} $UserChoice == ${ACTION_UNINSTALL_DELETE_DATA}
+    !insertmacro MUI_HEADER_TEXT "Uninstalling BDMA" "Please wait while BDMA and its data are being removed..."
   ${Else}
-    !insertmacro MUI_HEADER_TEXT "Install BDMA" "Please wait while BDMA is being installed..."
+    !insertmacro MUI_HEADER_TEXT "Installing BDMA" "Please wait while BDMA is being installed..."
   ${EndIf}
 FunctionEnd
 
 ; ── 3-option dialog ─────────────────────────────────────────────
 Function ShowActionDialog
   ${If} $IsInstalled == "0"
-    Abort ; Not installed → skip this page and go straight to install
+    Abort ; Not installed -> skip this page and go straight to install
+  ${EndIf}
+
+  ${If} $AutoUpdate == "1"
+    Abort ; App-triggered update starts reinstall/update without extra choice.
   ${EndIf}
 
   !insertmacro MUI_HEADER_TEXT "BDMA is already installed" "Please choose an action"
@@ -118,59 +155,158 @@ Function ShowActionDialogLeave
   GetDlgItem $1 $HWNDPARENT 1
 
   ${If} $0 == ${BST_CHECKED}
-    StrCpy $UserChoice "1"
+    StrCpy $UserChoice ${ACTION_INSTALL_UPDATE}
     SendMessage $1 ${WM_SETTEXT} 0 "STR:Install"
     Goto done
   ${EndIf}
 
   ${NSD_GetState} $RadioUninstall $0
   ${If} $0 == ${BST_CHECKED}
-    StrCpy $UserChoice "2"
+    StrCpy $UserChoice ${ACTION_UNINSTALL}
     SendMessage $1 ${WM_SETTEXT} 0 "STR:Uninstall"
     Goto done
   ${EndIf}
 
-  StrCpy $UserChoice "3"
+  StrCpy $UserChoice ${ACTION_UNINSTALL_DELETE_DATA}
   SendMessage $1 ${WM_SETTEXT} 0 "STR:Uninstall"
+
   done:
 FunctionEnd
 
-; ── Ensure app is closed before uninstalling ────────────────────
+; ── Ensure app is closed before setup changes ───────────────────
 Function EnsureAppClosed
-  nsExec::ExecToStack '$SYSDIR\cmd.exe /C tasklist /FI "IMAGENAME eq BDMA.exe" /NH | find /I "BDMA.exe"'
+  nsExec::ExecToStack '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "if (Get-Process -Name BDMA -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"'
   Pop $0 ; exit code
   Pop $1 ; output
 
   ${If} $0 == 0
     MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION \
-      "BDMA is currently running. Click OK to close the application and continue uninstalling." \
+      "BDMA must be closed before setup can continue.$\r$\n$\r$\nSelect OK to close BDMA and continue, or Cancel to abort setup." \
       IDOK kill IDCANCEL cancel
+
     cancel:
       Abort
+
     kill:
-      ExecWait '$SYSDIR\taskkill.exe /F /IM BDMA.exe'
+      DetailPrint "Closing BDMA..."
+      nsExec::ExecToStack '$SYSDIR\taskkill.exe /F /T /IM BDMA.exe'
+      Pop $0
+      Pop $1
       Sleep 1500
   ${EndIf}
 FunctionEnd
 
-; ── Main section ────────────────────────────────────────────────
-Section "Main" SecMain
-  ${If} $UserChoice == "2"
-    Call DoUninstall
-    Quit
+; ── Stop BDMA-owned ADB processes left behind by forced app termination ─────
+Function KillBundledAdb
+  ; Kill only adb.exe processes owned by BDMA.
+  ; Covers:
+  ;   - $INSTDIR\...\adb.exe
+  ;   - ${APP_DATA_DIR}\...\adb.exe
+  ; Avoids killing Android Studio / platform-tools ADB.
+
+  StrCpy $0 "$TEMP\bdma-kill-adb.ps1"
+
+  FileOpen $1 $0 w
+
+  FileWrite $1 "param([string]$$Mode)$\r$\n"
+  FileWrite $1 "$$roots = @()$\r$\n"
+  FileWrite $1 "$$installDir = '$INSTDIR'$\r$\n"
+  FileWrite $1 "$$appDataRoot = '${APP_DATA_DIR}'$\r$\n"
+
+  FileWrite $1 "if (Test-Path -LiteralPath $$installDir) {$\r$\n"
+  FileWrite $1 "  $$roots += (Resolve-Path -LiteralPath $$installDir).Path.TrimEnd('\') + '\'$\r$\n"
+  FileWrite $1 "}$\r$\n"
+
+  FileWrite $1 "if (Test-Path -LiteralPath $$appDataRoot) {$\r$\n"
+  FileWrite $1 "  $$roots += (Resolve-Path -LiteralPath $$appDataRoot).Path.TrimEnd('\') + '\'$\r$\n"
+  FileWrite $1 "}$\r$\n"
+
+  FileWrite $1 "function Get-BdmaAdbProcesses {$\r$\n"
+  FileWrite $1 "  if ($$roots.Count -eq 0) { return @() }$\r$\n"
+  FileWrite $1 "  @(Get-Process adb -ErrorAction SilentlyContinue | Where-Object {$\r$\n"
+  FileWrite $1 "    $$processPath = $$_.Path$\r$\n"
+  FileWrite $1 "    $$processPath -and ($$roots | Where-Object { $$processPath.StartsWith($$_, [System.StringComparison]::OrdinalIgnoreCase) })$\r$\n"
+  FileWrite $1 "  })$\r$\n"
+  FileWrite $1 "}$\r$\n"
+
+  FileWrite $1 "$$targets = Get-BdmaAdbProcesses$\r$\n"
+
+  FileWrite $1 "if ($$Mode -eq 'check') {$\r$\n"
+  FileWrite $1 "  if ($$targets.Count -gt 0) { exit 10 }$\r$\n"
+  FileWrite $1 "  exit 0$\r$\n"
+  FileWrite $1 "}$\r$\n"
+
+  FileWrite $1 "if ($$Mode -eq 'kill') {$\r$\n"
+  FileWrite $1 "  for ($$attempt = 1; $$attempt -le 20; $$attempt++) {$\r$\n"
+  FileWrite $1 "    $$remaining = Get-BdmaAdbProcesses$\r$\n"
+  FileWrite $1 "    if ($$remaining.Count -eq 0) { break }$\r$\n"
+  FileWrite $1 "    $$remaining | Stop-Process -Force -ErrorAction SilentlyContinue$\r$\n"
+  FileWrite $1 "    Start-Sleep -Milliseconds 250$\r$\n"
+  FileWrite $1 "  }$\r$\n"
+  FileWrite $1 "  Remove-Item -LiteralPath $$PSCommandPath -Force -ErrorAction SilentlyContinue$\r$\n"
+  FileWrite $1 "  exit 0$\r$\n"
+  FileWrite $1 "}$\r$\n"
+
+  FileWrite $1 "exit 0$\r$\n"
+
+  FileClose $1
+
+  ; First pass: check only.
+  nsExec::ExecToStack '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$0" check'
+  Pop $0 ; exit code
+  Pop $1 ; output
+
+  ; No BDMA-owned adb.exe found -> print nothing.
+  ${If} $0 != 10
+    Delete "$TEMP\bdma-kill-adb.ps1"
+    Return
   ${EndIf}
 
-  ${If} $UserChoice == "3"
+  ; Print before killing.
+  DetailPrint "Stopping BDMA-owned ADB processes..."
+
+  ; Second pass: kill.
+  nsExec::ExecToStack '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$TEMP\bdma-kill-adb.ps1" kill'
+  Pop $0 ; exit code
+  Pop $1 ; output
+
+  Sleep 1500
+FunctionEnd
+
+Function PrepareForSetupChanges
+  Call EnsureAppClosed
+  Call KillBundledAdb
+FunctionEnd
+
+; ── Main section ────────────────────────────────────────────────
+Section "Main" SecMain
+  SetDetailsView show
+  SetDetailsPrint both
+
+  ; ── Uninstall only ───────────────────────────────────────────
+  ${If} $UserChoice == ${ACTION_UNINSTALL}
+    Call PrepareForSetupChanges
+    Call DoUninstall
+    Call FinishUninstall
+  ${EndIf}
+
+  ; ── Uninstall and delete app data ────────────────────────────
+  ${If} $UserChoice == ${ACTION_UNINSTALL_DELETE_DATA}
+    Call PrepareForSetupChanges
     Call DeleteData
     Call DoUninstall
-    Quit
+    Call FinishUninstall
   ${EndIf}
 
   ; ── Install / Update ────────────────────────────────────────
+  Call PrepareForSetupChanges
+
   SetOutPath "$INSTDIR"
   File /r "${INSTALLER_SOURCE_DIR}\*.*"
 
-  CopyFiles "$EXEPATH" "$INSTDIR\BDMA-Setup.exe"
+  ${If} $EXEPATH != "$INSTDIR\BDMA-Setup.exe"
+    CopyFiles "$EXEPATH" "$INSTDIR\BDMA-Setup.exe"
+  ${EndIf}
 
   WriteRegStr HKLM "Software\BDMA" "InstallDir" "$INSTDIR"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BDMA" \
@@ -202,13 +338,72 @@ Section "Main" SecMain
 
   ; Disable AutoPlay to prevent Windows popup when body camera connected
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun" 0xFF
-
-  MessageBox MB_OK "BDMA has been installed successfully!"
 SectionEnd
 
-; ── Uninstall ───────────────────────────────────────────────────
+
+; ── Finish uninstall after normal cleanup has completed ─────────
+Function FinishUninstall
+  ${If} $UserChoice == ${ACTION_UNINSTALL_DELETE_DATA}
+    MessageBox MB_OK "BDMA and its data have been uninstalled successfully!"
+  ${Else}
+    MessageBox MB_OK "BDMA has been uninstalled successfully!"
+  ${EndIf}
+
+  ; Launch delayed cleanup only after user closes the success dialog.
+  ; This is important when the uninstaller is running from $INSTDIR\BDMA-Setup.exe.
+  ${If} $DelayedCleanupNeeded == "1"
+    ExecShell "open" "$SYSDIR\wscript.exe" '"$CleanupLauncherPath"' SW_HIDE
+  ${EndIf}
+
+  Quit
+FunctionEnd
+
+; ── Delete app data using native NSIS commands ──────────────────
+Function DeleteData
+  ; Keep existing safety check.
+  StrCpy $0 "${APP_DATA_DIR}" 4 -4
+  ${If} $0 != "bdma"
+    MessageBox MB_OK|MB_ICONSTOP "Refusing to delete unsafe app data path: ${APP_DATA_DIR}"
+    Abort
+  ${EndIf}
+
+  SetDetailsView show
+  SetDetailsPrint both
+
+  DetailPrint "Deleting BDMA app data: ${APP_DATA_DIR}"
+
+  IfFileExists "${APP_DATA_DIR}" 0 dataDeleted
+
+  StrCpy $0 "0"
+
+  deleteRetry:
+    IntOp $0 $0 + 1
+    DetailPrint "Deleting app data attempt $0: ${APP_DATA_DIR}"
+    ClearErrors
+    RMDir /r "${APP_DATA_DIR}"
+
+    IfFileExists "${APP_DATA_DIR}" dataStillExists dataDeleted
+
+  dataStillExists:
+    ${If} $0 < 20
+      Sleep 250
+      Goto deleteRetry
+    ${EndIf}
+
+    MessageBox MB_OK|MB_ICONEXCLAMATION \
+      "BDMA could not delete some app data.$\r$\n$\r$\nPath:$\r$\n${APP_DATA_DIR}$\r$\n$\r$\nPlease close any program using this folder and delete it manually if needed."
+    Return
+
+  dataDeleted:
+    DetailPrint "BDMA app data deleted or not present."
+FunctionEnd
+
+; ── Uninstall using native NSIS commands ────────────────────────
 Function DoUninstall
-  Call EnsureAppClosed
+  SetDetailsView show
+  SetDetailsPrint both
+
+  DetailPrint "Removing BDMA installation files: $INSTDIR"
 
   RMDir /r "$INSTDIR\app"
   RMDir /r "$INSTDIR\runtime"
@@ -223,30 +418,45 @@ Function DoUninstall
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BDMA"
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun"
 
-  StrCpy $0 "$TEMP\bdma-cleanup.cmd"
-  FileOpen $1 $0 w
-  FileWrite $1 "@echo off$\r$\n"
-  FileWrite $1 ":retry$\r$\n"
-  FileWrite $1 "ping 127.0.0.1 -n 3 > nul$\r$\n"
-  FileWrite $1 "del /F /Q $\"$EXEPATH$\"$\r$\n"
-  FileWrite $1 "if exist $\"$EXEPATH$\" goto retry$\r$\n"
-  FileWrite $1 "rmdir /S /Q $\"$INSTDIR$\"$\r$\n"
-  FileWrite $1 "del /F /Q %~f0$\r$\n"
-  FileClose $1
-  Exec '"$SYSDIR\cmd.exe" /C start "" /min "$0"'
+  DetailPrint "Removing installer copy and install directory..."
 
-  MessageBox MB_OK "BDMA has been uninstalled successfully!"
-FunctionEnd
+  Delete "$INSTDIR\BDMA-Setup.exe"
+  RMDir /r "$INSTDIR"
 
-; ── Delete app data ─────────────────────────────────────────────
-Function DeleteData
-  StrCpy $0 "${APP_DATA_DIR}" 4 -4
-  ${If} $0 != "bdma"
-    MessageBox MB_OK|MB_ICONSTOP "Refusing to delete unsafe app data path: ${APP_DATA_DIR}"
-    Abort
-  ${EndIf}
+  IfFileExists "$INSTDIR" installDirStillExists installDirDeleted
 
-  ExecWait '$SYSDIR\cmd.exe /C attrib -R -H -S "$\"${APP_DATA_DIR}$\"" /S /D'
-  RMDir /r "${APP_DATA_DIR}"
-  ExecWait '$SYSDIR\cmd.exe /C rmdir /S /Q "$\"${APP_DATA_DIR}$\""'
+  installDirStillExists:
+    DetailPrint "Install directory still exists, scheduling delayed cleanup: $INSTDIR"
+
+    StrCpy $0 "$TEMP\bdma-cleanup.ps1"
+    StrCpy $2 "$TEMP\bdma-cleanup.vbs"
+
+    FileOpen $1 $0 w
+    FileWrite $1 "$$installDir = '$INSTDIR'$\r$\n"
+    FileWrite $1 "$$launcherPath = '$2'$\r$\n"
+    FileWrite $1 "for ($$attempt = 1; $$attempt -le 30; $$attempt++) {$\r$\n"
+    FileWrite $1 "  Start-Sleep -Milliseconds 500$\r$\n"
+    FileWrite $1 "  Remove-Item -LiteralPath $$installDir -Recurse -Force -ErrorAction SilentlyContinue$\r$\n"
+    FileWrite $1 "  if (-not (Test-Path -LiteralPath $$installDir)) { break }$\r$\n"
+    FileWrite $1 "}$\r$\n"
+    FileWrite $1 "Remove-Item -LiteralPath $$launcherPath -Force -ErrorAction SilentlyContinue$\r$\n"
+    FileWrite $1 "Remove-Item -LiteralPath $$PSCommandPath -Force -ErrorAction SilentlyContinue$\r$\n"
+    FileClose $1
+
+    FileOpen $1 $2 w
+    FileWrite $1 "q = Chr(34)$\r$\n"
+    FileWrite $1 "ps = $\"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe$\"$\r$\n"
+    FileWrite $1 "script = $\"$0$\"$\r$\n"
+    FileWrite $1 "CreateObject($\"WScript.Shell$\").Run q & ps & q & $\" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $\" & q & script & q, 0, False$\r$\n"
+    FileClose $1
+
+    StrCpy $DelayedCleanupNeeded "1"
+    StrCpy $CleanupLauncherPath "$2"
+    Goto done
+
+  installDirDeleted:
+    DetailPrint "BDMA install directory removed."
+
+  done:
+    DetailPrint "BDMA uninstall file cleanup completed."
 FunctionEnd

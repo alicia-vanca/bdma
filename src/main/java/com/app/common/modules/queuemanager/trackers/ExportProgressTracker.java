@@ -33,7 +33,7 @@ public class ExportProgressTracker {
     /**
      * Add a file to export queue tracking with separate display and sort sizes.
      */
-    public void addFile(String exportPathId, String fileName, Long fileSize, Long sortSize) {
+    public synchronized void addFile(String exportPathId, String fileName, Long fileSize, Long sortSize) {
         FileQueueItem existing = exportFiles.get(exportPathId);
         if (existing != null) {
             existing.setStatus(ItemStatus.QUEUED);
@@ -57,7 +57,7 @@ public class ExportProgressTracker {
     /**
      * Mark file as currently exporting.
      */
-    public void markProcessing(String exportPathId) {
+    public synchronized void markProcessing(String exportPathId) {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null) {
             item.setStatus(ItemStatus.PROCESSING);
@@ -69,7 +69,7 @@ public class ExportProgressTracker {
     /**
      * Update export progress percentage.
      */
-    public void updateProgress(String exportPathId, int progress) {
+    public synchronized void updateProgress(String exportPathId, int progress) {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null) {
             item.setProgress(progress);
@@ -81,7 +81,7 @@ public class ExportProgressTracker {
     /**
      * Mark file export as completed.
      */
-    public void markCompleted(String exportPathId) {
+    public synchronized void markCompleted(String exportPathId) {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null) {
             item.setStatus(ItemStatus.COMPLETED);
@@ -95,7 +95,7 @@ public class ExportProgressTracker {
      * Replace the displayed export file name after conflict resolution chooses the
      * final target name. Status and progress remain untouched.
      */
-    public void renameFile(String exportPathId, String exportedFileName) {
+    public synchronized void renameFile(String exportPathId, String exportedFileName) {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null && exportedFileName != null && !exportedFileName.isBlank()
                 && !exportedFileName.equals(item.getFileName())) {
@@ -108,7 +108,7 @@ public class ExportProgressTracker {
     /**
      * Mark file export as failed.
      */
-    public void markFailed(String exportPathId, String errorMessage) {
+    public synchronized void markFailed(String exportPathId, String errorMessage) {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null) {
             item.setStatus(ItemStatus.FAILED);
@@ -123,7 +123,7 @@ public class ExportProgressTracker {
      * Mark file export as deferred — export drive unavailable, waiting for
      * recovery.
      */
-    public void markDeferred(String exportPathId, String reason) {
+    public synchronized void markDeferred(String exportPathId, String reason) {
         FileQueueItem item = exportFiles.get(exportPathId);
         if (item != null) {
             item.setStatus(ItemStatus.DEFERRED);
@@ -136,14 +136,14 @@ public class ExportProgressTracker {
     /**
      * Get all export destination directories in insertion order.
      */
-    public List<ExportDirectoryQueueItem> getAllDirectories() {
+    public synchronized List<ExportDirectoryQueueItem> getAllDirectories() {
         return new ArrayList<>(directories.values());
     }
 
     /**
      * Get a specific export file.
      */
-    public FileQueueItem getFile(String exportPathId) {
+    public synchronized FileQueueItem getFile(String exportPathId) {
         return exportFiles.get(exportPathId);
     }
 
@@ -152,7 +152,7 @@ public class ExportProgressTracker {
      * worker owns directory execution, so its finished totals are the authoritative
      * aggregate result shown by the queue UI.
      */
-    public void markDirectoryFinished(Path exportDir, int total, int passed, int failed) {
+    public synchronized void markDirectoryFinished(Path exportDir, int total, int passed, int failed) {
         if (exportDir == null) {
             return;
         }
@@ -170,7 +170,7 @@ public class ExportProgressTracker {
      * Clears completed file rows and summary counts before a finished directory is
      * used for a new export run.
      */
-    public void resetDirectoryForNewRun(Path exportDir) {
+    public synchronized void resetDirectoryForNewRun(Path exportDir) {
         if (exportDir == null) {
             return;
         }
@@ -199,10 +199,11 @@ public class ExportProgressTracker {
      * under the new folder, and resets status to QUEUED so the retry is visible as
      * "waiting" rather than inheriting the previous error state.
      */
-    public void moveFileToExportPath(String oldExportPathId, String newExportPathId) {
+    public synchronized void moveFileToExportPath(String oldExportPathId, String newExportPathId) {
         FileQueueItem old = exportFiles.remove(oldExportPathId);
         if (old != null) {
             ExportDirectoryQueueItem oldDirectory = directoryFor(oldExportPathId);
+            int oldDirectoryIndex = directoryIndex(oldDirectory.getExportDir());
             oldDirectory.removeFile(old);
             removeEmptyUnfinishedDirectory(oldDirectory);
 
@@ -211,6 +212,7 @@ public class ExportProgressTracker {
             exportFiles.put(newExportPathId, item);
             ExportDirectoryQueueItem newDirectory = directoryFor(newExportPathId);
             newDirectory.addFile(item);
+            moveDirectoryAfterRecoverySource(newDirectory, oldDirectory.getExportDir(), oldDirectoryIndex);
             refreshDirectory(newDirectory);
             publishQueueChangedEvent(newExportPathId, "Export file moved to new directory");
         }
@@ -231,9 +233,57 @@ public class ExportProgressTracker {
     }
 
     /**
+     * Keeps a recovered destination beside the source directory row instead of at
+     * the bottom, preserving the user's visible queue order during rebase.
+     */
+    private void moveDirectoryAfterRecoverySource(ExportDirectoryQueueItem directory, Path oldExportDir,
+            int oldDirectoryIndex) {
+        Path exportDir = directory.getExportDir();
+        if (exportDir.equals(oldExportDir)) {
+            return;
+        }
+
+        synchronized (directories) {
+            directories.remove(exportDir);
+            boolean sourceRowStillVisible = directories.containsKey(oldExportDir);
+            int insertIndex = Math.max(0, oldDirectoryIndex + (sourceRowStillVisible ? 1 : 0));
+            LinkedHashMap<Path, ExportDirectoryQueueItem> reordered = new LinkedHashMap<>();
+            boolean inserted = false;
+            int index = 0;
+            for (Map.Entry<Path, ExportDirectoryQueueItem> entry : directories.entrySet()) {
+                if (!inserted && index >= insertIndex) {
+                    reordered.put(exportDir, directory);
+                    inserted = true;
+                }
+                reordered.put(entry.getKey(), entry.getValue());
+                index++;
+            }
+            if (!inserted) {
+                reordered.put(exportDir, directory);
+            }
+
+            directories.clear();
+            directories.putAll(reordered);
+        }
+    }
+
+    private int directoryIndex(Path exportDir) {
+        synchronized (directories) {
+            int index = 0;
+            for (Path currentExportDir : directories.keySet()) {
+                if (currentExportDir.equals(exportDir)) {
+                    return index;
+                }
+                index++;
+            }
+            return directories.size();
+        }
+    }
+
+    /**
      * Clear all export tracking.
      */
-    public void clear() {
+    public synchronized void clear() {
         exportFiles.clear();
         directories.clear();
         publishQueueChangedEvent(null, "Export queue cleared");
@@ -262,14 +312,19 @@ public class ExportProgressTracker {
 
     private void refreshDirectory(ExportDirectoryQueueItem directory) {
         List<FileQueueItem> files = directory.getFiles();
-        int total = files.size();
-        int passed = (int) files.stream().filter(file -> file.getStatus() == ItemStatus.COMPLETED).count();
-        int failed = (int) files.stream().filter(file -> file.getStatus() == ItemStatus.FAILED).count();
+        List<FileQueueItem> snapshot;
+        synchronized (files) {
+            snapshot = new ArrayList<>(files);
+        }
+
+        int total = snapshot.size();
+        int passed = (int) snapshot.stream().filter(file -> file.getStatus() == ItemStatus.COMPLETED).count();
+        int failed = (int) snapshot.stream().filter(file -> file.getStatus() == ItemStatus.FAILED).count();
 
         directory.setTotal(total);
         directory.setPassed(passed);
         directory.setFailed(failed);
-        directory.setStatus(computeDirectoryStatus(directory.getStatus(), files));
+        directory.setStatus(computeDirectoryStatus(directory.getStatus(), snapshot));
     }
 
     /**

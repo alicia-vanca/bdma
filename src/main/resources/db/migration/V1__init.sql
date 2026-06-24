@@ -10,18 +10,23 @@ CREATE TABLE IF NOT EXISTS user
     is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-INSERT INTO user (username, password, role)
-VALUES ('admin', '$2a$10$S8wX5fJ/SbyEEX7ptgOd2eQ3srztCZds55nEoFAoatrSX0JSSIYSu', 'ADMIN');
+INSERT OR IGNORE INTO user (username, password, role, is_active)
+VALUES ('admin', '$2a$10$S8wX5fJ/SbyEEX7ptgOd2eQ3srztCZds55nEoFAoatrSX0JSSIYSu', 'ADMIN', TRUE);
+
+-- Install default developer account so dev login is validated by user table.
+INSERT OR IGNORE INTO user (username, password, role, is_active)
+VALUES ('dev', '$2a$10$NaN5EONZPp9HwiCqcqmJCOjijw/XUTo.uur.VyCWIaZbgr1JUQP9y', 'DEV', TRUE);
 
 -- =========================
 -- USER CONFIG TABLE
 -- =========================
 CREATE TABLE IF NOT EXISTS user_config
 (
-    id       INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    user_id  INTEGER NOT NULL,
-    theme    TEXT    NOT NULL,
-    language TEXT    NOT NULL
+    user_id INTEGER NOT NULL,
+    key     TEXT    NOT NULL,
+    value   TEXT    NOT NULL,
+    PRIMARY KEY (user_id, key),
+    FOREIGN KEY (user_id) REFERENCES user (id) ON DELETE CASCADE
 );
 
 -- =========================
@@ -36,7 +41,7 @@ CREATE TABLE IF NOT EXISTS user_activation_history
     changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES user (id),
     FOREIGN KEY (changed_by) REFERENCES user (id)
-    );
+);
 
 -- =========================
 -- RECENT USERNAMES TABLE
@@ -52,8 +57,8 @@ CREATE TABLE IF NOT EXISTS recent_usernames
 -- =========================
 CREATE TABLE IF NOT EXISTS model_whitelist
 (
-    id         TEXT PRIMARY KEY,
-    model_name TEXT    NOT NULL,
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_name TEXT    NOT NULL UNIQUE,
     is_active  INTEGER NOT NULL DEFAULT 1,
     created_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -61,38 +66,68 @@ CREATE TABLE IF NOT EXISTS model_whitelist
 CREATE TABLE IF NOT EXISTS model_whitelist_rule
 (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    whitelist_id   TEXT NOT NULL,
-    prop_key       TEXT NOT NULL,
-    expected_value TEXT NOT NULL,
+    whitelist_id   INTEGER NOT NULL,
+    prop_key       TEXT    NOT NULL,
+    expected_value TEXT    NOT NULL,
     FOREIGN KEY (whitelist_id) REFERENCES model_whitelist (id) ON DELETE CASCADE,
     UNIQUE (whitelist_id, prop_key)
-    );
+);
 
 CREATE INDEX IF NOT EXISTS idx_model_whitelist_rule_whitelist_id ON model_whitelist_rule (whitelist_id);
 
-INSERT OR IGNORE INTO model_whitelist (id, model_name, is_active)
-VALUES ('body_camera_default', 'BodyCamera', 1);
+INSERT OR IGNORE INTO model_whitelist (model_name, is_active)
+VALUES ('BodyCamera', 1);
 
 INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
-VALUES ('body_camera_default', 'ro.product.model', 'BodyCamera');
+SELECT id, 'ro.product.model', 'BodyCamera'
+FROM model_whitelist
+WHERE model_name = 'BodyCamera';
 
 INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
-VALUES ('body_camera_default', 'ro.product.device', 'k69v1_64_k419');
+SELECT id, 'ro.product.device', 'k69v1_64_k419'
+FROM model_whitelist
+WHERE model_name = 'BodyCamera';
 
 INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
-VALUES ('body_camera_default', 'ro.board.platform', 'mt6768');
+SELECT id, 'ro.board.platform', 'mt6768'
+FROM model_whitelist
+WHERE model_name = 'BodyCamera';
 
-INSERT OR IGNORE INTO model_whitelist (id, model_name, is_active)
-VALUES ('body_camera_bwc', 'BWC', 1);
-
-INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
-VALUES ('body_camera_bwc', 'ro.product.model', 'BWC');
-
-INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
-VALUES ('body_camera_bwc', 'ro.product.device', 'k69v1_64_k419');
+INSERT OR IGNORE INTO model_whitelist (model_name, is_active)
+VALUES ('BWC', 1);
 
 INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
-VALUES ('body_camera_bwc', 'ro.board.platform', 'mt6768');
+SELECT id, 'ro.product.model', 'BWC'
+FROM model_whitelist
+WHERE model_name = 'BWC';
+
+INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
+SELECT id, 'ro.product.device', 'k69v1_64_k419'
+FROM model_whitelist
+WHERE model_name = 'BWC';
+
+INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
+SELECT id, 'ro.board.platform', 'mt6768'
+FROM model_whitelist
+WHERE model_name = 'BWC';
+
+INSERT OR IGNORE INTO model_whitelist (model_name, is_active)
+VALUES ('M780', 1);
+
+INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
+SELECT id, 'ro.product.model', 'M780'
+FROM model_whitelist
+WHERE model_name = 'M780';
+
+INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
+SELECT id, 'ro.product.device', 'k69v1_64_k419'
+FROM model_whitelist
+WHERE model_name = 'M780';
+
+INSERT OR IGNORE INTO model_whitelist_rule (whitelist_id, prop_key, expected_value)
+SELECT id, 'ro.board.platform', 'mt6768'
+FROM model_whitelist
+WHERE model_name = 'M780';
 
 -- =========================
 -- VALIDATED DEVICE TABLE
@@ -101,13 +136,13 @@ CREATE TABLE IF NOT EXISTS validated_device
 (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     device_name  TEXT NOT NULL,
-    hardware_id  TEXT UNIQUE,
-    whitelist_id TEXT,
+    hardware_id  TEXT,
+    whitelist_id INTEGER,
     camera_id    TEXT UNIQUE,
     validated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (whitelist_id) REFERENCES model_whitelist (id) ON DELETE SET NULL
-    );
+);
 
 CREATE INDEX IF NOT EXISTS idx_validated_model_whitelist_id ON validated_device (whitelist_id);
 
@@ -130,7 +165,7 @@ CREATE TABLE IF NOT EXISTS files
     backed_up_at   TEXT,
     FOREIGN KEY (device_id) REFERENCES validated_device (id),
     FOREIGN KEY (user_id) REFERENCES user (id)
-    );
+);
 
 CREATE INDEX IF NOT EXISTS idx_files_device_id ON files (device_id);
 CREATE INDEX IF NOT EXISTS idx_files_user_id ON files (user_id);
@@ -144,4 +179,26 @@ CREATE TABLE IF NOT EXISTS app_config
 (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+
+-- =========================
+-- RESTORE FAILURES TABLE
+-- =========================
+CREATE TABLE IF NOT EXISTS restore_failures
+(
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_path      TEXT NOT NULL,
+    error_message TEXT
+);
+
+-- =========================
+-- PATCH APPLY LOG TABLE
+-- =========================
+CREATE TABLE IF NOT EXISTS patch_apply_log
+(
+    id         INTEGER      NOT NULL PRIMARY KEY AUTOINCREMENT,
+    patch_id   VARCHAR(36)  NOT NULL,
+    file_name  VARCHAR(512) NOT NULL,
+    applied_at TEXT         NOT NULL,
+    UNIQUE (patch_id)
 );

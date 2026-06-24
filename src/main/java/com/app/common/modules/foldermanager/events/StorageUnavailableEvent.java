@@ -15,8 +15,10 @@ public class StorageUnavailableEvent {
     private final long requiredBytes;
     // The exact directory that triggered the error; null when not applicable.
     private final Path failingDir;
-    // Number of files still waiting to be exported (including the triggering file);
-    // 0 when not applicable (sync/backup events).
+    /**
+     * Number of files still waiting to be exported, including the triggering file.
+     * Zero means the count does not apply to this storage event.
+     */
     private final int remainingCount;
 
     public StorageUnavailableEvent(FolderType target, StorageIssueReason reason) {
@@ -42,7 +44,7 @@ public class StorageUnavailableEvent {
         this(target, reason, requiredBytes, failingDir, 0);
     }
 
-    private StorageUnavailableEvent(FolderType target, StorageIssueReason reason, long requiredBytes, Path failingDir,
+    public StorageUnavailableEvent(FolderType target, StorageIssueReason reason, long requiredBytes, Path failingDir,
             int remainingCount) {
         this.target = target;
         this.reason = reason;

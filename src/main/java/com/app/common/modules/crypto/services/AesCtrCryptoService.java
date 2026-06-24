@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.function.BooleanSupplier;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
@@ -15,6 +16,8 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.app.common.modules.externalmediadecrypt.callbacks.ProgressCallback;
+import com.app.common.modules.i18n.I18n;
 import org.springframework.stereotype.Service;
 
 import com.app.common.modules.crypto.constants.CryptoConstants;
@@ -45,6 +48,68 @@ public class AesCtrCryptoService {
         } catch (IOException | InvalidAlgorithmParameterException | InvalidKeyException | NoSuchAlgorithmException
                 | NoSuchPaddingException e) {
             throw new CryptoException("AES-CTR file decryption failed: " + inputFile, e);
+        }
+    }
+    public void decrypt(
+            Path inputFile,
+            Path outputFile,
+            byte[] key,
+            byte[] iv,
+            ProgressCallback progressCallback,
+            BooleanSupplier isCancelled) {
+
+        validateFileRequest(inputFile, outputFile, key, iv);
+
+        try {
+            Cipher cipher = createDecryptCipher(key, iv);
+
+            long totalBytes = Files.size(inputFile);
+            long processedBytes = 0;
+
+            try (InputStream input =
+                         new CipherInputStream(Files.newInputStream(inputFile), cipher);
+                 OutputStream output =
+                         Files.newOutputStream(outputFile)) {
+
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+
+                while ((bytesRead = input.read(buffer)) != -1) {
+                    if (isCancelled != null && isCancelled.getAsBoolean()) {
+                        return;
+                    }
+
+                    output.write(buffer, 0, bytesRead);
+
+                    processedBytes += bytesRead;
+
+                    if (progressCallback != null) {
+                        progressCallback.update(processedBytes, totalBytes);
+                    }
+                }
+
+                output.flush();
+            }
+
+        } catch (InvalidKeyException e) {
+            throw new CryptoException(I18n.get("externalMediaDecrypt.invalid.key"), e);
+
+        } catch (InvalidAlgorithmParameterException e) {
+            throw new CryptoException(I18n.get("externalMediaDecrypt.invalid.iv"), e);
+
+        } catch (NoSuchAlgorithmException e) {
+            throw new CryptoException(I18n.get("externalMediaDecrypt.unsupported.algorithm"), e);
+
+        } catch (NoSuchPaddingException e) {
+            throw new CryptoException(I18n.get("externalMediaDecrypt.unsupported.padding"), e);
+
+        } catch (IOException e) {
+            throw new CryptoException(I18n.get("externalMediaDecrypt.io.exception"), e);
+
+        } catch (SecurityException e) {
+            throw new CryptoException(I18n.get("externalMediaDecrypt.access.denied"), e);
+        } catch (Exception e) {
+            throw new CryptoException(I18n.get("externalMediaDecrypt.exception"), e);
         }
     }
 

@@ -173,6 +173,7 @@ public class FileRepository {
                     SELECT f.file_id,
                            f.name,
                            f.synced_path,
+                           f.backed_up_path,
                            f.device_id,
                            f.user_id,
                            f.file_size,
@@ -185,6 +186,7 @@ public class FileRepository {
                     LEFT JOIN user u ON f.user_id = u.id
                     LEFT JOIN validated_device vd ON f.device_id = vd.id
                     WHERE 1=1
+                      AND COALESCE(vd.is_active, TRUE) = TRUE
                 """);
 
         List<Object> params = new ArrayList<>();
@@ -233,6 +235,7 @@ public class FileRepository {
         f.setUserId(rs.getLong("user_id"));
         f.setName(rs.getString("name"));
         f.setSyncedPath(rs.getString("synced_path"));
+        f.setBackedUpPath(rs.getString("backed_up_path"));
         f.setFileSize(rs.getLong("file_size"));
         f.setType(rs.getString("type"));
         f.setStatus(rs.getString("status"));

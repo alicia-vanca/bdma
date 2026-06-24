@@ -1,5 +1,6 @@
 package com.app.common.modules.media.controllers;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
@@ -9,6 +10,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
+import com.app.common.modules.datarestore.services.RestoreService;
+import com.app.common.modules.datarestore.services.RestoreService.BackupSyncResult;
+import com.app.common.modules.media.services.MediaViewerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Scope;
@@ -139,6 +143,8 @@ public class MediaViewerController {
     private Label lblVideoTime;
     @FXML
     private ComboBox<String> cbSpeed;
+    @FXML
+    private Label lblAudioPlaceholder;
 
     // ── State ─────────────────────────────────────────────────────────────────
     private FileView currentFile;
@@ -158,6 +164,8 @@ public class MediaViewerController {
 
     private final FolderManagerService folderManagerService;
     private final MediaMetadataService mediaMetadataService;
+    private final MediaViewerService mediaViewerService;
+    private final RestoreService restoreService;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "MediaViewer-Loader");
         t.setDaemon(true);
@@ -168,9 +176,13 @@ public class MediaViewerController {
     private Consumer<FileView> onLoadFile;
 
     public MediaViewerController(FolderManagerService folderManagerService,
-            MediaMetadataService mediaMetadataService) {
+            MediaMetadataService mediaMetadataService,
+            MediaViewerService mediaViewerService,
+            RestoreService restoreService) {
         this.folderManagerService = folderManagerService;
         this.mediaMetadataService = mediaMetadataService;
+        this.mediaViewerService = mediaViewerService;
+        this.restoreService = restoreService;
     }
 
     public void refreshLocalizedText() {
@@ -272,15 +284,7 @@ public class MediaViewerController {
 
         executor.submit(() -> {
             try {
-                PathResolutionResult result = folderManagerService
-                        .findAbsolutePathFromNonDriveLetterPath(file.syncedPath(), file.fileSize());
-
-                if (result.isNotFound() || result.isError()) {
-                    Platform.runLater(() -> showError(I18n.get("media.viewer.error.image.not.found", file.name())));
-                    return;
-                }
-
-                Path absolutePath = result.getPath();
+                Path absolutePath = resolveMediaPath(file);
                 String uri = absolutePath.toUri().toString();
                 Image img = new Image(uri, true);
 
@@ -321,15 +325,8 @@ public class MediaViewerController {
 
         executor.submit(() -> {
             try {
-                PathResolutionResult result = folderManagerService
-                        .findAbsolutePathFromNonDriveLetterPath(file.syncedPath(), file.fileSize());
-
-                if (result.isNotFound() || result.isError()) {
-                    Platform.runLater(() -> showError(I18n.get("media.viewer.error.video.not.found", file.name())));
-                    return;
-                }
-
-                String uri = result.getPath().toUri().toString();
+                Path absolutePath = resolveMediaPath(file);
+                String uri = absolutePath.toUri().toString();
 
                 Platform.runLater(() -> {
                     try {
@@ -340,12 +337,12 @@ public class MediaViewerController {
 
                         executor.submit(() -> {
                             List<GpsPoint> timeline = mediaMetadataService
-                                    .readGpsTimeline(result.getPath(), file.type());
+                                    .readGpsTimeline(absolutePath, file.type());
                             Platform.runLater(() -> gpsTimeline = timeline);
                         });
                         setupMediaPlayer(file);
                         showVideoPane();
-                        updateDetailPanel(file, null, result.getPath());
+                        updateDetailPanel(file, null, absolutePath);
 
                     } catch (Exception e) {
                         log.error("Failed to create MediaPlayer: {}", file.syncedPath(), e);
@@ -380,7 +377,8 @@ public class MediaViewerController {
     }
 
     private void applyZoom(double factor) {
-        if (imageView.getImage() == null) return;
+        if (imageView.getImage() == null)
+            return;
 
         zoomFactor *= factor;
 
@@ -402,11 +400,13 @@ public class MediaViewerController {
     }
 
     private void fitImageToPane() {
-        if (imageView.getImage() == null) return;
+        if (imageView.getImage() == null)
+            return;
 
         double paneW = scrollPane.getWidth() - 2;
         double paneH = scrollPane.getHeight() - 2;
-        if (paneW <= 0 || paneH <= 0) return;
+        if (paneW <= 0 || paneH <= 0)
+            return;
 
         double imgW = imageView.getImage().getWidth();
         double imgH = imageView.getImage().getHeight();
@@ -533,10 +533,49 @@ public class MediaViewerController {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+    private Path resolveMediaPath(FileView file) throws IOException {
+        Path resolvedPath = resolveSyncedPath(file);
+        if (resolvedPath != null) {
+            return resolvedPath;
+        }
+
+        return restoreMissingMediaFile(file);
+    }
+
+    private Path resolveSyncedPath(FileView file) {
+        PathResolutionResult result = folderManagerService
+                .findAbsolutePathFromNonDriveLetterPath(file.syncedPath(), file.fileSize());
+        return result.isFound() ? result.getPath() : null;
+    }
+
+    private Path restoreMissingMediaFile(FileView file) throws IOException {
+        if (file.backedUpPath() == null || file.backedUpPath().isBlank()) {
+            throw new IOException("Backup path is missing for media file: " + file.name());
+        }
+        if (folderManagerService.getSyncDir() == null) {
+            throw new IOException("Sync folder is not configured");
+        }
+
+        BackupSyncResult result = restoreService.restoreSingleFile(
+                folderManagerService.getSyncDir().getAbsolutePath(),
+                file.backedUpPath());
+        if (!result.success()) {
+            String message = result.errorMessage() != null ? result.errorMessage() : "Media restore failed";
+            throw new IOException(message);
+        }
+        if (result.restoredPath() == null || result.restoredPath().isBlank()) {
+            throw new IOException("Media file restored without destination path: " + file.name());
+        }
+        return Path.of(result.restoredPath());
+    }
+
     private String formatSize(long bytes) {
-        if (bytes < 0) return "-";
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        if (bytes < 0)
+            return "-";
+        if (bytes < 1024)
+            return bytes + " B";
+        if (bytes < 1024 * 1024)
+            return (bytes / 1024) + " KB";
         return String.format("%.1f MB", bytes / (1024.0 * 1024));
     }
 
@@ -563,19 +602,27 @@ public class MediaViewerController {
         executor.submit(() -> {
             assert file.type() != null;
             Optional<GpsCoordinate> gps = mediaMetadataService.readGps(absolutePath, file.type());
-            Platform.runLater(() ->
-                    detailGps.setText(gps.map(GpsCoordinate::toString).orElse("—"))
-            );
+            Platform.runLater(() -> detailGps.setText(gps.map(GpsCoordinate::toString).orElse("—")));
         });
     }
 
     private void setupMediaPlayer(FileView file) {
-        mediaView.setFitWidth(contentPane.getWidth());
-        mediaView.setFitHeight(contentPane.getHeight());
-        mediaViewWrapper.setMaxWidth(contentPane.getWidth());
-        mediaViewWrapper.setMaxHeight(contentPane.getHeight());
-        mediaViewWrapper.setPrefWidth(contentPane.getWidth());
-        mediaViewWrapper.setPrefHeight(contentPane.getHeight());
+        boolean isAudio = mediaViewerService.isAudio(file.type());
+
+        // Audio: hide video surface, show placeholder icon instead
+        mediaViewWrapper.setVisible(!isAudio);
+        mediaViewWrapper.setManaged(!isAudio);
+        lblAudioPlaceholder.setVisible(isAudio);
+        lblAudioPlaceholder.setManaged(isAudio);
+
+        if (!isAudio) {
+            mediaView.setFitWidth(contentPane.getWidth());
+            mediaView.setFitHeight(contentPane.getHeight());
+            mediaViewWrapper.setMaxWidth(contentPane.getWidth());
+            mediaViewWrapper.setMaxHeight(contentPane.getHeight());
+            mediaViewWrapper.setPrefWidth(contentPane.getWidth());
+            mediaViewWrapper.setPrefHeight(contentPane.getHeight());
+        }
 
         boundsListener = (obs, oldVal, newVal) -> {
             double x = (videoPane.getWidth() - newVal.getWidth()) / 2;
@@ -658,9 +705,8 @@ public class MediaViewerController {
             mediaPlayer.pause();
         });
 
-        mediaPlayer.setOnError(() ->
-                Platform.runLater(() -> showError(I18n.get("media.viewer.error.video.playback", file.name())))
-        );
+        mediaPlayer.setOnError(
+                () -> Platform.runLater(() -> showError(I18n.get("media.viewer.error.video.playback", file.name()))));
 
         lblFileName.setText(file.name());
         lblFileSize.setText(formatSize(file.fileSize()));
@@ -670,7 +716,8 @@ public class MediaViewerController {
 
     @FXML
     private void onPlayPause() {
-        if (mediaPlayer == null) return;
+        if (mediaPlayer == null)
+            return;
         if (mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
             mediaPlayer.pause();
             btnPlayPause.setText("▶");
@@ -701,20 +748,24 @@ public class MediaViewerController {
     }
 
     private void seek(int seconds) {
-        if (mediaPlayer == null) return;
+        if (mediaPlayer == null)
+            return;
         Duration current = mediaPlayer.getCurrentTime();
         Duration total = mediaPlayer.getTotalDuration();
         Duration target = current.add(Duration.seconds(seconds));
 
-        if (target.lessThan(Duration.ZERO)) target = Duration.ZERO;
-        if (target.greaterThan(total)) target = total;
+        if (target.lessThan(Duration.ZERO))
+            target = Duration.ZERO;
+        if (target.greaterThan(total))
+            target = total;
 
         mediaPlayer.seek(target);
     }
 
     @FXML
     private void onSpeedChanged() {
-        if (mediaPlayer == null || cbSpeed.getValue() == null) return;
+        if (mediaPlayer == null || cbSpeed.getValue() == null)
+            return;
         try {
             double rate = Double.parseDouble(cbSpeed.getValue().replace("x", ""));
             mediaPlayer.setRate(rate);
@@ -759,7 +810,8 @@ public class MediaViewerController {
     }
 
     private String formatDuration(Duration duration) {
-        if (duration == null || duration.isUnknown()) return "00:00";
+        if (duration == null || duration.isUnknown())
+            return "00:00";
         int totalSeconds = (int) duration.toSeconds();
         int hours = totalSeconds / 3600;
         int minutes = (totalSeconds % 3600) / 60;
@@ -772,7 +824,8 @@ public class MediaViewerController {
     }
 
     private void updateGpsForTime(double currentSeconds) {
-        if (gpsTimeline == null || gpsTimeline.isEmpty()) return;
+        if (gpsTimeline == null || gpsTimeline.isEmpty())
+            return;
 
         GpsPoint best = gpsTimeline.getFirst();
         for (GpsPoint point : gpsTimeline) {
@@ -788,12 +841,14 @@ public class MediaViewerController {
     }
 
     private String formatStatus(String status) {
-        if (status == null || status.isEmpty()) return "—";
+        if (status == null || status.isEmpty())
+            return "—";
         return I18n.get("file.status." + status);
     }
 
     private String formatType(String type) {
-        if (type == null || type.isEmpty()) return "—";
+        if (type == null || type.isEmpty())
+            return "—";
         return I18n.get("file.type." + type);
     }
 }

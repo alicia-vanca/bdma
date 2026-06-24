@@ -118,7 +118,7 @@ public class FolderSecurityService {
     public static void lockSinglePath(Path path) throws IOException {
         try {
             String user = buildIcaclsTrustee();
-            runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
+            hideSinglePath(path);
             runCommand(CMD_ICACLS,
                     path.toString(),
                     ICACLS_DENY,
@@ -126,6 +126,21 @@ public class FolderSecurityService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Lock interrupted for: " + path, e);
+        }
+    }
+
+    /**
+     * Hide a single path from normal Explorer views without changing ACLs.
+     *
+     * @param path the path to hide
+     * @throws IOException if the hide operation fails
+     */
+    public static void hideSinglePath(Path path) throws IOException {
+        try {
+            runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Hide interrupted for: " + path, e);
         }
     }
 

@@ -1,5 +1,6 @@
 .gradle
 build/
+javafx-runtime/
 *.class
 *.jar
 *.exe
@@ -7,7 +8,6 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 .kotlin
-javafx-runtime/
 
 ### IntelliJ IDEA ###
 .idea/
@@ -44,11 +44,15 @@ bin/
 ### VS Code ###
 .vscode/
 
+### Local secrets ###
+/application-local.properties
+
 ### AI/Agent Instruction Files ###
 AGENTS.md
 TODO.md
 .github/copilot-instructions.md
 .github/instructions/code-style.instructions.md
+.github/skills/
 
 ### Mac OS ###
 .DS_Store

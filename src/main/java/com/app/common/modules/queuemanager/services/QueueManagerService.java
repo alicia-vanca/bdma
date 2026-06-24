@@ -1,14 +1,20 @@
 package com.app.common.modules.queuemanager.services;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import com.app.common.dtos.SyncContext;
 import com.app.common.modules.queuemanager.dtos.DeviceQueueItem;
 import com.app.common.modules.queuemanager.dtos.ExportDirectoryQueueItem;
 import com.app.common.modules.queuemanager.dtos.FileQueueItem;
+import com.app.common.modules.queuemanager.dtos.QueueProgressSummary;
+import com.app.common.modules.queuemanager.enums.ItemStatus;
+import com.app.common.modules.queuemanager.events.QueueProgressChangedEvent;
 import com.app.common.modules.queuemanager.trackers.BackupProgressTracker;
 import com.app.common.modules.queuemanager.trackers.ExportProgressTracker;
 import com.app.common.modules.queuemanager.trackers.SyncProgressTracker;
@@ -21,17 +27,24 @@ import com.app.common.modules.queuemanager.trackers.SyncProgressTracker;
  */
 @Service
 public class QueueManagerService {
-
     private final SyncProgressTracker syncTracker;
     private final BackupProgressTracker backupTracker;
     private final ExportProgressTracker exportTracker;
+    private final ApplicationEventPublisher eventPublisher;
+
+    private final Object exportProgressLock = new Object();
+    private int exportProgressTotal;
+    private int exportProgressDone;
+    private boolean exportProgressRunning;
 
     public QueueManagerService(SyncProgressTracker syncTracker,
             BackupProgressTracker backupTracker,
-            ExportProgressTracker exportTracker) {
+            ExportProgressTracker exportTracker,
+            ApplicationEventPublisher eventPublisher) {
         this.syncTracker = syncTracker;
         this.backupTracker = backupTracker;
         this.exportTracker = exportTracker;
+        this.eventPublisher = eventPublisher;
     }
 
     // ── Sync Operations ──────────────────────────────────────────────────────
@@ -58,16 +71,6 @@ public class QueueManagerService {
     }
 
     /**
-     * Marks a sync file leaf row as skipped.
-     *
-     * @param rootRowId camera id of the sync device root row
-     * @param rowId     sync leaf row id; this is the full local save path
-     */
-    public void markSyncFileSkipped(String rootRowId, String rowId) {
-        syncTracker.markFileSkipped(rootRowId, rowId);
-    }
-
-    /**
      * Marks a sync file leaf row as currently processing.
      *
      * @param rootRowId camera id of the sync device root row
@@ -78,17 +81,6 @@ public class QueueManagerService {
     }
 
     /**
-     * Updates progress for a sync file leaf row.
-     *
-     * @param rootRowId camera id of the sync device root row
-     * @param rowId     sync leaf row id; this is the full local save path
-     * @param progress  completion percentage from 0 to 100
-     */
-    public void updateSyncFileProgress(String rootRowId, String rowId, int progress) {
-        syncTracker.updateFileProgress(rootRowId, rowId, progress);
-    }
-
-    /**
      * Marks a sync file leaf row as completed.
      *
      * @param rootRowId camera id of the sync device root row
@@ -96,6 +88,7 @@ public class QueueManagerService {
      */
     public void markSyncFileCompleted(String rootRowId, String rowId) {
         syncTracker.markFileCompleted(rootRowId, rowId);
+        publishSyncQueueProgressChanged(rootRowId);
     }
 
     /**
@@ -107,6 +100,7 @@ public class QueueManagerService {
      */
     public void markSyncFileFailed(String rootRowId, String rowId, String errorMessage) {
         syncTracker.markFileFailed(rootRowId, rowId, errorMessage);
+        publishSyncQueueProgressChanged(rootRowId);
     }
 
     /**
@@ -114,13 +108,40 @@ public class QueueManagerService {
      */
     public void markDeviceSyncProcessing(String rootRowId) {
         syncTracker.markDeviceProcessing(rootRowId);
+        publishSyncQueueProgressChanged(rootRowId);
+    }
+
+    /**
+     * Updates root counters during sync so queue UI does not wait for completion.
+     */
+    public void updateDeviceSyncProgress(String rootRowId, int total, int passed, int failed) {
+        if (!hasTrackedSyncDevice(rootRowId)) {
+            return;
+        }
+        syncTracker.updateDeviceProgress(rootRowId, total, passed, failed);
+        publishSyncQueueProgressChanged(rootRowId);
     }
 
     /**
      * Mark device sync as completed.
      */
     public void markDeviceSyncCompleted(String rootRowId, int total, int passed, int failed) {
+        if (!hasTrackedSyncDevice(rootRowId)) {
+            return;
+        }
         syncTracker.markDeviceCompleted(rootRowId, total, passed, failed);
+        publishSyncQueueProgressChanged(rootRowId, true);
+    }
+
+    /**
+     * Remove device from sync tracker.
+     */
+    public void removeDeviceFromSyncTracker(String rootRowId) {
+        if (!hasTrackedSyncDevice(rootRowId)) {
+            return;
+        }
+        syncTracker.removeDevice(rootRowId);
+        publishSyncQueueProgressChanged(rootRowId, false);
     }
 
     /**
@@ -135,6 +156,10 @@ public class QueueManagerService {
      */
     public DeviceQueueItem getTrackingSyncDevice(String rootRowId) {
         return syncTracker.getDevice(rootRowId);
+    }
+
+    private boolean hasTrackedSyncDevice(String rootRowId) {
+        return rootRowId != null && !rootRowId.isBlank() && syncTracker.getDevice(rootRowId) != null;
     }
 
     /**
@@ -158,13 +183,6 @@ public class QueueManagerService {
      */
     public void markBackupFileProcessing(String filePath) {
         backupTracker.markProcessing(filePath);
-    }
-
-    /**
-     * Update backup file progress.
-     */
-    public void updateBackupFileProgress(String filePath, int progress) {
-        backupTracker.updateProgress(filePath, progress);
     }
 
     /**
@@ -209,6 +227,42 @@ public class QueueManagerService {
      */
     public void addFileToExportTracker(String exportPathId, String fileName, Long fileSize, Long sortSize) {
         exportTracker.addFile(exportPathId, fileName, fileSize, sortSize);
+    }
+
+    /**
+     * All export files were added to the tracker.
+     * Notify listeners of the update.
+     *
+     * @param acceptedCount number of logical files accepted into the export queue
+     */
+    public void allExportFilesAddedToTracker(int acceptedCount) {
+        if (acceptedCount <= 0) {
+            return;
+        }
+        synchronized (exportProgressLock) {
+            if (!exportProgressRunning && exportProgressDone >= exportProgressTotal) {
+                exportProgressTotal = 0;
+                exportProgressDone = 0;
+            }
+            exportProgressTotal += acceptedCount;
+            exportProgressRunning = true;
+        }
+        publishExportQueueProgressChanged();
+    }
+
+    /**
+     * Records one accepted file reaching a final state and advances compact
+     * export progress: copied, skipped, already-existing, failed, or canceled.
+     */
+    public void finishExportForSingleFile() {
+        synchronized (exportProgressLock) {
+            if (exportProgressTotal <= 0) {
+                return;
+            }
+            exportProgressDone = Math.min(exportProgressTotal, exportProgressDone + 1);
+            exportProgressRunning = exportProgressDone < exportProgressTotal;
+        }
+        publishExportQueueProgressChanged();
     }
 
     /**
@@ -284,10 +338,99 @@ public class QueueManagerService {
     }
 
     /**
+     * Check SyncProgressTracker for running processes
+     */
+    public boolean hasRunningSyncTask() {
+        return syncTracker.getAllDevices()
+                .stream()
+                .anyMatch(device -> device.getStatus() == ItemStatus.PROCESSING);
+    }
+
+    /**
+     * Check ExportProgressTracker for running processes
+     */
+    public boolean hasRunningExportTask() {
+        return exportTracker.getAllDirectories()
+                .stream()
+                .anyMatch(directory -> directory.getStatus() == ItemStatus.PROCESSING);
+    }
+
+    /**
      * Get a specific export file.
      */
     public FileQueueItem getTrackingExportFile(String exportPathId) {
         return exportTracker.getFile(exportPathId);
+    }
+
+    private QueueProgressSummary buildSyncProgressSummary(DeviceQueueItem device, boolean complete) {
+        List<FileQueueItem> files = snapshotFiles(device.getFiles());
+        int total = device.getTotal();
+        int finished = files.isEmpty()
+                ? device.getPassed() + device.getFailed()
+                : countFinishedFiles(files);
+        return new QueueProgressSummary(QueueProgressSummary.Kind.SYNC, device.getDeviceName(), total, finished,
+                complete);
+    }
+
+    private Optional<QueueProgressSummary> findExportProgressSummary() {
+        synchronized (exportProgressLock) {
+            if (exportProgressTotal <= 0) {
+                return Optional.empty();
+            }
+            return Optional.of(new QueueProgressSummary(
+                    QueueProgressSummary.Kind.EXPORT,
+                    "",
+                    exportProgressTotal,
+                    exportProgressDone,
+                    !exportProgressRunning && exportProgressDone >= exportProgressTotal));
+        }
+    }
+
+    private List<FileQueueItem> snapshotFiles(List<FileQueueItem> files) {
+        if (files == null || files.isEmpty()) {
+            return List.of();
+        }
+
+        return new ArrayList<>(files);
+    }
+
+    private int countFinishedFiles(List<FileQueueItem> files) {
+        return (int) files.stream()
+                .filter(file -> isFinishedStatus(file.getStatus()))
+                .count();
+    }
+
+    private boolean isFinishedStatus(ItemStatus status) {
+        return status == ItemStatus.COMPLETED
+                || status == ItemStatus.COMPLETED_WITH_ERRORS
+                || status == ItemStatus.FAILED
+                || status == ItemStatus.SKIPPED
+                || status == ItemStatus.CANCELLED;
+    }
+
+    private void publishSyncQueueProgressChanged(String rootRowId) {
+        publishSyncQueueProgressChanged(rootRowId, false);
+    }
+
+    private void publishSyncQueueProgressChanged(String rootRowId, boolean complete) {
+        DeviceQueueItem device = syncTracker.getDevice(rootRowId);
+        if (device == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new QueueProgressChangedEvent(buildSyncProgressSummary(device, complete)));
+    }
+
+    private void publishExportQueueProgressChanged() {
+        findExportProgressSummary()
+                .ifPresent(summary -> eventPublisher.publishEvent(new QueueProgressChangedEvent(summary)));
+    }
+
+    private void clearExportProgress() {
+        synchronized (exportProgressLock) {
+            exportProgressTotal = 0;
+            exportProgressDone = 0;
+            exportProgressRunning = false;
+        }
     }
 
     // ── General Operations ───────────────────────────────────────────────────
@@ -299,5 +442,6 @@ public class QueueManagerService {
         syncTracker.clear();
         backupTracker.clear();
         exportTracker.clear();
+        clearExportProgress();
     }
 }

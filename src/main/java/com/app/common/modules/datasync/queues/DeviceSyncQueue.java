@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 
 import com.app.common.dtos.SyncContext;
 import com.app.common.modules.queuemanager.services.QueueManagerService;
-import com.app.common.services.DeviceMiniStatus;
+import com.app.common.modules.device.services.DeviceMiniStatus;
 
 @Component
 public class DeviceSyncQueue {
@@ -98,14 +98,19 @@ public class DeviceSyncQueue {
         });
         inQueue.remove(cameraId);
 
-        if (!removedEntries.isEmpty()) {
+        boolean wasQueued = !removedEntries.isEmpty();
+        boolean wasCurrent = cameraId.equals(currentCameraId);
+
+        if (wasQueued) {
             deviceMiniStatus.markDone(cameraId);
         }
-        if (cameraId.equals(currentCameraId)) {
+        if (wasCurrent) {
             currentCameraId = null;
             deviceMiniStatus.markCancelled(cameraId);
         }
-        log.info("Removed camera {} from device sync queue", cameraId);
+        if (wasQueued || wasCurrent) {
+            log.info("Removed camera {} from device sync queue", cameraId);
+        }
     }
 
     public void clearAll() {

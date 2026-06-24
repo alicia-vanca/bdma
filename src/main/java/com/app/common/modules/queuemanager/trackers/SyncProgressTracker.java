@@ -27,6 +27,7 @@ import com.app.common.modules.queuemanager.events.QueueStatusChangedEvent;
 public class SyncProgressTracker {
 
     private static final Logger log = LoggerFactory.getLogger(SyncProgressTracker.class);
+    private static final String DEVICE_NOT_FOUND_LOG = "Device not found: rootRowId={}";
 
     private final ApplicationEventPublisher eventPublisher;
     private final Map<String, DeviceQueueItem> devices = Collections.synchronizedMap(new LinkedHashMap<>());
@@ -130,8 +131,6 @@ public class SyncProgressTracker {
             file.setStatus(ItemStatus.COMPLETED);
             file.setProgress(100);
             publishCounterChangedEvent(rowId, rootRowId, "Completed: " + file.getFileName());
-        } else {
-            log.warn("File not found: rootRowId={} rowId={}", rootRowId, rowId);
         }
     }
 
@@ -150,8 +149,6 @@ public class SyncProgressTracker {
             file.setErrorMessage(errorMessage);
             file.incrementRetryCount();
             publishCounterChangedEvent(rowId, rootRowId, "Failed: " + file.getFileName() + " - " + errorMessage);
-        } else {
-            log.warn("File not found: rootRowId={} rowId={}", rootRowId, rowId);
         }
     }
 
@@ -160,10 +157,30 @@ public class SyncProgressTracker {
      */
     public void markDeviceProcessing(String rootRowId) {
         DeviceQueueItem device = devices.get(rootRowId);
-        if (device != null) {
-            device.setStatus(ItemStatus.PROCESSING);
-            publishRowChangedEvent(rootRowId, "Device sync started");
+        if (device == null) {
+            log.warn(DEVICE_NOT_FOUND_LOG, rootRowId);
+            return;
         }
+
+        device.setStatus(ItemStatus.PROCESSING);
+        publishRowChangedEvent(rootRowId, "Device sync started");
+    }
+
+    /**
+     * Updates aggregate counters while a sync run is still processing.
+     */
+    public void updateDeviceProgress(String rootRowId, int total, int passed, int failed) {
+        DeviceQueueItem device = devices.get(rootRowId);
+        if (device == null) {
+            log.warn(DEVICE_NOT_FOUND_LOG, rootRowId);
+            return;
+        }
+
+        device.setTotal(total);
+        device.setPassed(passed);
+        device.setFailed(failed);
+        device.setStatus(ItemStatus.PROCESSING);
+        publishRowChangedEvent(rootRowId, "Device sync progress updated");
     }
 
     /**
@@ -171,14 +188,17 @@ public class SyncProgressTracker {
      */
     public void markDeviceCompleted(String rootRowId, int total, int passed, int failed) {
         DeviceQueueItem device = devices.get(rootRowId);
-        if (device != null) {
-            device.setTotal(total);
-            device.setPassed(passed);
-            device.setFailed(failed);
-            device.setStatus(failed > 0 ? ItemStatus.COMPLETED_WITH_ERRORS : ItemStatus.COMPLETED);
-            publishRowChangedEvent(rootRowId,
-                    failed > 0 ? "Device sync completed with errors" : "Device sync completed");
+        if (device == null) {
+            log.warn(DEVICE_NOT_FOUND_LOG, rootRowId);
+            return;
         }
+
+        device.setTotal(total);
+        device.setPassed(passed);
+        device.setFailed(failed);
+        device.setStatus(failed > 0 ? ItemStatus.COMPLETED_WITH_ERRORS : ItemStatus.COMPLETED);
+        publishRowChangedEvent(rootRowId,
+                failed > 0 ? "Device sync completed with errors" : "Device sync completed");
     }
 
     /**

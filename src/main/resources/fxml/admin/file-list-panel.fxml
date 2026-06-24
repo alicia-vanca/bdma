@@ -4,6 +4,7 @@
 <?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.DatePicker?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressBar?>
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextField?>
@@ -51,7 +52,18 @@
         <ComboBox fx:id="cbPageSize" styleClass="page-size-combo"/>
         <Label text="%common.per.page"/>
         <Region HBox.hgrow="ALWAYS"/>
-        <Button fx:id="btnOpenQueueDialog" text="%queue.dialog.title" onAction="#onOpenQueueDialog" styleClass="btn-secondary"/>
+        <Button fx:id="btnOpenQueueDialog" onAction="#onOpenQueueDialog" styleClass="progress-bar-button,idle">
+            <graphic>
+                <VBox spacing="4" styleClass="progress-bar-content">
+                    <HBox fx:id="progressBarHeader" alignment="CENTER" spacing="8" styleClass="progress-bar-header">
+                        <Label fx:id="lblProgressBarTitle" text="%progress.bar.idle" styleClass="progress-bar-title"/>
+                        <Region fx:id="progressBarSpacer" HBox.hgrow="ALWAYS" managed="false" visible="false"/>
+                        <Label fx:id="lblProgressBarPercent" text="0%" styleClass="progress-bar-percent" managed="false" visible="false"/>
+                    </HBox>
+                    <ProgressBar fx:id="progressBar" progress="0" styleClass="progress-bar"/>
+                </VBox>
+            </graphic>
+        </Button>
         <Region HBox.hgrow="ALWAYS"/>
         <Button fx:id="btnFirst" text="«" onAction="#onFirstPage" styleClass="btn-secondary,btn-pagination"/>
         <Button fx:id="btnPrev" text="‹" onAction="#onPrevPage" styleClass="btn-secondary,btn-pagination"/>

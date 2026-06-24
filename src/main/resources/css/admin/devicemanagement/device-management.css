@@ -1,0 +1,52 @@
+.table-view .table-cell.device-cell-connected,
+.table-row-cell:selected .table-cell.device-cell-connected {
+    -fx-text-fill: #16a34a;
+}
+
+.table-view .table-cell.device-cell-unvalidated,
+.table-row-cell:selected .table-cell.device-cell-unvalidated {
+    -fx-text-fill: #d97706;
+}
+
+.table-view .table-cell.device-cell-deactivated,
+.table-row-cell:selected .table-cell.device-cell-deactivated {
+    -fx-text-fill: #dc2626;
+}
+
+.action-cell-box {
+    -fx-spacing: 10;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.btn-edit {
+    -fx-background-color: #2980b9;
+    -fx-text-fill: white;
+    -fx-pref-height: 26;
+    -fx-padding: 0 10;
+}
+
+.btn-edit:hover {
+    -fx-background-color: #2471a3;
+}
+
+.btn-reactivate {
+    -fx-background-color: #27ae60;
+    -fx-text-fill: white;
+    -fx-pref-height: 26;
+    -fx-padding: 0 10;
+}
+
+.btn-reactivate:hover {
+    -fx-background-color: #229954;
+}
+
+.btn-delete {
+    -fx-background-color: #c0392b;
+    -fx-text-fill: white;
+    -fx-pref-height: 26;
+    -fx-padding: 0 10;
+}
+
+.btn-delete:hover {
+    -fx-background-color: #a93226;
+}

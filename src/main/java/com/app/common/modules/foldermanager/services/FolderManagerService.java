@@ -14,14 +14,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import com.app.common.configs.AppContext;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.StorageIssueReason;
+import com.app.common.models.User;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
 import com.app.common.modules.foldermanager.exceptions.FileNotFoundOnAnyDriveException;
 import com.app.common.services.AppConfigService;
+import com.app.common.services.UserService;
 
 import lombok.Getter;
 
@@ -36,20 +39,26 @@ public class FolderManagerService {
 
     private static final Logger log = LoggerFactory.getLogger(FolderManagerService.class);
     private static final String DEFAULT_ROOT_FOLDER = "BDMA_User_Data";
+    private static final String STORAGE_PROTECTION_ENABLED_PROPERTY = "app.storage.protection.enabled";
+    private static final long TMP_DELETE_RETRY_DELAY_MILLIS = 5_000L;
+    private static final int TMP_DELETE_MAX_ATTEMPTS = 3;
 
     @Getter
     private final File tempDir;
 
     private final AppConfigService appConfigService;
+    private final UserService userService;
     private final ApplicationEventPublisher publisher;
     private final boolean storageProtectionEnabled;
 
     public FolderManagerService(AppConfigService appConfigService,
+            UserService userService,
             ApplicationEventPublisher publisher,
             @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled) {
         this.appConfigService = appConfigService;
+        this.userService = userService;
         this.publisher = publisher;
-        this.storageProtectionEnabled = storageProtectionEnabled;
+        this.storageProtectionEnabled = allowDisabledOnlyForDev(storageProtectionEnabled);
         this.tempDir = new File(AppDataPaths.appTmpDir());
     }
 
@@ -61,13 +70,13 @@ public class FolderManagerService {
 
     public void init(FolderType target) {
         if (target == null || target == FolderType.SYNC) {
-            String dataDirPath = appConfigService.getConfigValue(AppConstants.KEY_DATA_DIR);
-            if (dataDirPath == null || dataDirPath.isBlank()) {
-                dataDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataSave").toString();
-                appConfigService.saveConfigValue(AppConstants.KEY_DATA_DIR, dataDirPath);
-                log.info("Initialized default save folder: {}", dataDirPath);
+            String syncDirPath = appConfigService.getConfigValue(AppConstants.KEY_SYNC_DIR);
+            if (syncDirPath == null || syncDirPath.isBlank()) {
+                syncDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataSync").toString();
+                appConfigService.saveConfigValue(AppConstants.KEY_SYNC_DIR, syncDirPath);
+                log.info("Initialized default sync folder: {}", syncDirPath);
             }
-            initDataDir(dataDirPath);
+            initSyncDir(syncDirPath);
         }
         if (target == null || target == FolderType.BACKUP) {
             String backupDirPath = appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR);
@@ -82,6 +91,8 @@ public class FolderManagerService {
     }
 
     public void shutdown() {
+        cleanupConfiguredTmpFiles(FolderType.SYNC);
+        cleanupConfiguredTmpFiles(FolderType.BACKUP);
         clearTemp();
         log.info("DataFolderManager shut down");
     }
@@ -90,11 +101,11 @@ public class FolderManagerService {
 
     // Fetch latest sync directory from database instead of using cached value.
     public File getSyncDir() {
-        String dataDirPath = appConfigService.getConfigValue(AppConstants.KEY_DATA_DIR);
-        if (dataDirPath == null || dataDirPath.isBlank()) {
+        String syncDirPath = appConfigService.getConfigValue(AppConstants.KEY_SYNC_DIR);
+        if (syncDirPath == null || syncDirPath.isBlank()) {
             return null;
         }
-        return new File(dataDirPath, AppConstants.SYNC_FOLDER_NAME);
+        return new File(syncDirPath, AppConstants.SYNC_FOLDER_NAME);
     }
 
     // Fetch latest backupDir from database instead of using cached value
@@ -104,10 +115,6 @@ public class FolderManagerService {
             return null;
         }
         return new File(backupDirPath, AppConstants.BACKUP_FOLDER_NAME);
-    }
-
-    public boolean isSyncDirConfigured() {
-        return getSyncDir() != null;
     }
 
     public boolean isBackupDirConfigured() {
@@ -187,7 +194,7 @@ public class FolderManagerService {
         }
 
         // Find the deepest "sync_bdma" or "backup_bdma" folder in the path
-        // Ex: D:\BDMA_User_Dataxx\sync_bdma\sync_bdma\DataSave\sync_bdma\
+        // Ex: D:\BDMA_User_Dataxx\sync_bdma\sync_bdma\DataSync\sync_bdma\
         Path deepestDataFolder = null;
         Path current = absolutePath;
         while (current != null) {
@@ -249,9 +256,9 @@ public class FolderManagerService {
     /**
      * Search across all drives to find a file by non-drive-letter path.
      */
-    private Path resolvePathAcrossDrives(String nonDriverLetterPath) throws IOException {
+    public Path resolvePathAcrossDrives(String nonDriveLetterPath) throws IOException {
         for (Path root : FileSystems.getDefault().getRootDirectories()) {
-            Path candidatePath = root.resolve(nonDriverLetterPath);
+            Path candidatePath = root.resolve(nonDriveLetterPath);
             try {
                 if (Files.exists(candidatePath)) {
                     return candidatePath;
@@ -261,21 +268,21 @@ public class FolderManagerService {
             }
         }
 
-        throw new FileNotFoundOnAnyDriveException(nonDriverLetterPath);
+        throw new FileNotFoundOnAnyDriveException(nonDriveLetterPath);
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
 
-    private void initDataDir(String configuredPath) {
+    private void initSyncDir(String configuredPath) {
         if (configuredPath == null || configuredPath.isBlank())
             return;
 
-        File dataDir = new File(configuredPath, AppConstants.SYNC_FOLDER_NAME);
+        File syncDir = new File(configuredPath, AppConstants.SYNC_FOLDER_NAME);
 
         // Check drive accessibility before attempting folder operations
-        if (!isDriveAccessible(dataDir)) {
-            log.warn("DataDir drive not accessible during initialization: {}", dataDir.getAbsolutePath());
-            log.debug("FolderManagerService.initDataDir firing StorageUnavailableEvent: target={} reason={}",
+        if (!isDriveAccessible(syncDir)) {
+            log.warn("SyncDir drive not accessible during initialization: {}", syncDir.getAbsolutePath());
+            log.debug("FolderManagerService.initSyncDir firing StorageUnavailableEvent: target={} reason={}",
                     FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE);
             publisher.publishEvent(
                     new StorageUnavailableEvent(FolderType.SYNC, StorageIssueReason.DRIVE_UNAVAILABLE));
@@ -283,11 +290,11 @@ public class FolderManagerService {
         }
 
         try {
-            ensureDirAccessible(dataDir.getAbsolutePath());
-            log.info("DataDir initialized: {} (protectionEnabled={})",
-                    dataDir.getAbsolutePath(), storageProtectionEnabled);
+            ensureDirAccessible(syncDir.getAbsolutePath());
+            log.info("SyncDir initialized: {} (protectionEnabled={})",
+                    syncDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
-            log.error("Failed to initialize data directory", e);
+            log.error("Failed to initialize sync directory", e);
         }
     }
 
@@ -313,6 +320,13 @@ public class FolderManagerService {
                     backupDir.getAbsolutePath(), storageProtectionEnabled);
         } catch (IOException e) {
             log.error("Failed to initialize backup directory", e);
+        }
+    }
+
+    private void cleanupConfiguredTmpFiles(FolderType type) {
+        File directory = type == FolderType.SYNC ? getSyncDir() : getBackupDir();
+        if (isDirAccessible(directory)) {
+            cleanupTmpFilesOnWorker(directory.toPath());
         }
     }
 
@@ -350,6 +364,73 @@ public class FolderManagerService {
             Files.delete(dir.toPath());
         } catch (IOException e) {
             log.warn("Failed to delete directory: {}", dir.getAbsolutePath());
+        }
+    }
+
+    private void cleanupTmpFilesOnWorker(Path directory) {
+        try {
+            for (User user : userService.findUsersOnly()) {
+                cleanupUserTmpFiles(directory, user);
+            }
+        } catch (Exception e) {
+            log.debug("Skipping temporary file cleanup for {}: {}", directory, e.getMessage());
+        }
+    }
+
+    private void cleanupUserTmpFiles(Path directory, User user) {
+        try {
+            Path userDirectory = directory.resolve(user.getUsername());
+            if (Files.isDirectory(userDirectory)) {
+                deleteTmpFilesInAccessibleDirectory(userDirectory);
+            }
+        } catch (Exception e) {
+            log.debug("Skipping temporary file cleanup for user {} in {}: {}",
+                    user.getUsername(), directory, e.getMessage());
+        }
+    }
+
+    /**
+     * Deletes leftover temporary files inside user folders without listing the
+     * protected sync or backup root directory.
+     */
+    private void deleteTmpFilesInAccessibleDirectory(Path directory) {
+        try (var paths = Files.walk(directory)) {
+            paths.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(AppConstants.TMP_EXTENSION))
+                    .forEach(this::deleteTmpFileWithRetry);
+        } catch (IOException e) {
+            log.debug("Skipping temporary file cleanup for {}: {}", directory, e.getMessage());
+        }
+    }
+
+    private void deleteTmpFileWithRetry(Path path) {
+        for (int attempt = 1; attempt <= TMP_DELETE_MAX_ATTEMPTS; attempt++) {
+            try {
+                if (Files.deleteIfExists(path)) {
+                    log.debug("Deleted temporary file: {}", path);
+                }
+                return;
+            } catch (IOException e) {
+                if (attempt == TMP_DELETE_MAX_ATTEMPTS) {
+                    log.warn("Failed to delete temporary file after {} attempts: {} ({})",
+                            TMP_DELETE_MAX_ATTEMPTS, path, e.getMessage());
+                    return;
+                }
+                if (!sleepBeforeTmpDeleteRetry(path)) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private boolean sleepBeforeTmpDeleteRetry(Path path) {
+        try {
+            Thread.sleep(TMP_DELETE_RETRY_DELAY_MILLIS);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("Temporary file cleanup interrupted while waiting to retry {}", path);
+            return false;
         }
     }
 
@@ -394,11 +475,26 @@ public class FolderManagerService {
         // Generate hash files for the final file
         FolderSecurityService.generateBackupHashFiles(target);
 
-        log.info("Backed up to backup dir: {}", relativeFromData);
+        // File got backed up to backup dir
         return target.toString();
     }
 
     private void ensureDirAccessible(String dirPath) throws IOException {
         FolderSecurityService.ensureDirAccessible(dirPath, storageProtectionEnabled);
+    }
+
+    private boolean allowDisabledOnlyForDev(boolean enabled) {
+        if (enabled || isDevVersion()) {
+            return enabled;
+        }
+
+        log.error("Ignoring {}=false because app version is not dev: {}", STORAGE_PROTECTION_ENABLED_PROPERTY,
+                AppContext.getVersion());
+        return true;
+    }
+
+    private boolean isDevVersion() {
+        String version = AppContext.getVersion();
+        return AppConstants.VERSION_DEV.equalsIgnoreCase(version == null ? "" : version.trim());
     }
 }
