@@ -172,10 +172,8 @@ public class AppUpdateController {
         Task<File> task = new Task<>() {
             @Override
             protected File call() throws Exception {
-                return getLocalTestInstaller();
-                // return appUpdateService.downloadInstaller(info,
-                //         percent -> appNoticeService.showSuccess(I18n.get("update.download.progress",
-                //                 percent)));
+                return appUpdateService.downloadInstaller(info,
+                        percent -> appNoticeService.showSuccess(I18n.get("update.download.progress", percent)));
             }
         };
 
