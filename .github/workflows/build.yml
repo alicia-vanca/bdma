@@ -3,8 +3,8 @@ name: Build and Release
 on:
   push:
     branches:
-      - cicd
       - develop
+      - cicd
 
 permissions:
   contents: write
@@ -129,7 +129,83 @@ jobs:
             "/DAPP_DATA_DIR=$appDataDir" `
             src\main\resources\installer\installer.nsi
 
-      # Upload artifact để tải về (chạy trên cả 2 nhánh)
+      - name: Prepare fixed R2 installer name
+        run: |
+          New-Item -ItemType Directory -Force -Path build\r2 | Out-Null
+
+          $installer = Get-ChildItem build\installer\*.exe | Select-Object -First 1
+
+          if (-not $installer) {
+            throw "No installer .exe found in build\installer"
+          }
+
+          if ($env:GITHUB_REF_NAME -eq "develop") {
+            Copy-Item $installer.FullName build\r2\BDMA_dev.exe -Force
+            Write-Host "Prepared development installer: build\r2\BDMA_dev.exe"
+          } elseif ($env:GITHUB_REF_NAME -eq "cicd") {
+            Copy-Item $installer.FullName build\r2\BDMA.exe -Force
+            Write-Host "Prepared production installer: build\r2\BDMA.exe"
+          } else {
+            throw "Unsupported branch: $env:GITHUB_REF_NAME"
+          }
+
+      - name: Upload latest installer to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+          AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AWS_ACCESS_KEY_ID)) {
+            throw "Missing GitHub secret: R2_ACCESS_KEY_ID"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:AWS_SECRET_ACCESS_KEY)) {
+            throw "Missing GitHub secret: R2_SECRET_ACCESS_KEY"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:R2_ACCOUNT_ID)) {
+            throw "Missing GitHub secret: R2_ACCOUNT_ID"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:R2_BUCKET_NAME)) {
+            throw "Missing GitHub secret: R2_BUCKET_NAME"
+          }
+
+          $endpoint = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+
+          if ($env:GITHUB_REF_NAME -eq "develop") {
+            $localFile = "build\r2\BDMA_dev.exe"
+            $objectKey = "BDMA_dev.exe"
+          } elseif ($env:GITHUB_REF_NAME -eq "cicd") {
+            $localFile = "build\r2\BDMA.exe"
+            $objectKey = "BDMA.exe"
+          } else {
+            throw "Unsupported branch for R2 upload: $env:GITHUB_REF_NAME"
+          }
+
+          if (-not (Test-Path $localFile)) {
+            throw "R2 upload file not found: $localFile"
+          }
+
+          Write-Host "Uploading $localFile to R2 object key: $objectKey"
+
+          aws s3 cp $localFile "s3://$env:R2_BUCKET_NAME/$objectKey" `
+            --endpoint-url $endpoint `
+            --content-type "application/vnd.microsoft.portable-executable" `
+            --cache-control "no-store, max-age=0, must-revalidate" `
+            --no-progress
+
+          Write-Host "Verifying uploaded object..."
+
+          aws s3api head-object `
+            --bucket $env:R2_BUCKET_NAME `
+            --key $objectKey `
+            --endpoint-url $endpoint
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -137,7 +213,6 @@ jobs:
           path: build/installer/*.exe
           retention-days: 7
 
-      # Tạo Release chỉ khi push vào nhánh cicd
       - name: Upload Release Asset
         if: github.ref == 'refs/heads/cicd'
         uses: softprops/action-gh-release@v2
