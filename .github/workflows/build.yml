@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - develop
-      - cicd
+      - release
 
 permissions:
   contents: write
@@ -142,7 +142,7 @@ jobs:
           if ($env:GITHUB_REF_NAME -eq "develop") {
             Copy-Item $installer.FullName build\r2\BDMA_dev.exe -Force
             Write-Host "Prepared development installer: build\r2\BDMA_dev.exe"
-          } elseif ($env:GITHUB_REF_NAME -eq "cicd") {
+          } elseif ($env:GITHUB_REF_NAME -eq "release") {
             Copy-Item $installer.FullName build\r2\BDMA.exe -Force
             Write-Host "Prepared production installer: build\r2\BDMA.exe"
           } else {
@@ -180,7 +180,7 @@ jobs:
           if ($env:GITHUB_REF_NAME -eq "develop") {
             $localFile = "build\r2\BDMA_dev.exe"
             $objectKey = "BDMA_dev.exe"
-          } elseif ($env:GITHUB_REF_NAME -eq "cicd") {
+          } elseif ($env:GITHUB_REF_NAME -eq "release") {
             $localFile = "build\r2\BDMA.exe"
             $objectKey = "BDMA.exe"
           } else {
@@ -214,7 +214,7 @@ jobs:
           retention-days: 7
 
       - name: Upload Release Asset
-        if: github.ref == 'refs/heads/cicd'
+        if: github.ref == 'refs/heads/release'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.APP_VERSION }}
