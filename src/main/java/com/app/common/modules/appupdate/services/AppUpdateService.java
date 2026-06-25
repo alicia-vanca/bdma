@@ -48,46 +48,46 @@ public class AppUpdateService {
         this.githubToken = githubToken == null ? "" : githubToken.trim();
     }
 
-    // ── Check schedule ───────────────────────────────────────────────────────
+    // ── Reminder ─────────────────────────────────────────────────────────────
 
-    public boolean shouldCheckThisWeek() {
+    /**
+     * Stores the version and date chosen by the user for weekly update reminder
+     * suppression.
+     *
+     * @param version update version to suppress for the current ISO week
+     */
+    public void saveRemindNextWeekVersion(String version) {
         try {
-            String lastCheckDate = appConfigService.getConfigValue(AppConstants.KEY_LAST_CHECK_DATE);
-            if (lastCheckDate == null || lastCheckDate.isBlank())
-                return true;
-            LocalDate lastCheck = LocalDate.parse(lastCheckDate, AppConstants.DATE_FORMATTER);
-            return !DateTimeUtil.isSameIsoWeek(lastCheck, DateTimeUtil.currentLocalDate());
-        } catch (Exception e) {
-            log.warn("Failed to read last update check date", e);
-            return true;
-        }
-    }
-
-    public void saveCheckDate() {
-        try {
-            appConfigService.saveConfigValue(AppConstants.KEY_LAST_CHECK_DATE,
+            appConfigService.saveConfigValue(AppConstants.KEY_REMIND_UPDATE_VERSION, version);
+            appConfigService.saveConfigValue(AppConstants.KEY_REMIND_UPDATE_DATE,
                     DateTimeUtil.currentLocalDate(AppConstants.DATE_FORMATTER));
         } catch (Exception e) {
-            log.warn("Failed to save check date", e);
+            log.warn("Failed to save update reminder", e);
         }
     }
 
-    // ── Skipped version ──────────────────────────────────────────────────────
-
-    public void saveSkippedVersion(String version) {
+    /**
+     * Suppresses only the same update version during the same ISO week. A newer
+     * version still notifies immediately.
+     *
+     * @param version latest update version
+     * @return true when the update dialog should stay hidden
+     */
+    public boolean shouldSuppressReminderThisWeek(String version) {
         try {
-            appConfigService.saveConfigValue(AppConstants.KEY_SKIPPED_VERSION, version);
-        } catch (Exception e) {
-            log.warn("Failed to save skipped version", e);
-        }
-    }
+            String remindedVersion = appConfigService.getConfigValue(AppConstants.KEY_REMIND_UPDATE_VERSION);
+            if (!version.equals(remindedVersion))
+                return false;
 
-    public String getSkippedVersion() {
-        try {
-            String skipped = appConfigService.getConfigValue(AppConstants.KEY_SKIPPED_VERSION);
-            return skipped != null ? skipped : "";
+            String remindDate = appConfigService.getConfigValue(AppConstants.KEY_REMIND_UPDATE_DATE);
+            if (remindDate == null || remindDate.isBlank())
+                return false;
+
+            LocalDate remindedAt = LocalDate.parse(remindDate, AppConstants.DATE_FORMATTER);
+            return DateTimeUtil.isSameIsoWeek(remindedAt, DateTimeUtil.currentLocalDate());
         } catch (Exception e) {
-            return "";
+            log.warn("Failed to read update reminder", e);
+            return false;
         }
     }
 
@@ -171,18 +171,18 @@ public class AppUpdateService {
                 System.getProperty("user.home"), "Downloads",
                 "BDMA-" + info.latestVersion() + ".exe");
 
-        IOException lastFailure = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        int attempt = 1;
+        while (true) {
             try (Response response = httpClient.newCall(request).execute()) {
                 ResponseBody body = response.body();
                 if (!response.isSuccessful() || body == null) {
                     int code = response.code();
                     IOException failure = new IOException("Download failed with HTTP " + code);
                     if (isTransientHttpError(code) && attempt < 3) {
-                        lastFailure = failure;
                         log.warn("Installer download attempt {}/3 failed with HTTP {}. Retrying. URL: {}",
                                 attempt, code, info.downloadUrl());
                         waitBeforeRetry(attempt);
+                        attempt++;
                         continue;
                     }
                     throw failure;
@@ -199,14 +199,13 @@ public class AppUpdateService {
                 if (attempt >= 3) {
                     throw e;
                 }
-                lastFailure = e;
+
                 log.warn("Installer download attempt {}/3 failed. Retrying. URL: {}",
                         attempt, info.downloadUrl(), e);
                 waitBeforeRetry(attempt);
+                attempt++;
             }
         }
-
-        throw lastFailure != null ? lastFailure : new IOException("Download failed");
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
