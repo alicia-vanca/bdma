@@ -34,8 +34,12 @@ public class StorageProgress {
         skipped += count;
     }
 
+    public synchronized int getTotalFailed() {
+        return failed + checksumInvalid + skipped;
+    }
+
     public synchronized Object[] buildProgressArgs() {
-        return new Object[]{total, success, failed, checksumInvalid, skipped};
+        return new Object[]{total, success, getTotalFailed(), checksumInvalid, skipped};
     }
 
     public synchronized void reset() {

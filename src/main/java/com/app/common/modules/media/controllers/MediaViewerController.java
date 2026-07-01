@@ -3,33 +3,39 @@ package com.app.common.modules.media.controllers;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import com.app.common.modules.datarestore.services.RestoreService;
-import com.app.common.modules.datarestore.services.RestoreService.BackupSyncResult;
 import com.app.common.modules.media.services.MediaViewerService;
+import javafx.event.Event;
+import javafx.scene.Node;
+import javafx.scene.Cursor;
+import javafx.scene.web.WebView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
 import com.app.common.dtos.FileView;
-import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.media.dtos.GpsCoordinate;
 import com.app.common.modules.media.dtos.GpsPoint;
+import com.app.common.modules.media.helpers.MediaDetailsPanelHelper;
+import com.app.common.modules.media.helpers.MediaPathResolverHelper;
+import com.app.common.modules.media.services.MapTileCacheService;
 import com.app.common.modules.media.services.MediaMetadataService;
 
 import javafx.application.Platform;
-import javafx.beans.value.ChangeListener;
 import javafx.fxml.FXML;
 import javafx.geometry.Bounds;
+import javafx.geometry.Point2D;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
@@ -39,11 +45,11 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
 import javafx.scene.transform.Rotate;
-import javafx.util.Duration;
 import lombok.Setter;
 
 @Component
@@ -52,9 +58,14 @@ public class MediaViewerController {
 
     private static final Logger log = LoggerFactory.getLogger(MediaViewerController.class);
 
-    // ── FXML ─────────────────────────────────────────────────────────────────
-    @FXML
-    private StackPane contentPane;
+    private static final double PANEL_WIDTH_DETAIL = 220;
+    private static final double PANEL_WIDTH_LOCATION = 330;
+    private static final double PANEL_MIN_WIDTH = 160;
+    private static final double PANEL_MAX_WIDTH = 600;
+
+    private static final String CSS_ACTIVE_TAB = "media-viewer-tab-btn-active";
+
+    // FXML
     @FXML
     private ScrollPane scrollPane;
     @FXML
@@ -106,8 +117,6 @@ public class MediaViewerController {
     @FXML
     private StackPane imageContainer;
     @FXML
-    private Label lblDetailTitle;
-    @FXML
     private Label lblDetailNameKey;
     @FXML
     private Label lblDetailTypeKey;
@@ -124,17 +133,17 @@ public class MediaViewerController {
     @FXML
     private Label lblDetailDimensionKey;
     @FXML
-    private Label lblDetailGpsKey;
+    private VBox videoPane;
     @FXML
-    private Label detailGps;
-    @FXML
-    private StackPane videoPane;
+    private StackPane videoContentPane;
     @FXML
     private Pane mediaViewWrapper;
     @FXML
     private MediaView mediaView;
     @FXML
     private Button btnPlayPause;
+    @FXML
+    private Button btnMute;
     @FXML
     private Slider videoSlider;
     @FXML
@@ -145,49 +154,79 @@ public class MediaViewerController {
     private ComboBox<String> cbSpeed;
     @FXML
     private Label lblAudioPlaceholder;
+    @FXML
+    private WebView mapView;
+    @FXML
+    private StackPane mapErrorPane;
+    @FXML
+    private Label mapErrorLabel;
+    @FXML
+    private Button btnTabDetail;
+    @FXML
+    private Button btnTabLocation;
+    @FXML
+    private Label lblLocationGpsKey;
+    @FXML
+    private Label lblLocationDateKey;
+    @FXML
+    private Label lblLocationDeviceKey;
+    @FXML
+    private Label locationGps;
+    @FXML
+    private Label locationDate;
+    @FXML
+    private Label locationDevice;
+    @FXML
+    private VBox leftPanel;
+    @FXML
+    private VBox detailPane;
+    @FXML
+    private VBox locationPane;
+    @FXML
+    private Pane dragBar;
 
-    // ── State ─────────────────────────────────────────────────────────────────
+    // State
+    private FileView requestedFile;
     private FileView currentFile;
-    private Path currentPath;
-    private Image currentImage;
     private List<FileView> mediaList;
     private int currentIndex;
     private double zoomFactor = 1.0;
     private double rotation = 0;
-    private List<GpsPoint> gpsTimeline = new ArrayList<>();
     private boolean fitMode = true;
-    private boolean sliderDragging = false;
-    private MediaPlayer mediaPlayer;
-    private ChangeListener<Bounds> boundsListener;
-    private ChangeListener<Number> videoPaneWidthListener;
-    private ChangeListener<Number> videoPaneHeightListener;
+    private boolean userResized = false;
+    private MediaPlaybackController playbackController;
+    private MediaGpsMapController gpsMapController;
 
-    private final FolderManagerService folderManagerService;
+
+    // Dependencies
     private final MediaMetadataService mediaMetadataService;
     private final MediaViewerService mediaViewerService;
-    private final RestoreService restoreService;
+    private final MediaPathResolverHelper pathResolver;
+    private final MapTileCacheService mapTileCacheService;
+    private MediaDetailsPanelHelper detailsPanel;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "MediaViewer-Loader");
         t.setDaemon(true);
         return t;
     });
-
     @Setter
     private Consumer<FileView> onLoadFile;
 
     public MediaViewerController(FolderManagerService folderManagerService,
             MediaMetadataService mediaMetadataService,
             MediaViewerService mediaViewerService,
+            MapTileCacheService mapTileCacheService,
             RestoreService restoreService) {
-        this.folderManagerService = folderManagerService;
         this.mediaMetadataService = mediaMetadataService;
         this.mediaViewerService = mediaViewerService;
-        this.restoreService = restoreService;
+        this.mapTileCacheService = mapTileCacheService;
+        this.pathResolver = new MediaPathResolverHelper(folderManagerService, restoreService);
     }
 
     public void refreshLocalizedText() {
-        lblDetailTitle.setText(I18n.get("media.viewer.detail.title"));
-        lblDetailTitle.setText(I18n.get("media.viewer.detail.title"));
+        btnTabDetail.setText(I18n.get("media.viewer.detail.title"));
+        btnTabLocation.setText(I18n.get("media.viewer.location.title"));
+
         lblDetailNameKey.setText(I18n.get("media.viewer.detail.name"));
         lblDetailTypeKey.setText(I18n.get("media.viewer.detail.type"));
         lblDetailSizeKey.setText(I18n.get("media.viewer.detail.size"));
@@ -196,20 +235,69 @@ public class MediaViewerController {
         lblDetailUserKey.setText(I18n.get("media.viewer.detail.user"));
         lblDetailStatusKey.setText(I18n.get("media.viewer.detail.status"));
         lblDetailDimensionKey.setText(I18n.get("media.viewer.detail.dimension"));
-        lblDetailGpsKey.setText(I18n.get("media.viewer.detail.gps"));
+
+        lblLocationGpsKey.setText(I18n.get("media.viewer.location.gps"));
+        lblLocationDateKey.setText(I18n.get("media.viewer.detail.date"));
+        lblLocationDeviceKey.setText(I18n.get("media.viewer.location.device"));
+        gpsMapController.refreshLocalizedText();
         if (currentFile != null) {
-            updateDetailPanel(currentFile, currentImage, currentPath);
+            detailsPanel.updateDetails(currentFile);
         }
     }
 
-    // ── Init ──────────────────────────────────────────────────────────────────
+    // Init
     @FXML
     public void initialize() {
+        detailsPanel = new MediaDetailsPanelHelper(
+                new MediaDetailsPanelHelper.Dependencies(
+                        detailName, detailType, detailSize, detailDate, detailDevice, detailUser,
+                        detailStatus, detailDimension, locationGps, locationDate, locationDevice));
+        initializePlaybackController();
+        initializeGpsMapController();
         refreshLocalizedText();
+        // Setup listener and resize handle
+        setupScrollPaneListeners();
+        setupResizeHandle();
+        // Display default tabs
+        showDefaultTab();
+    }
 
+    private void initializePlaybackController() {
+        playbackController = new MediaPlaybackController(
+                new MediaPlaybackController.PlaybackControllerDependencies(
+                        videoPane,
+                        videoContentPane,
+                        mediaViewWrapper,
+                        mediaView,
+                        btnPlayPause,
+                        btnMute,
+                        videoSlider,
+                        volumeSlider,
+                        lblVideoTime,
+                        cbSpeed,
+                        lblAudioPlaceholder,
+                        detailDimension,
+                        mediaViewerService::isAudio,
+                        this::updateGpsForTime));
+        playbackController.initialize();
+    }
+
+    private void initializeGpsMapController() {
+        gpsMapController = new MediaGpsMapController(
+                new MediaGpsMapController.Dependencies(
+                        mapView,
+                        mapErrorPane,
+                        mapErrorLabel,
+                        locationPane,
+                        locationGps,
+                        mapTileCacheService));
+        gpsMapController.initialize();
+    }
+
+    private void setupScrollPaneListeners() {
         scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
             if (e.isControlDown()) {
-                applyZoom(e.getDeltaY() > 0 ? 1.1 : 0.9);
+                applyZoom(e.getDeltaY() > 0 ? 1.1 : 0.9, new Point2D(e.getSceneX(), e.getSceneY()));
                 e.consume();
             }
         });
@@ -225,32 +313,20 @@ public class MediaViewerController {
                 fitImageToPane();
             }
         });
-
-        contentPane.widthProperty().addListener((obs, oldVal, newVal) -> {
-            if (mediaView.getMediaPlayer() != null) {
-                mediaView.setFitWidth(newVal.doubleValue());
-                mediaViewWrapper.setMaxWidth(newVal.doubleValue());
-                mediaViewWrapper.setPrefWidth(newVal.doubleValue());
-            }
-        });
-
-        contentPane.heightProperty().addListener((obs, oldVal, newVal) -> {
-            if (mediaView.getMediaPlayer() != null) {
-                mediaView.setFitHeight(newVal.doubleValue());
-                mediaViewWrapper.setMaxHeight(newVal.doubleValue());
-                mediaViewWrapper.setPrefHeight(newVal.doubleValue());
-            }
-        });
     }
 
-    // ── Public API ────────────────────────────────────────────────────────────
+    // Public API
     public void setMedia(List<FileView> list, int startIndex) {
         this.mediaList = list;
         this.currentIndex = startIndex;
         loadCurrent();
     }
 
-    // ── Navigation ────────────────────────────────────────────────────────────
+    public void refreshMapTheme(String theme) {
+        gpsMapController.refreshTheme(theme);
+    }
+
+    // Navigation
     @FXML
     private void onPrev() {
         if (currentIndex > 0) {
@@ -267,12 +343,16 @@ public class MediaViewerController {
         }
     }
 
-    // ── Load ──────────────────────────────────────────────────────────────────
+    // Load
     private void loadCurrent() {
         FileView file = mediaList.get(currentIndex);
+        requestedFile = file;
+        currentFile = file;
         updateNavButtons();
         updateCounter();
         resetTransform();
+        gpsMapController.resetForFile(file);
+        clearLocationPanel();
 
         if (onLoadFile != null) {
             onLoadFile.accept(file);
@@ -281,31 +361,39 @@ public class MediaViewerController {
 
     public void loadImage(FileView file) {
         showLoading();
+        stopCurrentMedia();
 
         executor.submit(() -> {
             try {
                 Path absolutePath = resolveMediaPath(file);
                 String uri = absolutePath.toUri().toString();
                 Image img = new Image(uri, true);
+                AtomicBoolean completionHandled = new AtomicBoolean();
 
                 img.progressProperty().addListener((obs, o, n) -> {
-                    if (n.doubleValue() >= 1.0) {
+                    if (n.doubleValue() >= 1.0 && completionHandled.compareAndSet(false, true)) {
                         Platform.runLater(() -> onImageReady(img, file, absolutePath));
                     }
                 });
 
-                if (img.getProgress() >= 1.0) {
+                if (img.getProgress() >= 1.0 && completionHandled.compareAndSet(false, true)) {
                     Platform.runLater(() -> onImageReady(img, file, absolutePath));
                 }
 
             } catch (Exception e) {
                 log.error("Failed to load image: {}", file.syncedPath(), e);
-                Platform.runLater(() -> showError(I18n.get("media.viewer.error.image.load", file.name())));
+                Platform.runLater(() -> showErrorIfCurrent(file,
+                        I18n.get("media.viewer.error.image.load", file.name())));
             }
         });
     }
 
     private void onImageReady(Image img, FileView file, Path absolutePath) {
+        if (isNotCurrentRequestedFile(file)) {
+            log.debug("Ignoring stale image load. completedFile={}, requestedFile={}",
+                    file.name(), requestedFile != null ? requestedFile.name() : "—");
+            return;
+        }
         if (img.isError()) {
             showError(I18n.get("media.viewer.error.image.display", file.name()));
             return;
@@ -327,46 +415,66 @@ public class MediaViewerController {
             try {
                 Path absolutePath = resolveMediaPath(file);
                 String uri = absolutePath.toUri().toString();
-
-                Platform.runLater(() -> {
-                    try {
-                        Media media = new Media(uri);
-                        mediaPlayer = new MediaPlayer(media);
-                        mediaView.setMediaPlayer(mediaPlayer);
-                        mediaView.setPreserveRatio(true);
-
-                        executor.submit(() -> {
-                            List<GpsPoint> timeline = mediaMetadataService
-                                    .readGpsTimeline(absolutePath, file.type());
-                            Platform.runLater(() -> gpsTimeline = timeline);
-                        });
-                        setupMediaPlayer(file);
-                        showVideoPane();
-                        updateDetailPanel(file, null, absolutePath);
-
-                    } catch (Exception e) {
-                        log.error("Failed to create MediaPlayer: {}", file.syncedPath(), e);
-                        showError(I18n.get("media.viewer.error.video.play", file.name()));
-                    }
-                });
-
+                loadVideoInternal(file, uri, absolutePath);
             } catch (Exception e) {
                 log.error("Failed to load video: {}", file.syncedPath(), e);
-                Platform.runLater(() -> showError(I18n.get("media.viewer.error.video.load", file.name())));
+                Platform.runLater(() -> showErrorIfCurrent(file,
+                        I18n.get("media.viewer.error.video.load", file.name())));
             }
         });
     }
 
-    // ── Zoom ─────────────────────────────────────────────────────────────────
+    private void loadVideoInternal(FileView file, String uri, Path absolutePath) {
+            Platform.runLater(() -> {
+                if (isNotCurrentRequestedFile(file)) {
+                    log.debug("Ignoring stale video load.");
+                    return;
+                }
+            try {
+                Media media = new Media(uri);
+                MediaPlayer player = new MediaPlayer(media);
+
+                loadGpsTimeline(file, absolutePath);
+                playbackController.attach(file, player,
+                        () -> showError(I18n.get("media.viewer.error.video.playback", file.name())));
+                showVideoPane();
+                updateVideoStatusBar(file);
+                updateVideoDetailPanel(file);
+            } catch (Exception e) {
+                log.error("Failed to create MediaPlayer: {}", file.syncedPath(), e);
+                showError(I18n.get("media.viewer.error.video.play", file.name()));
+            }
+        });
+    }
+
+    private void loadGpsTimeline(FileView file, Path absolutePath) {
+        executor.submit(() -> {
+            List<GpsPoint> timeline = mediaMetadataService.readGpsTimeline(absolutePath, file.type());
+            Platform.runLater(() -> {
+                if (isNotCurrentRequestedFile(file)) {
+                    log.debug("Ignoring stale GPS timeline.");
+                    return;
+                }
+                GpsCoordinate gps = gpsMapController.setTimeline(timeline);
+                updateLocationPanel(file, gps);
+            });
+        });
+    }
+
+    // GPS
+
+    private void updateGpsForTime(double currentSeconds) {
+        gpsMapController.updateForVideoTime(currentSeconds);
+    }
+
+    // Zoom
     @FXML
     private void onZoomIn() {
-        fitMode = false;
         applyZoom(1.2);
     }
 
     @FXML
     private void onZoomOut() {
-        fitMode = false;
         applyZoom(0.8);
     }
 
@@ -377,26 +485,129 @@ public class MediaViewerController {
     }
 
     private void applyZoom(double factor) {
+        applyZoom(factor, null);
+    }
+
+    private void applyZoom(double factor, Point2D sceneAnchor) {
         if (imageView.getImage() == null)
             return;
 
-        zoomFactor *= factor;
+        Bounds viewportBounds = scrollPane.getViewportBounds();
+        double viewportW = viewportBounds.getWidth() > 0 ? viewportBounds.getWidth() : scrollPane.getWidth() - 2;
+        double viewportH = viewportBounds.getHeight() > 0 ? viewportBounds.getHeight() : scrollPane.getHeight() - 2;
+        if (viewportW <= 0 || viewportH <= 0)
+            return;
 
+        Point2D anchorInViewport = resolveZoomAnchor(sceneAnchor, viewportW, viewportH);
+        imageContainer.applyCss();
+        imageContainer.layout();
+
+        Bounds oldImageBounds = imageView.getBoundsInParent();
+        double oldContentW = imageContainer.getLayoutBounds().getWidth();
+        double oldContentH = imageContainer.getLayoutBounds().getHeight();
+        double oldMaxScrollX = Math.max(oldContentW - viewportW, 0);
+        double oldMaxScrollY = Math.max(oldContentH - viewportH, 0);
+        double anchorContentX = oldMaxScrollX * scrollPane.getHvalue() + anchorInViewport.getX();
+        double anchorContentY = oldMaxScrollY * scrollPane.getVvalue() + anchorInViewport.getY();
+        double imageAnchorRatioX = oldImageBounds.getWidth() > 0
+                ? Math.clamp((anchorContentX - oldImageBounds.getMinX()) / oldImageBounds.getWidth(), 0, 1)
+                : 0.5;
+        double imageAnchorRatioY = oldImageBounds.getHeight() > 0
+                ? Math.clamp((anchorContentY - oldImageBounds.getMinY()) / oldImageBounds.getHeight(), 0, 1)
+                : 0.5;
+
+        fitMode = false;
+        zoomFactor *= factor;
         double fitW = imageView.getImage().getWidth() * zoomFactor;
         double fitH = imageView.getImage().getHeight() * zoomFactor;
 
         imageView.setFitWidth(fitW);
         imageView.setFitHeight(fitH);
+        updateImageRotationTransform();
 
-        double paneW = scrollPane.getWidth() - 2;
-        double paneH = scrollPane.getHeight() - 2;
+        resizeImageContainerForViewport(viewportW, viewportH);
 
-        imageContainer.setMinWidth(Math.max(fitW, paneW));
-        imageContainer.setMinHeight(Math.max(fitH, paneH));
-        imageContainer.setPrefWidth(Math.max(fitW, paneW));
-        imageContainer.setPrefHeight(Math.max(fitH, paneH));
+        scrollToZoomAnchor(anchorInViewport, imageAnchorRatioX, imageAnchorRatioY, viewportW, viewportH);
 
         lblZoom.setText(new DecimalFormat("##0%").format(zoomFactor));
+    }
+
+    private void scrollToZoomAnchor(
+            Point2D anchorInViewport,
+            double imageAnchorRatioX,
+            double imageAnchorRatioY,
+            double viewportW,
+            double viewportH) {
+        if (viewportW <= 0 || viewportH <= 0)
+            return;
+
+        imageContainer.applyCss();
+        imageContainer.layout();
+
+        double contentW = imageContainer.getLayoutBounds().getWidth();
+        double contentH = imageContainer.getLayoutBounds().getHeight();
+        Bounds imageBounds = imageView.getBoundsInParent();
+        double targetContentX = imageBounds.getMinX() + imageBounds.getWidth() * imageAnchorRatioX;
+        double targetContentY = imageBounds.getMinY() + imageBounds.getHeight() * imageAnchorRatioY;
+        double maxScrollX = Math.max(contentW - viewportW, 0);
+        double maxScrollY = Math.max(contentH - viewportH, 0);
+        scrollPane.setHvalue(maxScrollX > 0
+                ? Math.clamp((targetContentX - anchorInViewport.getX()) / maxScrollX, 0, 1)
+                : 0);
+        scrollPane.setVvalue(maxScrollY > 0
+                ? Math.clamp((targetContentY - anchorInViewport.getY()) / maxScrollY, 0, 1)
+                : 0);
+    }
+
+    private Point2D resolveZoomAnchor(Point2D sceneAnchor, double viewportW, double viewportH) {
+        Node viewport = scrollPane.lookup(".viewport");
+        if (sceneAnchor != null && viewport != null) {
+            Point2D localAnchor = viewport.sceneToLocal(sceneAnchor);
+            if (localAnchor.getX() >= 0 && localAnchor.getX() <= viewportW
+                    && localAnchor.getY() >= 0 && localAnchor.getY() <= viewportH) {
+                return localAnchor;
+            }
+        }
+        return new Point2D(viewportW / 2, viewportH / 2);
+    }
+
+    private void resizeImageContainerForViewport(double viewportW, double viewportH) {
+        double visualW = rotatedVisualWidth(imageView.getFitWidth(), imageView.getFitHeight());
+        double visualH = rotatedVisualHeight(imageView.getFitWidth(), imageView.getFitHeight());
+        double contentW = Math.max(visualW, viewportW);
+        double contentH = Math.max(visualH, viewportH);
+
+        imageContainer.setMinWidth(contentW);
+        imageContainer.setMinHeight(contentH);
+        imageContainer.setPrefWidth(contentW);
+        imageContainer.setPrefHeight(contentH);
+        imageContainer.resize(contentW, contentH);
+        imageContainer.layout();
+    }
+
+    private double rotatedVisualWidth(double width, double height) {
+        double radians = Math.toRadians(normalizedRotation());
+        return Math.abs(width * Math.cos(radians)) + Math.abs(height * Math.sin(radians));
+    }
+
+    private double rotatedVisualHeight(double width, double height) {
+        double radians = Math.toRadians(normalizedRotation());
+        return Math.abs(width * Math.sin(radians)) + Math.abs(height * Math.cos(radians));
+    }
+
+    private void updateImageRotationTransform() {
+        imageView.getTransforms().clear();
+        double normalizedRotation = normalizedRotation();
+        if (normalizedRotation != 0) {
+            imageView.getTransforms().add(new Rotate(
+                    normalizedRotation,
+                    imageView.getFitWidth() / 2,
+                    imageView.getFitHeight() / 2));
+        }
+    }
+
+    private double normalizedRotation() {
+        return ((rotation % 360) + 360) % 360;
     }
 
     private void fitImageToPane() {
@@ -410,24 +621,20 @@ public class MediaViewerController {
 
         double imgW = imageView.getImage().getWidth();
         double imgH = imageView.getImage().getHeight();
-        double scale = Math.min(paneW / imgW, paneH / imgH);
+        double visualImgW = rotatedVisualWidth(imgW, imgH);
+        double visualImgH = rotatedVisualHeight(imgW, imgH);
+        double scale = Math.min(paneW / visualImgW, paneH / visualImgH);
 
-        double fitW = imgW * scale;
-        double fitH = imgH * scale;
-
-        imageView.setFitWidth(fitW);
-        imageView.setFitHeight(fitH);
-
-        imageContainer.setMinWidth(paneW);
-        imageContainer.setMinHeight(paneH);
-        imageContainer.setPrefWidth(paneW);
-        imageContainer.setPrefHeight(paneH);
+        imageView.setFitWidth(imgW * scale);
+        imageView.setFitHeight(imgH * scale);
+        updateImageRotationTransform();
+        resizeImageContainerForViewport(paneW, paneH);
 
         zoomFactor = scale;
         lblZoom.setText(new DecimalFormat("##0%").format(zoomFactor));
     }
 
-    // ── Rotate ────────────────────────────────────────────────────────────────
+    // Rotate
     @FXML
     private void onRotateLeft() {
         applyRotation(-90);
@@ -439,15 +646,43 @@ public class MediaViewerController {
     }
 
     private void applyRotation(double angle) {
-        rotation = (rotation + angle) % 360;
-        imageView.getTransforms().clear();
-        imageView.getTransforms().add(new Rotate(
-                rotation,
-                imageView.getFitWidth() / 2,
-                imageView.getFitHeight() / 2));
+        if (imageView.getImage() == null)
+            return;
+
+        Bounds viewportBounds = scrollPane.getViewportBounds();
+        double viewportW = viewportBounds.getWidth() > 0 ? viewportBounds.getWidth() : scrollPane.getWidth() - 2;
+        double viewportH = viewportBounds.getHeight() > 0 ? viewportBounds.getHeight() : scrollPane.getHeight() - 2;
+        Point2D anchorInViewport = new Point2D(Math.max(viewportW, 0) / 2, Math.max(viewportH, 0) / 2);
+        double imageAnchorRatioX = 0.5;
+        double imageAnchorRatioY = 0.5;
+        if (viewportW > 0 && viewportH > 0) {
+            imageContainer.applyCss();
+            imageContainer.layout();
+
+            Bounds oldImageBounds = imageView.getBoundsInParent();
+            double oldContentW = imageContainer.getLayoutBounds().getWidth();
+            double oldContentH = imageContainer.getLayoutBounds().getHeight();
+            double oldMaxScrollX = Math.max(oldContentW - viewportW, 0);
+            double oldMaxScrollY = Math.max(oldContentH - viewportH, 0);
+            double anchorContentX = oldMaxScrollX * scrollPane.getHvalue() + anchorInViewport.getX();
+            double anchorContentY = oldMaxScrollY * scrollPane.getVvalue() + anchorInViewport.getY();
+            imageAnchorRatioX = oldImageBounds.getWidth() > 0
+                    ? Math.clamp((anchorContentX - oldImageBounds.getMinX()) / oldImageBounds.getWidth(), 0, 1)
+                    : 0.5;
+            imageAnchorRatioY = oldImageBounds.getHeight() > 0
+                    ? Math.clamp((anchorContentY - oldImageBounds.getMinY()) / oldImageBounds.getHeight(), 0, 1)
+                    : 0.5;
+        }
+
+        rotation = normalizedRotation() + angle;
+        updateImageRotationTransform();
+        if (viewportW > 0 && viewportH > 0) {
+            resizeImageContainerForViewport(viewportW, viewportH);
+            scrollToZoomAnchor(anchorInViewport, imageAnchorRatioX, imageAnchorRatioY, viewportW, viewportH);
+        }
     }
 
-    // ── UI state helpers ──────────────────────────────────────────────────────
+    // State
     private void showLoading() {
         scrollPane.setVisible(false);
         scrollPane.setManaged(false);
@@ -481,6 +716,12 @@ public class MediaViewerController {
         setImageToolsVisible(false);
     }
 
+    private void showErrorIfCurrent(FileView file, String message) {
+        if (!isNotCurrentRequestedFile(file)) {
+            showError(message);
+        }
+    }
+
     private void setImageToolsVisible(boolean visible) {
         btnZoomIn.setVisible(visible);
         btnZoomOut.setVisible(visible);
@@ -508,7 +749,7 @@ public class MediaViewerController {
 
     private void updateStatusBar(FileView file, Image img) {
         lblFileName.setText(file.name());
-        lblFileSize.setText(formatSize(file.fileSize()));
+        lblFileSize.setText(MediaDetailsPanelHelper.formatSize(file.fileSize()));
         if (img != null) {
             lblDimension.setText((int) img.getWidth() + " × " + (int) img.getHeight());
         }
@@ -521,280 +762,186 @@ public class MediaViewerController {
         lblFileSize.setText("");
         lblZoom.setText("");
 
-        detailName.setText("—");
-        detailType.setText("—");
-        detailSize.setText("—");
-        detailDate.setText("—");
-        detailDevice.setText("—");
-        detailUser.setText("—");
-        detailStatus.setText("—");
-        detailDimension.setText("—");
-        detailGps.setText("—");
+        detailsPanel.clear();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    private void clearLocationPanel() {
+        detailsPanel.clearLocation();
+    }
+
+    // Tab switching
+    private void showDefaultTab() {
+        onTabDetail();
+    }
+
+    @FXML
+    private void onTabDetail() {
+        switchTab(true);
+    }
+
+    @FXML
+    private void onTabLocation() {
+        switchTab(false);
+    }
+
+    private void switchTab(boolean showDetail) {
+        detailPane.setVisible(showDetail);
+        detailPane.setManaged(showDetail);
+        locationPane.setVisible(!showDetail);
+        locationPane.setManaged(!showDetail);
+
+        btnTabDetail.getStyleClass().remove(CSS_ACTIVE_TAB);
+        btnTabLocation.getStyleClass().remove(CSS_ACTIVE_TAB);
+
+        if (showDetail) {
+            btnTabDetail.getStyleClass().add(CSS_ACTIVE_TAB);
+            if (!userResized)
+                setPanelWidth(PANEL_WIDTH_DETAIL);
+        } else {
+            btnTabLocation.getStyleClass().add(CSS_ACTIVE_TAB);
+            if (!userResized)
+                setPanelWidth(PANEL_WIDTH_LOCATION);
+            gpsMapController.refreshMapSize();
+        }
+    }
+
+    private void setPanelWidth(double w) {
+        leftPanel.setMinWidth(w);
+        leftPanel.setMaxWidth(w);
+        leftPanel.setPrefWidth(w);
+    }
+
+    private void setupResizeHandle() {
+        final double[] dragStartX = { 0 };
+        final double[] dragStartWidth = { 0 };
+
+        dragBar.setCursor(Cursor.H_RESIZE);
+
+        dragBar.setOnMousePressed(e -> {
+            dragStartX[0] = e.getScreenX();
+            dragStartWidth[0] = leftPanel.getWidth();
+            userResized = false;
+            e.consume();
+        });
+
+        dragBar.setOnMouseDragged(e -> {
+            double delta = e.getScreenX() - dragStartX[0];
+            double newWidth = Math.clamp(dragStartWidth[0] + delta, PANEL_MIN_WIDTH, PANEL_MAX_WIDTH);
+            leftPanel.setMinWidth(newWidth);
+            leftPanel.setMaxWidth(newWidth);
+            leftPanel.setPrefWidth(newWidth);
+            userResized = true;
+            e.consume();
+        });
+
+        dragBar.setOnMouseReleased(Event::consume);
+    }
+
     private Path resolveMediaPath(FileView file) throws IOException {
-        Path resolvedPath = resolveSyncedPath(file);
-        if (resolvedPath != null) {
-            return resolvedPath;
-        }
-
-        return restoreMissingMediaFile(file);
+        return pathResolver.resolve(file);
     }
 
-    private Path resolveSyncedPath(FileView file) {
-        PathResolutionResult result = folderManagerService
-                .findAbsolutePathFromNonDriveLetterPath(file.syncedPath(), file.fileSize());
-        return result.isFound() ? result.getPath() : null;
+    private boolean isNotCurrentRequestedFile(FileView file) {
+        return !Objects.equals(requestedFile, file);
     }
 
-    private Path restoreMissingMediaFile(FileView file) throws IOException {
-        if (file.backedUpPath() == null || file.backedUpPath().isBlank()) {
-            throw new IOException("Backup path is missing for media file: " + file.name());
-        }
-        if (folderManagerService.getSyncDir() == null) {
-            throw new IOException("Sync folder is not configured");
-        }
-
-        BackupSyncResult result = restoreService.restoreSingleFile(
-                folderManagerService.getSyncDir().getAbsolutePath(),
-                file.backedUpPath());
-        if (!result.success()) {
-            String message = result.errorMessage() != null ? result.errorMessage() : "Media restore failed";
-            throw new IOException(message);
-        }
-        if (result.restoredPath() == null || result.restoredPath().isBlank()) {
-            throw new IOException("Media file restored without destination path: " + file.name());
-        }
-        return Path.of(result.restoredPath());
-    }
-
-    private String formatSize(long bytes) {
-        if (bytes < 0)
-            return "-";
-        if (bytes < 1024)
-            return bytes + " B";
-        if (bytes < 1024 * 1024)
-            return (bytes / 1024) + " KB";
-        return String.format("%.1f MB", bytes / (1024.0 * 1024));
-    }
 
     public void cleanup() {
         stopCurrentMedia();
+        gpsMapController.cleanup();
         executor.shutdownNow();
     }
 
     private void updateDetailPanel(FileView file, Image img, Path absolutePath) {
-        this.currentFile = file;
-        this.currentImage = img;
-        this.currentPath = absolutePath;
-        detailName.setText(file.name() != null ? file.name() : "—");
-        detailType.setText(formatType(file.type()));
-        detailSize.setText(formatSize(file.fileSize()));
-        detailDate.setText(file.createDate() != null ? file.createDate() : "—");
-        detailDevice.setText(file.deviceName() != null ? file.deviceName() : "—");
-        detailUser.setText(file.username() != null ? file.username() : "—");
-        detailStatus.setText(formatStatus(file.status()));
-        detailDimension.setText(img != null
-                ? (int) img.getWidth() + " × " + (int) img.getHeight()
-                : "—");
-        detailGps.setText("…");
-        executor.submit(() -> {
-            assert file.type() != null;
-            Optional<GpsCoordinate> gps = mediaMetadataService.readGps(absolutePath, file.type());
-            Platform.runLater(() -> detailGps.setText(gps.map(GpsCoordinate::toString).orElse("—")));
-        });
+        prepareDetailPanel(file, img);
+        loadStandaloneGps(file, absolutePath);
     }
 
-    private void setupMediaPlayer(FileView file) {
-        boolean isAudio = mediaViewerService.isAudio(file.type());
+    private void updateVideoDetailPanel(FileView file) {
+        prepareDetailPanel(file, null);
+    }
 
-        // Audio: hide video surface, show placeholder icon instead
-        mediaViewWrapper.setVisible(!isAudio);
-        mediaViewWrapper.setManaged(!isAudio);
-        lblAudioPlaceholder.setVisible(isAudio);
-        lblAudioPlaceholder.setManaged(isAudio);
-
-        if (!isAudio) {
-            mediaView.setFitWidth(contentPane.getWidth());
-            mediaView.setFitHeight(contentPane.getHeight());
-            mediaViewWrapper.setMaxWidth(contentPane.getWidth());
-            mediaViewWrapper.setMaxHeight(contentPane.getHeight());
-            mediaViewWrapper.setPrefWidth(contentPane.getWidth());
-            mediaViewWrapper.setPrefHeight(contentPane.getHeight());
-        }
-
-        boundsListener = (obs, oldVal, newVal) -> {
-            double x = (videoPane.getWidth() - newVal.getWidth()) / 2;
-            double y = (videoPane.getHeight() - newVal.getHeight()) / 2;
-            mediaView.setLayoutX(Math.max(0, x));
-            mediaView.setLayoutY(Math.max(0, y));
-        };
-        videoPaneWidthListener = (obs, oldVal, newVal) -> {
-            double x = (newVal.doubleValue() - mediaView.getBoundsInLocal().getWidth()) / 2;
-            mediaView.setLayoutX(Math.max(0, x));
-        };
-        videoPaneHeightListener = (obs, oldVal, newVal) -> {
-            double y = (newVal.doubleValue() - mediaView.getBoundsInLocal().getHeight()) / 2;
-            mediaView.setLayoutY(Math.max(0, y));
-        };
-
-        mediaView.boundsInLocalProperty().addListener(boundsListener);
-        videoPane.widthProperty().addListener(videoPaneWidthListener);
-        videoPane.heightProperty().addListener(videoPaneHeightListener);
-
-        if (cbSpeed.getItems().isEmpty()) {
-            cbSpeed.getItems().addAll("0.25x", "0.5x", "0.75x", "1x", "1.25x", "1.5x", "2x");
-        }
-        cbSpeed.setValue("1x");
-
-        MediaPlayer activePlayer = mediaPlayer;
-        activePlayer.volumeProperty().bind(volumeSlider.valueProperty());
-
-        activePlayer.currentTimeProperty().addListener((obs, oldVal, newVal) -> {
-            if (!sliderDragging && activePlayer == mediaPlayer) {
-                Duration total = activePlayer.getTotalDuration();
-                if (total != null && total.greaterThan(Duration.ZERO)) {
-                    videoSlider.setValue(newVal.toSeconds() / total.toSeconds() * 100);
-                }
-                lblVideoTime.setText(formatDuration(newVal) + " / " + formatDuration(total));
-                updateGpsForTime(newVal.toSeconds());
-            }
-        });
-
-        videoSlider.setOnMousePressed(e -> sliderDragging = true);
-        videoSlider.setOnMouseReleased(e -> {
-            sliderDragging = false;
-            if (activePlayer != mediaPlayer) {
-                return;
-            }
-            Duration total = activePlayer.getTotalDuration();
-            if (total != null) {
-                activePlayer.seek(total.multiply(videoSlider.getValue() / 100));
-            }
-        });
-
-        mediaView.setOnMouseClicked(e -> onPlayPause());
-
-        videoPane.setFocusTraversable(true);
-        videoPane.setOnKeyPressed(e -> {
-            switch (e.getCode()) {
-                case LEFT -> seek(-5);
-                case RIGHT -> seek(5);
-                default -> seek(0);
-            }
-            e.consume();
-        });
-
-        mediaPlayer.setOnReady(() -> {
-            int width = mediaPlayer.getMedia().getWidth();
-            int height = mediaPlayer.getMedia().getHeight();
-            if (width > 0 && height > 0) {
-                Platform.runLater(() -> detailDimension.setText(width + " × " + height));
-            }
-            lblVideoTime.setText("00:00 / " + formatDuration(mediaPlayer.getTotalDuration()));
-            mediaPlayer.play();
-            btnPlayPause.setText("⏸");
-            Platform.runLater(() -> videoPane.requestFocus());
-        });
-
-        mediaPlayer.setOnEndOfMedia(() -> {
-            btnPlayPause.setText("▶");
-            videoSlider.setValue(0);
-            mediaPlayer.seek(Duration.ZERO);
-            mediaPlayer.pause();
-        });
-
-        mediaPlayer.setOnError(
-                () -> Platform.runLater(() -> showError(I18n.get("media.viewer.error.video.playback", file.name()))));
-
+    private void updateVideoStatusBar(FileView file) {
         lblFileName.setText(file.name());
-        lblFileSize.setText(formatSize(file.fileSize()));
+        lblFileSize.setText(MediaDetailsPanelHelper.formatSize(file.fileSize()));
         lblZoom.setText("");
         lblDimension.setText("");
     }
 
+    private void prepareDetailPanel(FileView file, Image img) {
+        this.currentFile = file;
+        detailsPanel.updateDetails(file);
+        detailsPanel.setDimension(img != null
+                ? (int) img.getWidth() + " × " + (int) img.getHeight()
+                : "—");
+    }
+
+
+    private void loadStandaloneGps(FileView file, Path absolutePath) {
+        executor.submit(() -> {
+            assert file.type() != null;
+            log.trace("Reading GPS metadata. file={}, type={}, path={}", file.name(), file.type(), absolutePath);
+            Optional<GpsCoordinate> gps = mediaMetadataService.readGps(absolutePath, file.type());
+            log.trace("GPS metadata read complete. file={}, found={}, value={}",
+                    file.name(), gps.isPresent(), gps.map(GpsCoordinate::toString).orElse("—"));
+            Platform.runLater(() -> {
+                if (isNotCurrentRequestedFile(file)) {
+                    log.debug("Ignoring stale GPS metadata. completedFile={}, requestedFile={}",
+                            file.name(), requestedFile != null ? requestedFile.name() : "—");
+                    return;
+                }
+                updateLocationPanel(file, gps.orElse(null));
+            });
+        });
+    }
+
+    private void updateLocationPanel(FileView file, GpsCoordinate gps) {
+        detailsPanel.updateLocation(file, gps);
+
+        log.trace("Location metadata loaded. file={}, hasGps={}, timelinePoints={}",
+                file.name(), gps != null, gpsMapController.timelinePointCount());
+
+        gpsMapController.setCurrentGps(gps);
+    }
+
     @FXML
     private void onPlayPause() {
-        if (mediaPlayer == null)
-            return;
-        if (mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
-            mediaPlayer.pause();
-            btnPlayPause.setText("▶");
-        } else {
-            mediaPlayer.play();
-            btnPlayPause.setText("⏸");
-        }
+        playbackController.togglePlayback();
     }
 
     @FXML
     private void onSeekBack5() {
-        seek(-5);
+        playbackController.seekBy(-5);
     }
 
     @FXML
     private void onSeekBack30() {
-        seek(-30);
+        playbackController.seekBy(-30);
     }
 
     @FXML
     private void onSeekForward5() {
-        seek(5);
+        playbackController.seekBy(5);
     }
 
     @FXML
     private void onSeekForward30() {
-        seek(30);
-    }
-
-    private void seek(int seconds) {
-        if (mediaPlayer == null)
-            return;
-        Duration current = mediaPlayer.getCurrentTime();
-        Duration total = mediaPlayer.getTotalDuration();
-        Duration target = current.add(Duration.seconds(seconds));
-
-        if (target.lessThan(Duration.ZERO))
-            target = Duration.ZERO;
-        if (target.greaterThan(total))
-            target = total;
-
-        mediaPlayer.seek(target);
+        playbackController.seekBy(30);
     }
 
     @FXML
     private void onSpeedChanged() {
-        if (mediaPlayer == null || cbSpeed.getValue() == null)
-            return;
-        try {
-            double rate = Double.parseDouble(cbSpeed.getValue().replace("x", ""));
-            mediaPlayer.setRate(rate);
-        } catch (NumberFormatException e) {
-            log.warn("Invalid speed format: {}", cbSpeed.getValue());
-        }
+        playbackController.changeSpeed();
+    }
+
+    @FXML
+    private void onToggleMute() {
+        playbackController.toggleMute();
     }
 
     private void stopCurrentMedia() {
-        if (mediaPlayer != null) {
-            mediaPlayer.volumeProperty().unbind();
-            mediaPlayer.stop();
-            mediaPlayer.dispose();
-            mediaPlayer = null;
-        }
-        if (boundsListener != null) {
-            mediaView.boundsInLocalProperty().removeListener(boundsListener);
-            boundsListener = null;
-        }
-        if (videoPaneWidthListener != null) {
-            videoPane.widthProperty().removeListener(videoPaneWidthListener);
-            videoPaneWidthListener = null;
-        }
-        if (videoPaneHeightListener != null) {
-            videoPane.heightProperty().removeListener(videoPaneHeightListener);
-            videoPaneHeightListener = null;
-        }
-        mediaView.setLayoutX(0);
-        mediaView.setLayoutY(0);
+        playbackController.stop();
+        gpsMapController.resetLogicalPath();
     }
 
     private void showVideoPane() {
@@ -807,48 +954,5 @@ public class MediaViewerController {
         videoPane.setVisible(true);
         videoPane.setManaged(true);
         setImageToolsVisible(false);
-    }
-
-    private String formatDuration(Duration duration) {
-        if (duration == null || duration.isUnknown())
-            return "00:00";
-        int totalSeconds = (int) duration.toSeconds();
-        int hours = totalSeconds / 3600;
-        int minutes = (totalSeconds % 3600) / 60;
-        int seconds = totalSeconds % 60;
-
-        if (hours > 0) {
-            return String.format("%02d:%02d:%02d", hours, minutes, seconds);
-        }
-        return String.format("%02d:%02d", minutes, seconds);
-    }
-
-    private void updateGpsForTime(double currentSeconds) {
-        if (gpsTimeline == null || gpsTimeline.isEmpty())
-            return;
-
-        GpsPoint best = gpsTimeline.getFirst();
-        for (GpsPoint point : gpsTimeline) {
-            if (point.timeSeconds() <= currentSeconds) {
-                best = point;
-            } else {
-                break;
-            }
-        }
-
-        GpsCoordinate coord = best.toCoordinate();
-        detailGps.setText(coord.toString());
-    }
-
-    private String formatStatus(String status) {
-        if (status == null || status.isEmpty())
-            return "—";
-        return I18n.get("file.status." + status);
-    }
-
-    private String formatType(String type) {
-        if (type == null || type.isEmpty())
-            return "—";
-        return I18n.get("file.type." + type);
     }
 }

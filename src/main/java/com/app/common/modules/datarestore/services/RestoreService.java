@@ -71,7 +71,8 @@ public class RestoreService {
 
     public enum RestoreFailureReason {
         UNKNOWN,
-        BACKUP_NOT_FOUND
+        BACKUP_NOT_FOUND,
+        STORAGE_RECOVERY_DEFERRED
     }
 
     public record BackupSyncResult(boolean success, int count, String errorMessage,
@@ -91,6 +92,11 @@ public class RestoreService {
 
         public static BackupSyncResult failure(String message, RestoreFailureReason failureReason) {
             return new BackupSyncResult(false, 0, message, List.of(), null, failureReason);
+        }
+
+        public static BackupSyncResult failure(String message, RestoreFailureReason failureReason,
+                int count, List<RestoreFailure> failures) {
+            return new BackupSyncResult(false, count, message, failures, null, failureReason);
         }
     }
 
@@ -162,6 +168,7 @@ public class RestoreService {
                 onProgressInitialized.run();
             }
             BackupSyncResult result = processRestoreFiles(syncDir, allFiles, false);
+            logBatchRestoreResult("Batch");
 
             driveResolverService.invalidateCache();
 
@@ -282,6 +289,7 @@ public class RestoreService {
                 onProgressInitialized.run();
             }
             BackupSyncResult result = processRestoreFiles(syncDir, failedFiles, true);
+            logBatchRestoreResult("Retry batch");
             driveResolverService.invalidateCache();
             return result;
         } catch (Exception e) {
@@ -290,6 +298,15 @@ public class RestoreService {
         } finally {
             isRunning.set(false);
         }
+    }
+
+    private void logBatchRestoreResult(String operation) {
+        log.info(
+                "[RESTORE] {} result: total={}, succeeded={}, failed={}",
+                operation,
+                currentProgress.getTotal(),
+                currentProgress.getSuccess(),
+                currentProgress.getTotalFailed());
     }
 
     @EventListener
@@ -338,7 +355,8 @@ public class RestoreService {
         List<RestoreFailure> failures = new ArrayList<>();
         List<String> successPaths = new ArrayList<>();
         currentSyncDir = initialSyncDir;
-        for (Path srcPath : sourceFiles) {
+        for (int sourceIndex = 0; sourceIndex < sourceFiles.size(); sourceIndex++) {
+            Path srcPath = sourceFiles.get(sourceIndex);
             if (isCancelled.get()) {
                 currentProgress.reset();
                 return BackupSyncResult.failure(
@@ -358,6 +376,20 @@ public class RestoreService {
                 failures.addAll(singleResult.failures());
             }
             currentProgress.incrementFailed();
+
+            if (singleResult.failureReason() == RestoreFailureReason.STORAGE_RECOVERY_DEFERRED) {
+                int remainingCount = sourceFiles.size() - sourceIndex - 1;
+                for (int remainingIndex = sourceIndex + 1; remainingIndex < sourceFiles.size(); remainingIndex++) {
+                    failures.add(buildFailure(sourceFiles.get(remainingIndex), singleResult.errorMessage()));
+                }
+                currentProgress.incrementSkipped(remainingCount);
+                persistRestoreOutcome(failures, retryMode, successPaths);
+                return BackupSyncResult.failure(
+                        singleResult.errorMessage(),
+                        RestoreFailureReason.STORAGE_RECOVERY_DEFERRED,
+                        currentProgress.getSuccess(),
+                        failures);
+            }
         }
         persistRestoreOutcome(failures, retryMode, successPaths);
         return BackupSyncResult.success(
@@ -410,6 +442,9 @@ public class RestoreService {
         } catch (FileNotFoundOnAnyDriveException e) {
             log.warn("[RESTORE] Backup file not found: {}", backupFilePath);
             return BackupSyncResult.failure(e.getMessage(), RestoreFailureReason.BACKUP_NOT_FOUND);
+        } catch (DiskFullException e) {
+            log.info("[RESTORE] Storage recovery deferred while restoring: {}", backupFilePath);
+            return BackupSyncResult.failure(e.getMessage(), RestoreFailureReason.STORAGE_RECOVERY_DEFERRED);
         } catch (IOException e) {
             log.error("[RESTORE] Single file failed: {}", backupFilePath, e);
             return BackupSyncResult.failure(e.getMessage());

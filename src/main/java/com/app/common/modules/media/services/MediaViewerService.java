@@ -55,8 +55,12 @@ public class MediaViewerService {
 
         if (viewerStage == null) {
             initStage(owner);
+            if (viewerStage == null || controller == null) {
+                return;
+            }
 
             viewerStage.setOnShown(e -> {
+                viewerStage.setOnShown(null);
                 controller.setMedia(viewableList, startIndex);
                 controller.setOnLoadFile(this::dispatchLoad);
             });
@@ -97,13 +101,8 @@ public class MediaViewerService {
             viewerStage.setMinWidth(640);
             viewerStage.setMinHeight(480);
 
-            viewerStage.setOnCloseRequest(e -> {
-                if (controller != null) {
-                    controller.cleanup();
-                }
-                viewerStage = null;
-                controller = null;
-            });
+            Stage initializedStage = viewerStage;
+            viewerStage.setOnCloseRequest(e -> releaseViewer(initializedStage));
 
         } catch (Exception e) {
             log.error("Failed to init MediaViewer stage", e);
@@ -149,11 +148,25 @@ public class MediaViewerService {
     }
 
     public void close() {
-        if (viewerStage != null) {
+        Stage stage = viewerStage;
+        if (stage == null) return;
+
+        stage.setOnCloseRequest(null);
+        try {
+            releaseViewer(stage);
+        } finally {
+            stage.close();
+        }
+    }
+
+    private void releaseViewer(Stage stage) {
+        if (stage != viewerStage) return;
+
+        try {
             if (controller != null) {
                 controller.cleanup();
             }
-            viewerStage.close();
+        } finally {
             viewerStage = null;
             controller = null;
         }
@@ -161,15 +174,30 @@ public class MediaViewerService {
 
     @EventListener
     public void onThemeChanged(ThemeChangedEvent event) {
-        if (viewerStage != null && viewerStage.getScene() != null) {
-            Platform.runLater(() -> ThemeManager.apply(viewerStage.getScene()));
+        Stage stage = viewerStage;
+        MediaViewerController activeController = controller;
+        if (stage != null && stage.getScene() != null) {
+            Platform.runLater(() -> {
+                if (stage != viewerStage) {
+                    return;
+                }
+                ThemeManager.apply(stage.getScene());
+                if (activeController == controller) {
+                    activeController.refreshMapTheme(event.getTheme());
+                }
+            });
         }
     }
 
     @EventListener
     public void onLanguageChanged(LanguageChangedEvent event) {
-        if (controller != null) {
-            Platform.runLater(() -> controller.refreshLocalizedText());
+        MediaViewerController activeController = controller;
+        if (activeController != null) {
+            Platform.runLater(() -> {
+                if (activeController == controller) {
+                    activeController.refreshLocalizedText();
+                }
+            });
         }
     }
 }
