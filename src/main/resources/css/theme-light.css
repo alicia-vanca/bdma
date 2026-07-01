@@ -43,9 +43,13 @@
   /* ── MEDIA CONTROLS ── */
   -media-controls-bg: rgba(255, 255, 255, 0.90);
   -media-controls-text: #0f172a;
-  -media-controls-hover: rgba(255, 255, 255, 0.95);
+  -media-controls-item-bg: rgba(255, 255, 255, 0.95);
+  -media-controls-item-hover: #dbe4ef;
+  -media-controls-track: #b8c6d8;
   -media-controls-overlay: rgba(0, 0, 0, 0.60);
   -media-content-bg: #334155;
+  -media-map-pill-bg: rgba(255, 255, 255, 0.58);
+  -media-map-pill-text: #666666;
 
   -fx-background-color: -app-bg;
   -fx-text-fill: #0f172a;
@@ -492,5 +496,34 @@
 }
 
 .separator .line {
-  -fx-border-width: 0.5;
+  -fx-border-color: -border-color;
+  -fx-border-width: 1 1 0 0;
+}
+
+.drag-bar {
+  -fx-background-color: #cbd5e1;
+}
+
+.drag-bar:hover {
+  -fx-background-color: #94a3b8;
+}
+
+.media-viewer-root .video-slider .track {
+  -fx-background-color: white;
+  -fx-background-radius: 3px;
+  -fx-pref-height: 5px;
+}
+
+.media-viewer-root .video-slider .thumb,
+.media-viewer-root .video-slider:focused .thumb {
+  -fx-background-color: #6db4ec;
+  -fx-background-radius: 8px;
+  -fx-padding: 8px;
+  -fx-effect: null;
+}
+
+.media-slider-tooltip {
+  -fx-background-color: #ffffff;
+  -fx-border-color: #cbd5e1;
+  -fx-text-fill: #0f172a;
 }

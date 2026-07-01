@@ -635,7 +635,7 @@ public class AdminSettingsDialogController {
 
             String message = I18n.get(I18N_SETTING_STORAGE_PROGRESS,
                     restoreService.getCurrentProgress().buildProgressArgs());
-            boolean hasFailed = restoreService.getCurrentProgress().getFailed() > 0;
+            boolean hasFailed = restoreService.getCurrentProgress().getTotalFailed() > 0;
 
             Platform.runLater(() -> {
                 lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);

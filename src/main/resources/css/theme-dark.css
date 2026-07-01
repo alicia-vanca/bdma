@@ -46,11 +46,15 @@
     -fx-text-base-color: #f1f5f9;
 
     /* ── MEDIA CONTROLS ── */
-    -media-controls-bg: rgba(0, 0, 0, 0.60);
+    -media-controls-bg: #273549;
     -media-controls-text: #f1f5f9;
-    -media-controls-hover: rgba(0, 0, 0, 0.75);
+    -media-controls-item-bg: #334155;
+    -media-controls-item-hover: #475569;
+    -media-controls-track: #64748b;
     -media-controls-overlay: rgba(0, 0, 0, 0.60);
     -media-content-bg: #0f172a;
+    -media-map-pill-bg: rgba(30, 41, 59, 0.65);
+    -media-map-pill-text: #f1f5f9;
 
     /* ── DEVICE CARD ── */
     -default-card-bg: #1e293b;
@@ -492,5 +496,33 @@
 
 .separator .line {
     -fx-border-color: #475569;
-    -fx-border-width: 0.5;
+    -fx-border-width: 1 1 0 0;
+}
+
+.drag-bar {
+    -fx-background-color: #334155;
+}
+
+.drag-bar:hover {
+    -fx-background-color: #64748b;
+}
+
+.media-viewer-root .video-slider .track {
+    -fx-background-color: -media-controls-track;
+    -fx-background-radius: 3px;
+    -fx-pref-height: 5px;
+}
+
+.media-viewer-root .video-slider .thumb,
+.media-viewer-root .video-slider:focused .thumb {
+    -fx-background-color: -primary;
+    -fx-background-radius: 8px;
+    -fx-padding: 8px;
+    -fx-effect: null;
+}
+
+.media-slider-tooltip {
+    -fx-background-color: #1e293b;
+    -fx-border-color: #64748b;
+    -fx-text-fill: #f1f5f9;
 }
