@@ -1,16 +1,11 @@
 package com.app.common.modules.media.controllers;
 
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileView;
@@ -36,13 +31,10 @@ final class MediaGpsMapController {
     private static final Logger log = LoggerFactory.getLogger(MediaGpsMapController.class);
 
     private static final String MAP_HTML_RESOURCE = "/html/common/media/media-viewer-map.html";
-    private static final String MAP_TILE_HOST = "tile.openstreetmap.org";
     private static final String UPDATE_CURRENT_MARKER_SCRIPT = "updateCurrentMarker(%f, %f, '%.6f, %.6f');";
-    private static final int MAP_TILE_HTTPS_PORT = 443;
     private static final double LOGICAL_PATH_SAMPLE_SECONDS = 1.0;
     private static final double MIN_LOGICAL_POINT_DISTANCE_METERS = 20.0;
     private static final double SEEK_THRESHOLD = LOGICAL_PATH_SAMPLE_SECONDS + 1.0;
-    private static final long NETWORK_MONITOR_START_LOG_COOLDOWN_NANOS = TimeUnit.MINUTES.toNanos(5);
 
     record Dependencies(
             WebView mapView,
@@ -61,15 +53,11 @@ final class MediaGpsMapController {
     private final Label mapErrorLabel;
     private final Label locationGps;
     private final MapTileCacheService mapTileCacheService;
+    private final Consumer<Boolean> upstreamStateListener = this::onUpstreamStateChanged;
     private final MapJsBridge mapJsBridge = new MapJsBridge();
     private final List<TimedGpsCoordinate> logicalGpsPath = new ArrayList<>();
     private final PauseTransition mapDebouncer = new PauseTransition(Duration.millis(250));
-    private final PauseTransition mapErrorOverlayDelay = new PauseTransition(Duration.seconds(6));
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread thread = new Thread(r, "MediaViewer-NetworkMonitor");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final PauseTransition mapErrorOverlayDelay = new PauseTransition(Duration.seconds(2));
 
     private FileView currentFile;
     private List<GpsPoint> gpsTimeline = new ArrayList<>();
@@ -81,8 +69,6 @@ final class MediaGpsMapController {
     private long lastBuiltLogicalSampleIndex = -1;
     private int lastRenderedLogicalPointIndex = -1;
     private double lastVideoSeconds = -1;
-    private ScheduledFuture<?> monitorTask;
-    private long lastNetworkMonitorStartLogNanos;
     private boolean cleanedUp;
 
     MediaGpsMapController(Dependencies dependencies) {
@@ -94,6 +80,7 @@ final class MediaGpsMapController {
     }
 
     void initialize() {
+        mapTileCacheService.addUpstreamStateListener(upstreamStateListener);
         setupMapViewListener();
         mapDebouncer.setOnFinished(e -> updateMapDisplay());
         mapErrorOverlayDelay.setOnFinished(e -> showMapErrorOverlay());
@@ -202,8 +189,7 @@ final class MediaGpsMapController {
         cleanedUp = true;
         mapDebouncer.stop();
         mapErrorOverlayDelay.stop();
-        stopNetworkMonitoring();
-        scheduler.shutdownNow();
+        mapTileCacheService.removeUpstreamStateListener(upstreamStateListener);
     }
 
     private void setupMapViewListener() {
@@ -243,9 +229,9 @@ final class MediaGpsMapController {
                 if (cleanedUp) {
                     return;
                 }
-                log.trace("Map tile batch failed; delaying error overlay while retry checks run");
-                scheduleMapErrorOverlay();
-                startNetworkMonitoring();
+                log.trace("Map tile upstream failure confirmed");
+                showMapErrorOverlay();
+                mapTileCacheService.reportUpstreamUnavailable();
             });
         }
 
@@ -255,7 +241,6 @@ final class MediaGpsMapController {
                     return;
                 }
                 hideMapErrorOverlay();
-                stopNetworkMonitoring();
             });
         }
     }
@@ -327,7 +312,6 @@ final class MediaGpsMapController {
         if (!isLeafletReady()) {
             log.debug("Leaflet not ready; delaying error overlay while retry checks run");
             scheduleMapErrorOverlay();
-            startNetworkMonitoring();
             return;
         }
 
@@ -691,26 +675,25 @@ final class MediaGpsMapController {
         return normalized;
     }
 
-    private void startNetworkMonitoring() {
-        if (cleanedUp || (monitorTask != null && !monitorTask.isCancelled())) {
-            return;
-        }
-        logNetworkMonitorStarted();
-        monitorTask = scheduler.scheduleWithFixedDelay(this::checkForNetworkRecovery, 0, 2, TimeUnit.SECONDS);
-    }
-
-    private void checkForNetworkRecovery() {
-        if (isNetworkAvailable()) {
-            Platform.runLater(this::retryMapAfterNetworkRecovery);
-        }
+    private void onUpstreamStateChanged(boolean online) {
+        Platform.runLater(() -> {
+            if (cleanedUp) {
+                return;
+            }
+            if (online) {
+                retryMapAfterNetworkRecovery();
+            } else {
+                log.debug("Map tile upstream is offline");
+                showMapErrorOverlay();
+            }
+        });
     }
 
     private void retryMapAfterNetworkRecovery() {
         if (cleanedUp) {
             return;
         }
-        log.debug("Network recovered, stopping monitoring and retrying map tiles");
-        stopNetworkMonitoring();
+        log.debug("Map tile upstream recovered; retrying map tiles");
         if (mapView == null) {
             return;
         }
@@ -722,31 +705,6 @@ final class MediaGpsMapController {
             }
         } catch (Exception e) {
             log.error("Failed to retry map tiles", e);
-        }
-    }
-
-    private void logNetworkMonitorStarted() {
-        long now = System.nanoTime();
-        if (now - lastNetworkMonitorStartLogNanos < NETWORK_MONITOR_START_LOG_COOLDOWN_NANOS) {
-            return;
-        }
-        lastNetworkMonitorStartLogNanos = now;
-        log.debug("Starting network monitoring");
-    }
-
-    private void stopNetworkMonitoring() {
-        if (monitorTask != null) {
-            monitorTask.cancel(false);
-            monitorTask = null;
-        }
-    }
-
-    private boolean isNetworkAvailable() {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(MAP_TILE_HOST, MAP_TILE_HTTPS_PORT), 3000);
-            return true;
-        } catch (Exception e) {
-            return false;
         }
     }
 

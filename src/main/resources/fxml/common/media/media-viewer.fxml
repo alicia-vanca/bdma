@@ -67,7 +67,8 @@
         </VBox>
         <!-- /detailPane -->
         <!-- Location tab content -->
-        <VBox fx:id="locationPane" spacing="10" styleClass="media-viewer-tab-content"
+        <VBox fx:id="locationPane" spacing="10" minHeight="0" VBox.vgrow="ALWAYS"
+              styleClass="media-viewer-tab-content"
               visible="false" managed="false">
             <!-- GPS coordinates -->
             <VBox spacing="4">
@@ -85,7 +86,7 @@
                 <Label fx:id="locationDevice" styleClass="media-viewer-detail-value" wrapText="true"/>
             </VBox>
             <Separator/>
-            <StackPane VBox.vgrow="ALWAYS">
+            <StackPane minHeight="0" VBox.vgrow="ALWAYS">
                 <WebView fx:id="mapView" />
                 <StackPane fx:id="mapErrorPane" visible="false" managed="false"
                            minWidth="0" maxHeight="-Infinity" mouseTransparent="true"

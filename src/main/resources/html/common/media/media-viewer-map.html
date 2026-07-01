@@ -196,10 +196,11 @@
         var PATH_MARKER_SPACING_PIXELS = 10;
         var LOST_SIGNAL_SEGMENT_METERS = 100;
         var PRELOAD_TILE_BUFFER = 1;
-        var TILE_LOAD_WARNING_DELAY_MS = 2000;
+        var TILE_ERROR_CONFIRM_DELAY_MS = 4000;
+        var TILE_RETRY_DELAY_MS = 1000;
         var networkError = false;
-        var tileBatchLoadedCount = 0;
         var tileLoadWatchdog = null;
+        var tileRetryTimer = null;
         var noGpsMode = false;
 
         function tileIntersectsVisibleMap(tile) {
@@ -224,8 +225,49 @@
             return hasVisibleTileMatching('.leaflet-tile.session-tile-error');
         }
 
+        function hasFailedTile() {
+            return map.getContainer().querySelector('.leaflet-tile.session-tile-error') !== null;
+        }
+
         function hasVisibleIncompleteTile() {
             return hasVisibleTileMatching('.leaflet-tile:not(.leaflet-tile-loaded)');
+        }
+
+        function hasVisibleTileProblem() {
+            return hasVisibleFailedTile() || hasVisibleIncompleteTile();
+        }
+
+        function scheduleTileErrorReport() {
+            if (tileLoadWatchdog !== null) return;
+            tileLoadWatchdog = setTimeout(function () {
+                tileLoadWatchdog = null;
+                if (!noGpsMode) {
+                    reportTileError();
+                }
+            }, TILE_ERROR_CONFIRM_DELAY_MS);
+        }
+
+        function cancelTileErrorReport() {
+            clearTimeout(tileLoadWatchdog);
+            tileLoadWatchdog = null;
+        }
+
+        function scheduleTileRetry() {
+            if (tileRetryTimer !== null) return;
+            tileRetryTimer = setTimeout(function () {
+                tileRetryTimer = null;
+                if (noGpsMode || !tileLayer || !map.hasLayer(tileLayer)) return;
+                if (tileLayer.isLoading()) {
+                    scheduleTileRetry();
+                    return;
+                }
+                tileLayer.redraw();
+            }, TILE_RETRY_DELAY_MS);
+        }
+
+        function cancelTileRetry() {
+            clearTimeout(tileRetryTimer);
+            tileRetryTimer = null;
         }
 
         // Fix cho JavaFX WebView
@@ -275,44 +317,33 @@
             });
 
             tileLayer.on('loading', function () {
-                tileBatchLoadedCount = 0;
-                clearTimeout(tileLoadWatchdog);
-                tileLoadWatchdog = setTimeout(function () {
-                    if (!noGpsMode && tileLayer.isLoading()) {
-                        if (hasVisibleIncompleteTile()) {
-                            reportTileError();
-                        } else if (tileBatchLoadedCount > 0) {
-                            reportTileRecovered();
-                        }
-                    }
-                }, TILE_LOAD_WARNING_DELAY_MS);
+                scheduleTileErrorReport();
             });
 
             tileLayer.on('tileerror', function (e) {
                 if (e.tile) {
                     e.tile.classList.add('session-tile-error');
-                    if (tileIntersectsVisibleMap(e.tile)) {
-                        reportTileError();
-                    }
                 }
+                scheduleTileErrorReport();
+                scheduleTileRetry();
             });
 
             tileLayer.on('tileload', function (e) {
-                tileBatchLoadedCount += 1;
                 if (e.tile) e.tile.classList.remove('session-tile-error');
-                if (e.tile && tileIntersectsVisibleMap(e.tile)
-                        && !hasVisibleFailedTile() && !hasVisibleIncompleteTile()) {
-                    reportTileRecovered();
+                cancelTileErrorReport();
+                reportTileRecovered();
+                if (hasFailedTile()) {
+                    scheduleTileRetry();
+                } else {
+                    cancelTileRetry();
                 }
             });
 
             tileLayer.on('load', function () {
-                clearTimeout(tileLoadWatchdog);
-                tileLoadWatchdog = null;
-                if (hasVisibleFailedTile()) {
-                    reportTileError();
+                if (hasFailedTile()) {
+                    scheduleTileRetry();
                 } else {
-                    reportTileRecovered();
+                    cancelTileRetry();
                 }
             });
 
@@ -327,10 +358,10 @@
             });
             map.on('moveend', function () {
                 updateCenterButtonVisibility();
-                if (hasVisibleFailedTile()) {
-                    reportTileError();
-                } else if (!hasVisibleIncompleteTile()) {
-                    reportTileRecovered();
+                if (hasVisibleTileProblem()) {
+                    scheduleTileRetry();
+                } else {
+                    cancelTileRetry();
                 }
             });
 
@@ -350,6 +381,7 @@
         function reportTileError() {
             if (!networkError) {
                 networkError = true;
+                cancelTileRetry();
                 if (globalThis.javaApp) globalThis.javaApp.onTileError();
             }
         }
@@ -373,8 +405,8 @@
 
         function retryMapTiles() {
             if (noGpsMode || !tileLayer || tileLayer.isLoading()) return false;
-            clearTimeout(tileLoadWatchdog);
-            tileBatchLoadedCount = 0;
+            cancelTileErrorReport();
+            cancelTileRetry();
             if (map.hasLayer(tileLayer)) {
                 tileLayer.redraw();
             } else {
@@ -401,8 +433,8 @@
 
         function enterNoGpsMode() {
             noGpsMode = true;
-            clearTimeout(tileLoadWatchdog);
-            tileLoadWatchdog = null;
+            cancelTileErrorReport();
+            cancelTileRetry();
             if (map.hasLayer(tileLayer)) map.removeLayer(tileLayer);
             setMapInteractionsEnabled(false);
             if (zoomControl && zoomControl._map) zoomControl.remove();
