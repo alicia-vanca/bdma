@@ -81,7 +81,34 @@ jobs:
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
       - name: Install NSIS
-        run: choco install nsis -y
+        run: |
+          $nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
+          $maxInstallAttempts = 4
+          $installSucceeded = $false
+
+          for ($attempt = 1; $attempt -le $maxInstallAttempts; $attempt++) {
+            Write-Host "Installing NSIS (attempt $attempt of $maxInstallAttempts)..."
+
+            choco install nsis -y --no-progress
+            $chocoExitCode = $LASTEXITCODE
+
+            if ($chocoExitCode -eq 0 -and (Test-Path $nsisPath)) {
+              $installSucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxInstallAttempts) {
+              $retryDelaySeconds = [int](5 * [math]::Pow(2, $attempt))
+              Write-Warning "NSIS installation attempt $attempt failed with exit code $chocoExitCode. Retrying in $retryDelaySeconds seconds..."
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $installSucceeded) {
+            throw "NSIS installation failed after $maxInstallAttempts attempts. Expected executable not found: $nsisPath"
+          }
+
+          Write-Host "NSIS installation verified: $nsisPath"
 
       - name: Build NSIS installer
         run: |
@@ -154,6 +181,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
+          AWS_RETRY_MODE: standard
+          AWS_MAX_ATTEMPTS: "5"
           AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
           AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -191,20 +220,63 @@ jobs:
             throw "R2 upload file not found: $localFile"
           }
 
-          Write-Host "Uploading $localFile to R2 object key: $objectKey"
+          $localFileLength = (Get-Item $localFile).Length
+          $uploadId = "$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-$env:GITHUB_SHA"
+          $maxUploadAttempts = 4
+          $uploadSucceeded = $false
 
-          aws s3 cp $localFile "s3://$env:R2_BUCKET_NAME/$objectKey" `
-            --endpoint-url $endpoint `
-            --content-type "application/vnd.microsoft.portable-executable" `
-            --cache-control "no-store, max-age=0, must-revalidate" `
-            --no-progress
+          for ($attempt = 1; $attempt -le $maxUploadAttempts; $attempt++) {
+            Write-Host "Uploading $localFile to R2 object key: $objectKey (attempt $attempt of $maxUploadAttempts)"
 
-          Write-Host "Verifying uploaded object..."
+            aws s3 cp $localFile "s3://$env:R2_BUCKET_NAME/$objectKey" `
+              --endpoint-url $endpoint `
+              --content-type "application/vnd.microsoft.portable-executable" `
+              --cache-control "no-store, max-age=0, must-revalidate" `
+              --metadata "github-upload-id=$uploadId" `
+              --no-progress
 
-          aws s3api head-object `
+            $uploadExitCode = $LASTEXITCODE
+
+            if ($uploadExitCode -eq 0) {
+              $uploadSucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxUploadAttempts) {
+              $retryDelaySeconds = [int][math]::Pow(2, $attempt)
+              Write-Warning "R2 upload attempt $attempt failed with exit code $uploadExitCode. Retrying in $retryDelaySeconds seconds..."
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $uploadSucceeded) {
+            throw "R2 upload failed after $maxUploadAttempts attempts."
+          }
+
+          Write-Host "Verifying uploaded object belongs to this workflow run..."
+
+          $headJson = aws s3api head-object `
             --bucket $env:R2_BUCKET_NAME `
             --key $objectKey `
-            --endpoint-url $endpoint
+            --endpoint-url $endpoint `
+            --output json
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "R2 upload verification request failed."
+          }
+
+          $head = $headJson | ConvertFrom-Json
+          $remoteUploadId = $head.Metadata.'github-upload-id'
+
+          if ([int64]$head.ContentLength -ne $localFileLength) {
+            throw "R2 upload verification failed: remote size $($head.ContentLength) does not match local size $localFileLength."
+          }
+
+          if ($remoteUploadId -ne $uploadId) {
+            throw "R2 upload verification failed: remote upload ID '$remoteUploadId' does not match this workflow run."
+          }
+
+          Write-Host "R2 upload verified successfully ($localFileLength bytes, upload ID $uploadId)."
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
