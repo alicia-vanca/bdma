@@ -16,8 +16,11 @@ public record FileView(
         String syncedAt,
         String backedUpAt,
         String username,
-        String deviceName) {
-    public static FileView from(FileRecord f, String username, String deviceName) {
+        String deviceName,
+        boolean bookmarked,
+        String bookmarkedAt) {
+    public static FileView from(FileRecord f, String username, String deviceName,
+            boolean bookmarked, String bookmarkedAt) {
         return new FileView(
                 f.getId(),
                 f.getUserId(),
@@ -32,6 +35,8 @@ public record FileView(
                 f.getSyncedAt(),
                 f.getBackedUpAt(),
                 username,
-                deviceName);
+                deviceName,
+                bookmarked,
+                bookmarkedAt);
     }
 }

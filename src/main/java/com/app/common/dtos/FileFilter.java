@@ -13,4 +13,6 @@ public class FileFilter {
     private LocalDate dateFrom;
     private LocalDate dateTo;
     private String type;
+    private Boolean bookmarkedOnly;
+    private Long bookmarkUserId;
 }

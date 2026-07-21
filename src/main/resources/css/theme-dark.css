@@ -37,13 +37,14 @@
     -warning-color: #f59e0b;
     -warn-strip-bg: rgba(245, 158, 11, 0.13);
     -warn-strip-border: rgba(245, 158, 11, 0.38);
+    -warning-popup-bg: #1e293b;
+    -warning-popup-border: #64748b;
+    -warning-popup-separator: rgba(241, 245, 249, 0.16);
+    -status-muted-text: rgba(241, 245, 249, 0.54);
+    -status-separator-color: #64748b;
 
     /* ── STORAGE ── */
     -storage-track: #2d3f55;
-
-    -fx-background-color: -card-bg;
-    -fx-text-fill: #f1f5f9;
-    -fx-text-base-color: #f1f5f9;
 
     /* ── MEDIA CONTROLS ── */
     -media-controls-bg: #273549;
@@ -55,6 +56,14 @@
     -media-content-bg: #0f172a;
     -media-map-pill-bg: rgba(30, 41, 59, 0.65);
     -media-map-pill-text: #f1f5f9;
+
+    /* ── BOOKMARK ── */
+    -bookmark-active: #fbbf24;
+    -bookmark-inactive: #414e63;
+
+    -fx-background-color: -card-bg;
+    -fx-text-fill: #f1f5f9;
+    -fx-text-base-color: #f1f5f9;
 
     /* ── DEVICE CARD ── */
     -default-card-bg: #1e293b;
@@ -123,31 +132,6 @@
 
 .settings-warning {
     -fx-text-fill: #f59e0b;
-}
-
-/* ── SIDEBAR ── */
-.sidebar {
-    -fx-background-color: -sidebar-bg;
-}
-
-.sidebar-title {
-    -fx-text-fill: #94a3b8;
-    -fx-font-weight: bold;
-}
-
-.menu-btn {
-    -fx-background-color: transparent;
-    -fx-text-fill: -text-color;
-    -fx-background-radius: 6;
-}
-
-.menu-btn:hover {
-    -fx-background-color: #334155;
-}
-
-.menu-btn.active-button {
-    -fx-background-color: -primary;
-    -fx-text-fill: white;
 }
 
 /* ── BUTTON ── */
@@ -351,10 +335,6 @@
     -fx-background-color: #475569;
 }
 
-.update-status {
-    -fx-text-fill: #94a3b8;
-}
-
 /* ── TABLE ── */
 .table-row-cell:selected .table-cell {
     -fx-text-fill: white;
@@ -363,37 +343,6 @@
 /* ── ERROR TEXT ── */
 .message-error {
     -fx-text-fill: -danger;
-}
-
-/* ── LANG BUTTON ── */
-.lang-btn {
-    -fx-background-color: transparent;
-    -fx-text-fill: -text-color;
-    -fx-background-radius: 6;
-}
-
-.lang-btn.active-button {
-    -fx-background-color: -primary;
-    -fx-text-fill: white;
-}
-
-/* ── THEME BUTTON ── */
-.theme-btn {
-    -fx-background-color: transparent;
-    -fx-text-fill: -text-color;
-    -fx-background-radius: 6;
-    -fx-cursor: hand;
-}
-
-.theme-btn:hover {
-    -fx-background-color: #334155;
-    -fx-background-radius: 6;
-}
-
-.theme-btn-active {
-    -fx-background-color: -primary;
-    -fx-text-fill: white;
-    -fx-background-radius: 6;
 }
 
 /* ── CONTEXT MENU ── */
@@ -475,14 +424,6 @@
 
 .dot-unvalidated {
     -fx-fill: #fbbf24;
-}
-
-.dot-queued {
-    -fx-fill: #fbbf24;
-}
-
-.dot-syncing {
-    -fx-fill: #60a5fa;
 }
 
 .btn-page-active {

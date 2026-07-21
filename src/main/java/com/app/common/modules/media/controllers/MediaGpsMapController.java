@@ -107,15 +107,19 @@ final class MediaGpsMapController {
 
     void resetForFile(FileView file) {
         mapDebouncer.stop();
+        hideMapErrorOverlay();
         currentFile = file;
         currentGpsCoordinate = null;
         currentVideoSeconds = 0;
         gpsTimeline = new ArrayList<>();
         gpsMetadataLoading = true;
         resetLogicalGpsPath();
+        mapTileCacheService.resetUpstreamState();
         if (isLeafletReady()) {
             clearMapDisplay();
+            suspendMapTiles();
         }
+        updateTileCloudState(true);
     }
 
     GpsCoordinate setTimeline(List<GpsPoint> timeline) {
@@ -190,6 +194,7 @@ final class MediaGpsMapController {
         mapDebouncer.stop();
         mapErrorOverlayDelay.stop();
         mapTileCacheService.removeUpstreamStateListener(upstreamStateListener);
+        mapTileCacheService.resetUpstreamState();
     }
 
     private void setupMapViewListener() {
@@ -212,9 +217,11 @@ final class MediaGpsMapController {
         Platform.runLater(() -> {
             JSObject win = (JSObject) mapView.getEngine().executeScript("window");
             win.setMember("javaApp", mapJsBridge);
+            mapView.getEngine().executeScript("notifyZoomChanged();");
         });
 
         configureMapTileSource();
+        updateTileCloudState(mapTileCacheService.isUpstreamOnline());
         refreshMapSize();
         updateMapControlsLocalizedText();
         refreshTheme(ThemeManager.getTheme());
@@ -224,24 +231,10 @@ final class MediaGpsMapController {
     }
 
     public class MapJsBridge {
-        public void onTileError() {
-            Platform.runLater(() -> {
-                if (cleanedUp) {
-                    return;
-                }
-                log.trace("Map tile upstream failure confirmed");
-                showMapErrorOverlay();
-                mapTileCacheService.reportUpstreamUnavailable();
-            });
-        }
-
-        public void onTileRecovered() {
-            Platform.runLater(() -> {
-                if (cleanedUp) {
-                    return;
-                }
-                hideMapErrorOverlay();
-            });
+        public void onZoomChanged(double zoom) {
+            if (Double.isFinite(zoom)) {
+                mapTileCacheService.setActiveZoom((int) Math.round(zoom));
+            }
         }
     }
 
@@ -269,12 +262,15 @@ final class MediaGpsMapController {
         if (!mapLoaded || mapView == null) {
             return;
         }
+        mapErrorLabel.setText(I18n.get("media.viewer.map.error"));
         String centerLabel = toJsString(I18n.get("media.viewer.location.center"));
+        String noGpsLabel = toJsString(I18n.get("media.viewer.map.no.gps"));
         Platform.runLater(() -> {
             try {
-                mapView.getEngine().executeScript("updateCenterButtonLabel(" + centerLabel + ");");
+                mapView.getEngine().executeScript("updateCenterButtonLabel(" + centerLabel + ");"
+                        + "updateNoDataMessageLabel(" + noGpsLabel + ");");
             } catch (Exception e) {
-                log.error("Failed to update center button label", e);
+                log.error("Failed to update map localized text", e);
             }
         });
     }
@@ -315,9 +311,9 @@ final class MediaGpsMapController {
             return;
         }
 
-        hideMapErrorOverlay();
         clearMapDisplay();
         renderMapContent();
+        updateMapErrorOverlayForCloudState();
         startMapTileLoading();
     }
 
@@ -425,8 +421,9 @@ final class MediaGpsMapController {
             return;
         }
         try {
+            String label = String.format(Locale.US, "%.6f, %.6f", coord.latitude(), coord.longitude());
             String js = String.format(Locale.US, "addStartMarker(%f, %f, %s);",
-                    coord.latitude(), coord.longitude(), toJsString("Start: " + coord));
+                    coord.latitude(), coord.longitude(), toJsString(label));
             mapView.getEngine().executeScript(js);
         } catch (Exception e) {
             log.error("Error executing renderStartMarker script", e);
@@ -680,13 +677,43 @@ final class MediaGpsMapController {
             if (cleanedUp) {
                 return;
             }
+            updateTileCloudState(online);
             if (online) {
+                hideMapErrorOverlay();
                 retryMapAfterNetworkRecovery();
             } else {
                 log.debug("Map tile upstream is offline");
-                showMapErrorOverlay();
+                updateMapErrorOverlayForCloudState();
             }
         });
+    }
+
+    private void updateTileCloudState(boolean online) {
+        if (!mapLoaded || mapView == null) {
+            return;
+        }
+        try {
+            mapView.getEngine().executeScript("setTileCloudOnline(" + online + ");");
+        } catch (Exception e) {
+            log.error("Failed to update map tile cloud state", e);
+        }
+    }
+
+    private void suspendMapTiles() {
+        try {
+            mapView.getEngine().executeScript("suspendMapTiles();");
+        } catch (Exception e) {
+            log.error("Failed to suspend map tile loading", e);
+        }
+    }
+
+    private void updateMapErrorOverlayForCloudState() {
+        boolean needsCloudTiles = hasTimeline() || currentGpsCoordinate != null;
+        if (!needsCloudTiles || mapTileCacheService.isUpstreamOnline()) {
+            hideMapErrorOverlay();
+        } else {
+            showMapErrorOverlay();
+        }
     }
 
     private void retryMapAfterNetworkRecovery() {

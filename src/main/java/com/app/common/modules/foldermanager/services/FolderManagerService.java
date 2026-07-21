@@ -39,6 +39,8 @@ public class FolderManagerService {
 
     private static final Logger log = LoggerFactory.getLogger(FolderManagerService.class);
     private static final String DEFAULT_ROOT_FOLDER = "BDMA_User_Data";
+    private static final String DEFAULT_SYNC_PARENT_FOLDER = "DataSync";
+    private static final String DEFAULT_BACKUP_PARENT_FOLDER = "DataBackup";
     private static final String STORAGE_PROTECTION_ENABLED_PROPERTY = "app.storage.protection.enabled";
     private static final long TMP_DELETE_RETRY_DELAY_MILLIS = 5_000L;
     private static final int TMP_DELETE_MAX_ATTEMPTS = 3;
@@ -47,15 +49,18 @@ public class FolderManagerService {
     private final File tempDir;
 
     private final AppConfigService appConfigService;
+    private final DefaultStorageLocationService defaultStorageLocationService;
     private final UserService userService;
     private final ApplicationEventPublisher publisher;
     private final boolean storageProtectionEnabled;
 
     public FolderManagerService(AppConfigService appConfigService,
+            DefaultStorageLocationService defaultStorageLocationService,
             UserService userService,
             ApplicationEventPublisher publisher,
             @Value("${app.storage.protection.enabled:true}") boolean storageProtectionEnabled) {
         this.appConfigService = appConfigService;
+        this.defaultStorageLocationService = defaultStorageLocationService;
         this.userService = userService;
         this.publisher = publisher;
         this.storageProtectionEnabled = allowDisabledOnlyForDev(storageProtectionEnabled);
@@ -69,25 +74,52 @@ public class FolderManagerService {
     }
 
     public void init(FolderType target) {
+        initializeDefaultStoragePaths(target);
+        if (target == null || target == FolderType.SYNC) {
+            initSyncDir(appConfigService.getConfigValue(AppConstants.KEY_SYNC_DIR));
+        }
+        if (target == null || target == FolderType.BACKUP) {
+            initBackupDir(appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR));
+        }
+        clearTemp();
+    }
+
+    void initializeDefaultStoragePaths(FolderType target) {
+        setDefaultStoragePaths(target, false);
+    }
+
+    public void resetDefaultStoragePaths() {
+        setDefaultStoragePaths(null, true);
+    }
+
+    private void setDefaultStoragePaths(FolderType target, boolean overwriteExisting) {
+        Path operatingSystemRoot = null;
         if (target == null || target == FolderType.SYNC) {
             String syncDirPath = appConfigService.getConfigValue(AppConstants.KEY_SYNC_DIR);
-            if (syncDirPath == null || syncDirPath.isBlank()) {
-                syncDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataSync").toString();
+            if (overwriteExisting || syncDirPath == null || syncDirPath.isBlank()) {
+                operatingSystemRoot = defaultStorageLocationService.getOperatingSystemRoot();
+                syncDirPath = defaultParentPath(operatingSystemRoot, DEFAULT_SYNC_PARENT_FOLDER);
                 appConfigService.saveConfigValue(AppConstants.KEY_SYNC_DIR, syncDirPath);
                 log.info("Initialized default sync folder: {}", syncDirPath);
             }
-            initSyncDir(syncDirPath);
         }
         if (target == null || target == FolderType.BACKUP) {
             String backupDirPath = appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR);
-            if (backupDirPath == null || backupDirPath.isBlank()) {
-                backupDirPath = Path.of("C:", DEFAULT_ROOT_FOLDER, "DataBackup").toString();
+            if (overwriteExisting || backupDirPath == null || backupDirPath.isBlank()) {
+                if (operatingSystemRoot == null) {
+                    operatingSystemRoot = defaultStorageLocationService.getOperatingSystemRoot();
+                }
+                Path backupRoot = defaultStorageLocationService.findBackupRoot(operatingSystemRoot)
+                        .orElse(operatingSystemRoot);
+                backupDirPath = defaultParentPath(backupRoot, DEFAULT_BACKUP_PARENT_FOLDER);
                 appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
                 log.info("Initialized default backup folder: {}", backupDirPath);
             }
-            initBackupDir(backupDirPath);
         }
-        clearTemp();
+    }
+
+    private String defaultParentPath(Path driveRoot, String parentFolder) {
+        return driveRoot.resolve(DEFAULT_ROOT_FOLDER).resolve(parentFolder).toString();
     }
 
     public void shutdown() {

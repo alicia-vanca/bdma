@@ -2,7 +2,12 @@ package com.app.admin.settingsdialog.services;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
+import com.app.common.definitions.enums.Language;
+import com.app.common.definitions.enums.Role;
+import com.app.common.definitions.enums.Theme;
+import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.datarestore.services.RestoreService;
+import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.session.Session;
 import com.app.common.services.AppConfigService;
@@ -10,7 +15,7 @@ import com.app.common.services.UserSettingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,17 +37,23 @@ public class AdminSettingsDialogService {
     private final RestoreService restoreService;
     private final UserSettingService userSettingService;
     private final Session session;
+    private final DeviceSyncQueue deviceSyncQueue;
+    private final DataBackupQueue dataBackupQueue;
 
     public AdminSettingsDialogService(AppConfigService appConfigService,
             FolderManagerService folderManagerService,
             RestoreService restoreService,
             UserSettingService userSettingService,
-            Session session) {
+            Session session,
+            DeviceSyncQueue deviceSyncQueue,
+            DataBackupQueue dataBackupQueue) {
         this.appConfigService = appConfigService;
         this.folderManagerService = folderManagerService;
         this.restoreService = restoreService;
         this.userSettingService = userSettingService;
         this.session = session;
+        this.deviceSyncQueue = deviceSyncQueue;
+        this.dataBackupQueue = dataBackupQueue;
     }
 
     // ── Storage ───────────────────────────────────────────────────────────────
@@ -69,9 +80,32 @@ public class AdminSettingsDialogService {
         return Boolean.parseBoolean(appConfigService.getConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC));
     }
 
-    public void setAutoDelete(boolean autoDelete) {
-        appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, String.valueOf(autoDelete));
-        log.info("BodyCam autoDelete set to: {}", autoDelete);
+    public boolean getDeleteEmptyDateFolders() {
+        return Boolean.parseBoolean(
+                appConfigService.getConfigValue(AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC));
+    }
+
+    /**
+     * Persists the parent and child while maintaining child=true => parent=true.
+     */
+    @Transactional
+    public void setAutoDeleteState(boolean autoDelete, boolean deleteEmptyDateFolders) {
+        if (!autoDelete) {
+            appConfigService.saveConfigValue(
+                    AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC, Boolean.FALSE.toString());
+            appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, Boolean.FALSE.toString());
+        } else {
+            appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, Boolean.TRUE.toString());
+            appConfigService.saveConfigValue(
+                    AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC,
+                    String.valueOf(deleteEmptyDateFolders));
+        }
+        log.info("BodyCam autoDelete set to: {}, deleteEmptyDateFolders set to: {}",
+                autoDelete, deleteEmptyDateFolders);
+    }
+
+    public void setDeleteEmptyDateFolders(boolean deleteEmptyDateFolders) {
+        setAutoDeleteState(getAutoDelete(), deleteEmptyDateFolders);
     }
 
     // ── Export ─────────────────────────────────────────────────────────────
@@ -249,21 +283,40 @@ public class AdminSettingsDialogService {
         }
     }
 
-    // Resolve the launcher executable path from the running process or working
+    // Resolve the installed launcher from the current process first. Unlike
+    // user.dir, the process command is unaffected by a shortcut's "Start in"
     // directory.
     private String resolveAppExePath() {
-        // Try to locate the exe next to the JVM (packaged app installs the launcher
-        // there).
-        String javaHome = System.getProperty("java.home");
-        if (javaHome != null) {
-            File exeCandidate = new File(javaHome, "../../bdma.exe")
-                    .toPath().normalize().toFile();
-            if (exeCandidate.exists()) {
-                return exeCandidate.getAbsolutePath();
+        Optional<String> processCommand = ProcessHandle.current().info().command();
+        if (processCommand.isPresent()) {
+            Path runningExecutable = Path.of(processCommand.get()).toAbsolutePath().normalize();
+            Path fileName = runningExecutable.getFileName();
+            if (fileName != null
+                    && isNativeLauncher(fileName.toString())
+                    && Files.isRegularFile(runningExecutable)) {
+                return runningExecutable.toString();
             }
         }
-        // Fallback: use the working directory.
-        return System.getProperty("user.dir") + "\\bdma.exe";
+
+        // jpackage installs the launcher beside its runtime directory.
+        String javaHome = System.getProperty("java.home");
+        if (javaHome != null && !javaHome.isBlank()) {
+            Path exeCandidate = Path.of(javaHome, "..", "BDMA.exe").toAbsolutePath().normalize();
+            if (Files.isRegularFile(exeCandidate)) {
+                return exeCandidate.toString();
+            }
+        }
+
+        // Compatibility fallback for layouts that launch with the install directory
+        // as their working directory.
+        String userDir = System.getProperty("user.dir", "");
+        return Path.of(userDir, "BDMA.exe").toAbsolutePath().normalize().toString();
+    }
+
+    private boolean isNativeLauncher(String fileName) {
+        return fileName.regionMatches(true, fileName.length() - 4, ".exe", 0, 4)
+                && !fileName.equalsIgnoreCase("java.exe")
+                && !fileName.equalsIgnoreCase("javaw.exe");
     }
 
     public RestoreService.BackupSyncResult restore() {
@@ -277,4 +330,56 @@ public class AdminSettingsDialogService {
     public String getLastRestoreProgress() {
         return appConfigService.getConfigValue(AppConstants.KEY_LAST_RESTORE_PROGRESS);
     }
+
+    // ── Default Settings Reset ──────────────────────────────────────────────
+
+    /**
+     * Checks whether a settings reset is currently blocked by active operations.
+     * Only ADMIN and DEV scopes are blocked; USER scope can reset anytime.
+     */
+    public boolean isResetBlocked(Role scope) {
+        if (scope == Role.USER) {
+            return false;
+        }
+        return deviceSyncQueue.isActive() || dataBackupQueue.isActive() || restoreService.isRunning();
+    }
+
+    public boolean resetToDefaults(Long userId, Role scope) {
+        try {
+            log.info("Resetting settings to defaults: scope={}, userId={}", scope, userId);
+
+            if (scope == Role.ADMIN || scope == Role.DEV
+                    || scope == Role.USER) {
+                userSettingService.saveLanguage(userId, Language.VI);
+                userSettingService.saveTheme(userId, Theme.LIGHT);
+            }
+
+            if (scope == Role.ADMIN || scope == Role.USER) {
+                String downloadsPath = Path.of(System.getProperty("user.home"), "Downloads").toString();
+                userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_EXPORT_DIR, downloadsPath);
+                userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_LAST_EXPORT_DIR, downloadsPath);
+                userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_ASK_EVERY_TIME_EXPORT, "false");
+            }
+
+            if (scope == Role.ADMIN || scope == Role.DEV) {
+                appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, "false");
+                appConfigService.saveConfigValue(AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC, "false");
+
+                folderManagerService.resetDefaultStoragePaths();
+
+                setStartWithWindows(false);
+            }
+
+            log.info("Settings reset completed successfully: scope={}", scope);
+            return true;
+
+        } catch (IllegalStateException e) {
+            log.warn("Could not disable startup entry (may already be absent): {}", e.getMessage());
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to reset settings: scope={}, userId={}", scope, userId, e);
+            return false;
+        }
+    }
+
 }

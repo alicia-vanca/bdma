@@ -2,6 +2,7 @@ package com.app.common.modules.datarestore.services;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -160,9 +161,10 @@ public class RestoreService {
             if (syncDir == null) {
                 return BackupSyncResult.failure(I18n.get("setting.storage.error.data.dir.not.configured"));
             }
+            currentProgress.reset();
+            lastFailures = new ArrayList<>();
             restoreFailureRepository.clearAll();
             List<Path> allFiles = scanFiles(backupDir);
-            currentProgress.reset();
             currentProgress.init(allFiles.size());
             if (onProgressInitialized != null) {
                 onProgressInitialized.run();
@@ -176,10 +178,41 @@ public class RestoreService {
 
         } catch (Exception e) {
             log.error("[RESTORE] Failed: {}", e.getMessage(), e);
-            return BackupSyncResult.failure(e.getMessage());
+            return BackupSyncResult.failure(toRestoreErrorMessage(e));
         } finally {
             isRunning.set(false);
         }
+    }
+
+    private String toRestoreErrorMessage(Exception e) {
+        if (isAccessFailure(e)) {
+            return I18n.get("setting.storage.error.access.denied");
+        }
+
+        return I18n.get("setting.storage.error.restore.failed");
+    }
+
+    private boolean isAccessFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof AccessDeniedException) {
+                return true;
+            }
+
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(java.util.Locale.ROOT);
+                if (normalized.contains("access is denied")
+                        || normalized.contains("access denied")
+                        || normalized.contains("folder permissions")
+                        || normalized.contains("folder acl")
+                        || normalized.contains("cannot repair")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private List<Path> scanFiles(File sourceDir) throws IOException {
@@ -294,7 +327,7 @@ public class RestoreService {
             return result;
         } catch (Exception e) {
             log.error("[RETRY] Failed: {}", e.getMessage(), e);
-            return BackupSyncResult.failure(e.getMessage());
+            return BackupSyncResult.failure(toRestoreErrorMessage(e));
         } finally {
             isRunning.set(false);
         }
@@ -447,7 +480,7 @@ public class RestoreService {
             return BackupSyncResult.failure(e.getMessage(), RestoreFailureReason.STORAGE_RECOVERY_DEFERRED);
         } catch (IOException e) {
             log.error("[RESTORE] Single file failed: {}", backupFilePath, e);
-            return BackupSyncResult.failure(e.getMessage());
+            return BackupSyncResult.failure(toRestoreErrorMessage(e));
         }
     }
 

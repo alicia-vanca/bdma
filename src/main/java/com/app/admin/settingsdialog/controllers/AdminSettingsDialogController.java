@@ -5,9 +5,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
@@ -20,12 +19,12 @@ import org.springframework.stereotype.Component;
 import com.app.MainApp;
 import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
-import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.admin.usermanagement.controllers.UserEditFormController;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.Language;
+import com.app.common.definitions.enums.Role;
 import com.app.common.definitions.enums.Theme;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.helpers.AlertHelper;
@@ -33,9 +32,11 @@ import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.NoticeStackRenderer;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
+import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
+import com.app.common.modules.foldermanager.services.DefaultStorageLocationService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
@@ -43,10 +44,15 @@ import com.app.common.repositories.RestoreFailureRepository;
 import com.app.common.services.DriveResolverService;
 import com.app.common.services.UserSettingService;
 
+import javafx.animation.Animation;
+import javafx.animation.KeyFrame;
+import javafx.animation.PauseTransition;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
@@ -56,6 +62,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import lombok.Setter;
 
 @Primary
@@ -63,12 +70,15 @@ import lombok.Setter;
 public class AdminSettingsDialogController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSettingsDialogController.class);
+    
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private static final String CSS_CLASS_STATUS_SUCCESS = "status-success";
     private static final String CSS_CLASS_STATUS_ERROR = "status-error";
     private static final String I18N_SETTING_STORAGE_PROGRESS = "setting.storage.progress";
     private static final String I18N_SETTING_STORAGE_FINAL = "setting.storage.final";
     private static final String I18N_SETTING_STORAGE_CHOOSE = "setting.storage.btn.choose";
+    private static final String I18N_SETTING_STORAGE_REMOVABLE_MESSAGE = "setting.storage.removable.message";
 
     private final AdminSettingsDialogService adminSettingsService;
     private final Session session;
@@ -81,6 +91,7 @@ public class AdminSettingsDialogController {
     private final DeviceSyncQueue deviceSyncQueue;
     private final DataBackupQueue dataBackupQueue;
     private final RestoreFailureRepository restoreFailureRepository;
+    private final DefaultStorageLocationService defaultStorageLocationService;
 
     @FXML
     private VBox panel;
@@ -131,6 +142,10 @@ public class AdminSettingsDialogController {
     @FXML
     private Label lblAutoDeleteTitle;
     @FXML
+    private CheckBox chkDeleteEmptyDateFolders;
+    @FXML
+    private Label lblDeleteEmptyDateFoldersTitle;
+    @FXML
     private Label lblStartWithWindowsDescription;
     @FXML
     private CheckBox chkStartWithWindows;
@@ -150,11 +165,14 @@ public class AdminSettingsDialogController {
     private Button btnRetryFailedRestore;
     @FXML
     private Label lblDriveConflictWarning;
+    @FXML
+    private Button btnDefaultSettings;
 
     private NoticeStackRenderer noticeRenderer;
     @Setter
     private Runnable onLanguageChangedAction;
-    private ScheduledExecutorService progressScheduler;
+    private Timeline progressTimeline;
+    private PauseTransition hideProgressDelay;
 
     public AdminSettingsDialogController(
             AdminSettingsDialogService adminSettingsService,
@@ -167,7 +185,8 @@ public class AdminSettingsDialogController {
             RestoreService restoreService,
             DeviceSyncQueue deviceSyncQueue,
             DataBackupQueue dataBackupQueue,
-            RestoreFailureRepository restoreFailureRepository) {
+            RestoreFailureRepository restoreFailureRepository,
+            DefaultStorageLocationService defaultStorageLocationService) {
         this.adminSettingsService = adminSettingsService;
         this.session = session;
         this.userSettingService = userSettingService;
@@ -179,6 +198,7 @@ public class AdminSettingsDialogController {
         this.deviceSyncQueue = deviceSyncQueue;
         this.dataBackupQueue = dataBackupQueue;
         this.restoreFailureRepository = restoreFailureRepository;
+        this.defaultStorageLocationService = defaultStorageLocationService;
     }
 
     @FXML
@@ -213,12 +233,15 @@ public class AdminSettingsDialogController {
 
         lblAutoDeleteDescription.setText(I18n.get("setting.databackup.autodelete.desc"));
         lblAutoDeleteTitle.setText(I18n.get("setting.databackup.autodelete.checkbox"));
+        lblDeleteEmptyDateFoldersTitle.setText(
+                I18n.get("setting.datasync.deleteEmptyDateFolders.checkbox"));
 
         lblStartWithWindowsDescription.setText(I18n.get("setting.startWithWindows.desc"));
         lblStartWithWindowsTitle.setText(I18n.get("setting.startWithWindows.checkbox"));
         lsbCheckVersion.setText(I18n.get("setting.startWithWindows.checkversion", getVersionCurrent()));
         btnRestore.setText(I18n.get("setting.storage.btn.restore"));
         btnRetryFailedRestore.setText(I18n.get("setting.storage.btn.retry"));
+        btnDefaultSettings.setText(I18n.get("setting.defaults.button"));
     }
 
     // Bind each pair of segment buttons to equal widths within their row.
@@ -251,7 +274,7 @@ public class AdminSettingsDialogController {
         adminSettingsService.getFolderPath(FolderType.BACKUP).ifPresent(txtBackupPath::setText);
         adminSettingsService.getFolderPath(FolderType.EXPORT).ifPresent(txtExportPath::setText);
         chkAskEveryTimeExport.setSelected(adminSettingsService.getAskEveryTimeExport(session.getCurrentUserId()));
-        chkAutoDelete.setSelected(adminSettingsService.getAutoDelete());
+        loadAutoDeleteSettings();
         chkStartWithWindows.setSelected(adminSettingsService.getStartWithWindows());
         checkAndShowDriveConflict();
 
@@ -341,13 +364,18 @@ public class AdminSettingsDialogController {
     public void onToggleAutoDelete() {
         boolean value = chkAutoDelete.isSelected();
         try {
-            adminSettingsService.setAutoDelete(value);
+            boolean childValue = value && chkDeleteEmptyDateFolders.isSelected();
+            adminSettingsService.setAutoDeleteState(value, childValue);
+            if (!value) {
+                chkDeleteEmptyDateFolders.setSelected(false);
+            }
+            updateDeleteEmptyFolderAvailability();
             showNotice(value
                     ? I18n.get("setting.databackup.status.on")
                     : I18n.get("setting.databackup.status.off"), true);
         } catch (Exception e) {
             log.error("Failed to save autoDelete setting", e);
-            chkAutoDelete.setSelected(!value);
+            loadAutoDeleteSettings();
             showNotice(I18n.get("setting.databackup.status.error"), false);
         }
     }
@@ -355,6 +383,58 @@ public class AdminSettingsDialogController {
     @FXML
     private void onClickAutoDelete(MouseEvent event) {
         chkAutoDelete.fire();
+    }
+
+    @FXML
+    public void onToggleDeleteEmptyDateFolders() {
+        if (!chkAutoDelete.isSelected()) {
+            chkDeleteEmptyDateFolders.setSelected(false);
+            updateDeleteEmptyFolderAvailability();
+            return;
+        }
+
+        boolean value = chkDeleteEmptyDateFolders.isSelected();
+        try {
+            adminSettingsService.setDeleteEmptyDateFolders(value);
+            showNotice(value
+                    ? I18n.get("setting.datasync.deleteEmptyDateFolders.status.on")
+                    : I18n.get("setting.datasync.deleteEmptyDateFolders.status.off"), true);
+        } catch (Exception e) {
+            log.error("Failed to save deleteEmptyDateFolders setting", e);
+            loadAutoDeleteSettings();
+            showNotice(I18n.get("setting.datasync.deleteEmptyDateFolders.status.error"), false);
+        }
+    }
+
+    @FXML
+    private void onClickDeleteEmptyDateFolders(MouseEvent event) {
+        if (!chkDeleteEmptyDateFolders.isDisabled()) {
+            chkDeleteEmptyDateFolders.fire();
+        }
+    }
+
+    private void loadAutoDeleteSettings() {
+        boolean autoDelete = adminSettingsService.getAutoDelete();
+        boolean deleteEmptyDateFolders = adminSettingsService.getDeleteEmptyDateFolders();
+
+        if (!autoDelete && deleteEmptyDateFolders) {
+            try {
+                adminSettingsService.setAutoDeleteState(false, false);
+            } catch (Exception e) {
+                log.error("Failed to normalize invalid auto-delete child setting", e);
+            }
+            deleteEmptyDateFolders = false;
+        }
+
+        chkAutoDelete.setSelected(autoDelete);
+        chkDeleteEmptyDateFolders.setSelected(autoDelete && deleteEmptyDateFolders);
+        updateDeleteEmptyFolderAvailability();
+    }
+
+    private void updateDeleteEmptyFolderAvailability() {
+        boolean disabled = !chkAutoDelete.isSelected();
+        chkDeleteEmptyDateFolders.setDisable(disabled);
+        lblDeleteEmptyDateFoldersTitle.setDisable(disabled);
     }
 
     @FXML
@@ -446,6 +526,9 @@ public class AdminSettingsDialogController {
 
     // Show native directory picker and persist immediately after selection.
     private void selectAndPersistFolder(TextField txtField, FolderType type) {
+        if (type == FolderType.SYNC || type == FolderType.BACKUP) {
+            defaultStorageLocationService.refreshVolumesAsync();
+        }
         DirectoryChooser chooser = new DirectoryChooser();
         chooser.setTitle(I18n.get("setting.storage.chooser.title", type.toLocalizedString()));
         String current = txtField.getText();
@@ -456,16 +539,45 @@ public class AdminSettingsDialogController {
             }
         }
         Stage stage = (Stage) txtField.getScene().getWindow();
-        File selected = chooser.showDialog(stage);
-        if (selected != null) {
+        while (true) {
+            File selected = chooser.showDialog(stage);
+            if (selected == null) {
+                break;
+            }
+            if (isRemovableSelection(type, selected)) {
+                if (showRemovableStorageNotice()) {
+                    continue;
+                }
+                break;
+            }
+
             txtField.setText(selected.getAbsolutePath());
             checkAndShowDriveConflict();
             persistFolder(txtField, type);
             restoreFailureRepository.clearAll();
             hideProgressUI();
+            break;
         }
 
         adminLayoutController.refreshStorageStatus();
+    }
+
+    private boolean isRemovableSelection(FolderType type, File selected) {
+        return (type == FolderType.SYNC || type == FolderType.BACKUP)
+                && defaultStorageLocationService.isOnRemovableVolume(selected.toPath());
+    }
+
+    private boolean showRemovableStorageNotice() {
+        Alert notice = AlertHelper.createConfirmation(
+                I18n.get("setting.storage.removable.title"),
+                I18n.get("setting.storage.removable.header"),
+                I18n.get(I18N_SETTING_STORAGE_REMOVABLE_MESSAGE));
+        ButtonType chooseAnother = new ButtonType(
+                I18n.get("setting.storage.removable.choose_another"),
+                ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType(I18n.get("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        AlertHelper.setButtons(notice, chooseAnother, cancel);
+        return notice.showAndWait().filter(chooseAnother::equals).isPresent();
     }
 
     private void persistFolder(TextField txtField, FolderType type) {
@@ -549,43 +661,63 @@ public class AdminSettingsDialogController {
 
     private void runStorageRecoveryOperation(Supplier<RestoreService.BackupSyncResult> operation) {
         setStorageControlsDisabled(true);
-        restoreService.setOnProgressInitialized(() -> Platform.runLater(() -> {
-            storageActionBox.setVisible(true);
-            storageActionBox.setManaged(true);
-            btnRetryFailedRestore.setVisible(false);
-            btnRetryFailedRestore.setManaged(false);
-            lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
-                    restoreService.getCurrentProgress().buildProgressArgs()));
-            startProgressUpdater();
-        }));
+        restoreService.setOnProgressInitialized(() -> Platform.runLater(this::showStorageProgressInitialized));
 
         Thread thread = new Thread(() -> {
             RestoreService.BackupSyncResult syncResult = operation.get();
             eventPublisher.publishEvent(new StorageRecoveryCompletedEvent(this.toString()));
-
-            Platform.runLater(() -> {
-                stopProgressUpdater();
-                setStorageControlsDisabled(false);
-                lblStorageProgress.setText(
-                        I18n.get(I18N_SETTING_STORAGE_FINAL, restoreService.getCurrentProgress().buildProgressArgs()));
-                if (syncResult.failures().isEmpty()) {
-                    lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
-                    lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_SUCCESS);
-                    Executors.newSingleThreadScheduledExecutor()
-                            .schedule(() -> Platform.runLater(this::hideProgressUI), 3, TimeUnit.SECONDS);
-                } else {
-                    btnRetryFailedRestore.setVisible(true);
-                    btnRetryFailedRestore.setManaged(true);
-                    lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
-                    lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_ERROR);
-                }
-                if (!syncResult.success()) {
-                    showNotice(syncResult.errorMessage(), false);
-                }
-            });
+            Platform.runLater(() -> showStorageRecoveryResult(syncResult));
         });
         thread.setDaemon(true);
         thread.start();
+    }
+
+    private void showStorageProgressInitialized() {
+        storageActionBox.setVisible(true);
+        storageActionBox.setManaged(true);
+        btnRetryFailedRestore.setVisible(false);
+        btnRetryFailedRestore.setManaged(false);
+        lblStorageProgress.setText(I18n.get(I18N_SETTING_STORAGE_PROGRESS,
+                restoreService.getCurrentProgress().buildProgressArgs()));
+        startProgressUpdater();
+    }
+
+    private void showStorageRecoveryResult(RestoreService.BackupSyncResult syncResult) {
+        stopProgressUpdater();
+        setStorageControlsDisabled(false);
+
+        String failureMessage = syncResult.errorMessage();
+        boolean completedWithoutFailures = syncResult.success() && syncResult.failures().isEmpty();
+        lblStorageProgress.setText(getStorageRecoveryResultMessage(completedWithoutFailures, failureMessage));
+        lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
+
+        if (completedWithoutFailures) {
+            showStorageRecoverySuccess();
+            return;
+        }
+
+        showStorageRecoveryFailure(!syncResult.failures().isEmpty());
+        if (!syncResult.success()) {
+            showNotice(failureMessage, false);
+        }
+    }
+
+    private String getStorageRecoveryResultMessage(boolean completedWithoutFailures, String failureMessage) {
+        if (completedWithoutFailures || failureMessage == null || failureMessage.isBlank()) {
+            return I18n.get(I18N_SETTING_STORAGE_FINAL, restoreService.getCurrentProgress().buildProgressArgs());
+        }
+        return failureMessage;
+    }
+
+    private void showStorageRecoverySuccess() {
+        lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_SUCCESS);
+        scheduleHideProgressUI();
+    }
+
+    private void showStorageRecoveryFailure(boolean hasRecoverableFailures) {
+        btnRetryFailedRestore.setVisible(hasRecoverableFailures);
+        btnRetryFailedRestore.setManaged(hasRecoverableFailures);
+        lblStorageProgress.getStyleClass().add(CSS_CLASS_STATUS_ERROR);
     }
 
     private boolean isDriveConflict(String pathA, String pathB) {
@@ -607,8 +739,17 @@ public class AdminSettingsDialogController {
 
         boolean conflict = isDriveConflict(savePath, backupPath);
 
-        lblDriveConflictWarning.setVisible(conflict);
-        lblDriveConflictWarning.setManaged(conflict);
+        if (lblDriveConflictWarning.isVisible() != conflict) {
+            lblDriveConflictWarning.setVisible(conflict);
+            lblDriveConflictWarning.setManaged(conflict);
+            
+            if (panel != null && panel.getScene() != null && panel.getScene().getWindow() != null) {
+                Stage stage = (Stage) panel.getScene().getWindow();
+                if (stage.isShowing()) {
+                    Platform.runLater(stage::sizeToScene);
+                }
+            }
+        }
     }
 
     private String getStorageBlockedReason() {
@@ -626,33 +767,55 @@ public class AdminSettingsDialogController {
 
     private void startProgressUpdater() {
         stopProgressUpdater();
+        cancelPendingHideProgress();
         storageActionBox.setVisible(true);
         storageActionBox.setManaged(true);
-        progressScheduler = Executors.newSingleThreadScheduledExecutor();
-        progressScheduler.scheduleAtFixedRate(() -> {
-            if (!restoreService.isRunning())
-                return;
+        updateStorageProgress();
 
-            String message = I18n.get(I18N_SETTING_STORAGE_PROGRESS,
-                    restoreService.getCurrentProgress().buildProgressArgs());
-            boolean hasFailed = restoreService.getCurrentProgress().getTotalFailed() > 0;
+        progressTimeline = new Timeline(new KeyFrame(Duration.seconds(3), event -> updateStorageProgress()));
+        progressTimeline.setCycleCount(Animation.INDEFINITE);
+        progressTimeline.play();
+    }
 
-            Platform.runLater(() -> {
-                lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
-                lblStorageProgress.getStyleClass().add(hasFailed ? CSS_CLASS_STATUS_ERROR : CSS_CLASS_STATUS_SUCCESS);
-                lblStorageProgress.setText(message);
-            });
-        }, 0, 3, TimeUnit.SECONDS);
+    private void updateStorageProgress() {
+        if (!restoreService.isRunning())
+            return;
+
+        String message = I18n.get(I18N_SETTING_STORAGE_PROGRESS,
+                restoreService.getCurrentProgress().buildProgressArgs());
+        boolean hasFailed = restoreService.getCurrentProgress().getTotalFailed() > 0;
+
+        lblStorageProgress.getStyleClass().removeAll(CSS_CLASS_STATUS_SUCCESS, CSS_CLASS_STATUS_ERROR);
+        lblStorageProgress.getStyleClass().add(hasFailed ? CSS_CLASS_STATUS_ERROR : CSS_CLASS_STATUS_SUCCESS);
+        lblStorageProgress.setText(message);
     }
 
     private void stopProgressUpdater() {
-        if (progressScheduler != null) {
-            progressScheduler.shutdownNow();
-            progressScheduler = null;
+        if (progressTimeline != null) {
+            progressTimeline.stop();
+            progressTimeline = null;
+        }
+    }
+
+    private void scheduleHideProgressUI() {
+        cancelPendingHideProgress();
+        hideProgressDelay = new PauseTransition(Duration.seconds(3));
+        hideProgressDelay.setOnFinished(event -> {
+            hideProgressDelay = null;
+            hideProgressUI();
+        });
+        hideProgressDelay.play();
+    }
+
+    private void cancelPendingHideProgress() {
+        if (hideProgressDelay != null) {
+            hideProgressDelay.stop();
+            hideProgressDelay = null;
         }
     }
 
     private void hideProgressUI() {
+        cancelPendingHideProgress();
         storageActionBox.setVisible(false);
         storageActionBox.setManaged(false);
         lblStorageProgress.setText("");
@@ -700,14 +863,91 @@ public class AdminSettingsDialogController {
         adminSettingsService.getFolderPath(folderType).ifPresent(textField::setText);
     }
 
-    private String getVersionCurrent() {
-        String version = getClass()
+    public static String getVersionCurrent() {
+        String version = AdminSettingsDialogController.class
                 .getPackage()
                 .getImplementationVersion();
 
         if (version == null) {
-            version = "Not version";
+            version = AppConstants.VERSION_DEV;
         }
         return version;
+    }
+
+    // ────────────── Default Settings Reset ──────────────────────────────────
+
+    /**
+     * Returns the reset scope for this controller. Subclasses can override to
+     * specify DEV scope.
+     */
+    protected Role getResetScope() {
+        return Role.ADMIN;
+    }
+
+    @FXML
+    public void onResetDefaultSettings() {
+        Role scope = getResetScope();
+
+        if (adminSettingsService.isResetBlocked(scope)) {
+            noticeRenderer.showError(I18n.get("setting.defaults.blocked"));
+            return;
+        }
+
+        // Refresh the shared volume cache while the user reads the confirmation.
+        defaultStorageLocationService.refreshVolumesAsync();
+
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("setting.defaults.confirm.title"),
+                null,
+                I18n.get("setting.defaults.confirm.content"));
+
+        Optional<ButtonType> result = confirm.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) {
+            return;
+        }
+
+        // Recheck block state after confirmation (race condition protection)
+        if (adminSettingsService.isResetBlocked(scope)) {
+            noticeRenderer.showError(I18n.get("setting.defaults.blocked"));
+            return;
+        }
+
+        btnDefaultSettings.setDisable(true);
+
+        executor.execute(() -> {
+            boolean success = adminSettingsService.resetToDefaults(session.getCurrentUserId(), scope);
+
+            Platform.runLater(() -> {
+                btnDefaultSettings.setDisable(false);
+                if (success) {
+                    loadAdminSettings();
+
+                    I18n.setLocale(Locale.forLanguageTag(AppConstants.LANG_VI));
+                    ThemeManager.setTheme(AppConstants.THEME_LIGHT);
+                    ThemeManager.apply(MainApp.getScene());
+                    eventPublisher.publishEvent(new ThemeChangedEvent(this, AppConstants.THEME_LIGHT));
+
+                    refreshLocalizedText();
+                    setupActionButtons();
+
+                    setActiveLanguageButton();
+                    setActiveThemeButton();
+
+                    adminLayoutController.refreshStorageStatus();
+
+                    if (onLanguageChangedAction != null) {
+                        onLanguageChangedAction.run();
+                    } else {
+                        MainApp.showAdmin();
+                    }
+
+                    noticeRenderer.showSuccess(I18n.get("setting.defaults.success"));
+                    log.info("Settings reset to defaults: scope={}, userId={}", scope, session.getCurrentUserId());
+                } else {
+                    noticeRenderer.showError(I18n.get("setting.defaults.error"));
+                    log.error("Failed to reset settings to defaults: scope={}, userId={}", scope, session.getCurrentUserId());
+                }
+            });
+        });
     }
 }

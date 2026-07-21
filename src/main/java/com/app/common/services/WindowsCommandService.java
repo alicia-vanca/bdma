@@ -95,6 +95,14 @@ public class WindowsCommandService {
     // ── CMD ──────────────────────────────────────────────────────────────────
 
     public int runCmd(File workingDir, String... args) throws IOException, InterruptedException {
+        CommandResult result = runCmdWithOutput(workingDir, args);
+        if (!result.output().isEmpty()) {
+            log.debug("[cmd] {}", result.output());
+        }
+        return result.exitCode();
+    }
+
+    public CommandResult runCmdWithOutput(File workingDir, String... args) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(args)
                 .directory(workingDir)
                 .redirectErrorStream(true);
@@ -103,9 +111,10 @@ public class WindowsCommandService {
 
         int code = process.waitFor();
         String output = waitForOutput(outputFuture);
-        if (!output.isEmpty())
-            log.debug("[cmd] {}", output);
-        return code;
+        return new CommandResult(code, output);
+    }
+
+    public record CommandResult(int exitCode, String output) {
     }
 
     /**

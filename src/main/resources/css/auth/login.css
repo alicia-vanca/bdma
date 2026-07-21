@@ -2,8 +2,7 @@
   -fx-background-color: -card-bg;
 }
 
-.root > .vbox,
-.login-card-wrapper {
+.root > .vbox {
   -fx-background-color: transparent;
 }
 

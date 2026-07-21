@@ -6,11 +6,13 @@ import org.springframework.stereotype.Component;
 import com.app.admin.layout.controllers.AdminLayoutController;
 import com.app.admin.settingsdialog.controllers.AdminSettingsDialogController;
 import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
+import com.app.common.definitions.enums.Role;
 import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.auth.totp.services.DevOtpGuardService;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.databackup.queues.DataBackupQueue;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
+import com.app.common.modules.foldermanager.services.DefaultStorageLocationService;
 import com.app.common.modules.session.Session;
 import com.app.common.repositories.RestoreFailureRepository;
 import com.app.common.services.DriveResolverService;
@@ -38,6 +40,7 @@ public class DevSettingsDialogController extends AdminSettingsDialogController {
             DeviceSyncQueue deviceSyncQueue,
             DataBackupQueue dataBackupQueue,
             RestoreFailureRepository restoreFailureRepository,
+            DefaultStorageLocationService defaultStorageLocationService,
             DevOtpGuardService devOtpGuardService) {
         super(adminSettingsService,
                 session,
@@ -49,7 +52,8 @@ public class DevSettingsDialogController extends AdminSettingsDialogController {
                 restoreService,
                 deviceSyncQueue,
                 dataBackupQueue,
-                restoreFailureRepository);
+                restoreFailureRepository,
+                defaultStorageLocationService);
         this.devOtpGuardService = devOtpGuardService;
     }
 
@@ -59,5 +63,10 @@ public class DevSettingsDialogController extends AdminSettingsDialogController {
             return;
         }
         super.openUserInfo();
+    }
+
+    @Override
+    protected Role getResetScope() {
+        return Role.DEV;
     }
 }

@@ -17,8 +17,10 @@ import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.ViewPaths;
 import com.app.common.definitions.enums.FolderType;
 import com.app.common.definitions.enums.Language;
+import com.app.common.definitions.enums.Role;
 import com.app.common.definitions.enums.Theme;
 import com.app.common.events.ThemeChangedEvent;
+import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.NoticeStackRenderer;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
@@ -28,9 +30,13 @@ import com.app.common.modules.session.Session;
 import com.app.common.modules.theme.ThemeManager;
 import com.app.common.services.UserSettingService;
 
+import java.util.Optional;
+
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
@@ -80,6 +86,8 @@ public class UserSettingsDialogController {
     private CheckBox chkAskEveryTimeExport;
     @FXML
     private VBox noticeContainer;
+    @FXML
+    private Button btnDefaultSettings;
 
     private NoticeStackRenderer noticeRenderer;
     @Setter
@@ -121,6 +129,7 @@ public class UserSettingsDialogController {
         btnChooseExportFolder.setText(I18n.get("setting.storage.btn.choose"));
         chkAskEveryTimeExport.setText(I18n.get("setting.export.mode.ask.checkbox"));
         lsbCheckVersion.setText(I18n.get("setting.startWithWindows.checkversion",getVersionCurrent()));
+        btnDefaultSettings.setText(I18n.get("setting.defaults.button"));
     }
 
     // Keep user settings limited to per-user preferences and safe self-service
@@ -312,8 +321,61 @@ public class UserSettingsDialogController {
                 .getImplementationVersion();
 
         if (version == null) {
-            version = "Not version";
+            version = AppConstants.VERSION_DEV;
         }
         return version;
+    }
+
+    // ────────────── Default Settings Reset ──────────────────────────────────
+
+    @FXML
+    public void onResetDefaultSettings() {
+        // USER scope - không bị block bởi sync/backup/restore operations
+        
+        // Show confirmation dialog
+        Alert confirm = AlertHelper.createConfirmation(
+                I18n.get("setting.defaults.confirm.title"),
+                null,
+                I18n.get("setting.defaults.confirm.content"));
+
+        Optional<ButtonType> result = confirm.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) {
+            return;
+        }
+
+        // Execute reset with USER scope
+        boolean success = settingsService.resetToDefaults(session.getCurrentUserId(), Role.USER);
+
+        if (success) {
+            // Reload UI from persistence
+            loadUserSettings();
+
+            // Apply locale and theme runtime changes
+            I18n.setLocale(Locale.forLanguageTag(AppConstants.LANG_VI));
+            ThemeManager.setTheme(AppConstants.THEME_LIGHT);
+            ThemeManager.apply(MainApp.getScene());
+            eventPublisher.publishEvent(new ThemeChangedEvent(this, AppConstants.THEME_LIGHT));
+
+            // Refresh all localized text on the dialog
+            refreshLocalizedText();
+            setupActionButtons();
+
+            // Refresh active buttons
+            setActiveLanguageButton();
+            setActiveThemeButton();
+
+            // Trigger main layout reload to update all language-dependent UI
+            if (onLanguageChangedAction != null) {
+                onLanguageChangedAction.run();
+            } else {
+                MainApp.showAdmin();
+            }
+
+            noticeRenderer.showSuccess(I18n.get("setting.defaults.success"));
+            log.info("Settings reset to defaults: scope=USER, userId={}", session.getCurrentUserId());
+        } else {
+            noticeRenderer.showError(I18n.get("setting.defaults.error"));
+            log.error("Failed to reset settings to defaults: scope=USER, userId={}", session.getCurrentUserId());
+        }
     }
 }

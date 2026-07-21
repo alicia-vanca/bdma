@@ -39,7 +39,6 @@ import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.loggly.LogglyQueuedAppender;
 import com.app.common.modules.theme.ThemeManager;
-import com.app.common.modules.device.services.DeviceTracker;
 import com.app.common.utils.StageUtil;
 
 import javafx.application.Application;
@@ -208,26 +207,24 @@ public class MainApp extends Application {
 
     @Override
     public void stop() {
+        log.info("========== APPLICATION SHUTDOWN REQUESTED ==========");
         releaseSingleInstanceLock();
 
-        // Shutdown device tracker to kill ADB processes
         if (springContext != null) {
-            try {
-                DeviceTracker tracker = springContext.getBean(DeviceTracker.class);
-                tracker.shutdown();
-            } catch (Exception e) {
-                log.warn("Failed to shutdown device tracker: {}", e.getMessage());
-            }
             springContext.close();
         }
 
         if (folderManagerService != null)
             folderManagerService.shutdown();
 
-        try {
-            new DatabaseRecoveryService().backupSourceToBackup();
-        } catch (Exception e) {
-            log.error("Failed to back up database before shutdown", e);
+        if (startupFailure != null && isFlywayValidationFailure(startupFailure)) {
+            log.warn("Skipping database backup because startup failed Flyway validation");
+        } else {
+            try {
+                new DatabaseRecoveryService().backupSourceToBackup();
+            } catch (Exception e) {
+                log.error("Failed to back up database before shutdown", e);
+            }
         }
 
         log.info("App stopped");

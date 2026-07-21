@@ -1,11 +1,13 @@
 package com.app.common.helpers;
 
+import javafx.beans.binding.Bindings;
 import javafx.animation.FadeTransition;
 import javafx.animation.ParallelTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.TranslateTransition;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
@@ -17,6 +19,8 @@ public class NoticeStackRenderer {
 
     public static final String STYLE_SUCCESS = "message-success";
     public static final String STYLE_ERROR = "message-error";
+    private static final double NOTICE_HORIZONTAL_MARGIN = 32;
+    private static final double NOTICE_MIN_WIDTH = 160;
 
     private final VBox container;
     private final int maxVisible;
@@ -45,6 +49,11 @@ public class NoticeStackRenderer {
     public void show(String text, String styleClass) {
         Label notice = new Label(text);
         notice.getStyleClass().addAll("global-notice", styleClass);
+        notice.setWrapText(true);
+        notice.setTextOverrun(OverrunStyle.CLIP);
+        notice.maxWidthProperty().bind(Bindings.max(
+                NOTICE_MIN_WIDTH,
+                container.widthProperty().subtract(NOTICE_HORIZONTAL_MARGIN)));
         notice.setMouseTransparent(true);
 
         // Shift existing notices up before sliding in the new one.
@@ -106,7 +115,8 @@ public class NoticeStackRenderer {
     private double estimateNoticeShift(Label notice) {
         // Force CSS so preferred height is available before node is attached.
         notice.applyCss();
-        double height = notice.prefHeight(-1);
+        double width = Math.max(NOTICE_MIN_WIDTH, container.getWidth() - NOTICE_HORIZONTAL_MARGIN);
+        double height = notice.prefHeight(width);
         if (height <= 0) {
             height = 36;
         }

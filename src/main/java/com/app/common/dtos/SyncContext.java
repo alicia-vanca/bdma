@@ -8,6 +8,7 @@ import java.io.File;
  * - USER : can sync files only when username and camera ID both match
  * - saveDir: captured once when sync starts, unaffected by mid-sync changes
  * - autoDelete: captured once when sync starts, unaffected by mid-sync changes
+ * - deleteEmptyDateFolders: captured with autoDelete when the device is queued
  * - deviceName: captured once when sync starts for display purposes
  * - hardwareId: connected device hardware ID used for ADB/device access
  * - cameraId: validated camera ID used for permissions and sync queue root rows
@@ -15,6 +16,7 @@ import java.io.File;
 public record SyncContext(
         File saveDir,
         boolean autoDelete,
+        boolean deleteEmptyDateFolders,
         String deviceName,
         String hardwareId,
         String cameraId) {

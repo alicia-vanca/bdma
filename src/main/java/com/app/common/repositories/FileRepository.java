@@ -166,64 +166,88 @@ public class FileRepository {
     /**
      * Queries files by filter criteria with user and device information.
      * Returns file metadata including synced_path for file existence validation.
+     * When bookmarkUserId is set, includes bookmark status via LEFT JOIN.
+     * When bookmarkedOnly is true, filters to files bookmarked by that user.
      */
-    @SuppressWarnings("null")
+    @SuppressWarnings({ "null", "java:S2077" })
     public List<FileView> findByFilter(FileFilter filter) {
-        StringBuilder sql = new StringBuilder("""
-                    SELECT f.file_id,
-                           f.name,
-                           f.synced_path,
-                           f.backed_up_path,
-                           f.device_id,
-                           f.user_id,
-                           f.file_size,
-                           f.status,
-                           f.create_date,
-                           f.type,
-                           u.username,
-                           vd.device_name
-                    FROM files f
-                    LEFT JOIN user u ON f.user_id = u.id
-                    LEFT JOIN validated_device vd ON f.device_id = vd.id
-                    WHERE 1=1
-                      AND COALESCE(vd.is_active, TRUE) = TRUE
-                """);
+        StringBuilder select = new StringBuilder("""
+                SELECT f.file_id,
+                       f.name,
+                       f.synced_path,
+                       f.backed_up_path,
+                       f.device_id,
+                       f.user_id,
+                       f.file_size,
+                       f.status,
+                       f.create_date,
+                       f.type,
+                       u.username,
+                       vd.device_name""");
 
         List<Object> params = new ArrayList<>();
 
-        // device
+        boolean hasBookmarkUser = filter.getBookmarkUserId() != null;
+
+        if (hasBookmarkUser) {
+            select.append("""
+                    ,
+                    CASE WHEN b.id IS NOT NULL THEN 1 ELSE 0 END as bookmarked,
+                    b.updated_at as bookmarked_at""");
+        } else {
+            select.append("""
+                    ,
+                    0 as bookmarked,
+                    NULL as bookmarked_at""");
+        }
+
+        StringBuilder join = new StringBuilder("""
+                FROM files f
+                LEFT JOIN user u ON f.user_id = u.id
+                LEFT JOIN validated_device vd ON f.device_id = vd.id""");
+
+        if (hasBookmarkUser) {
+            join.append(" LEFT JOIN file_bookmark b ON f.file_id = b.file_id AND b.user_id = ? AND b.is_bookmark = 1");
+            params.add(filter.getBookmarkUserId());
+        }
+
+        StringBuilder where = new StringBuilder("""
+                WHERE 1=1
+                  AND COALESCE(vd.is_active, TRUE) = TRUE""");
+
         if (filter.getCameraId() != null) {
-            sql.append(" AND vd.camera_id = ?");
+            where.append(" AND vd.camera_id = ?");
             params.add(filter.getCameraId());
         }
 
-        // user
         if (filter.getUserId() != null) {
-            sql.append(" AND f.user_id = ?");
+            where.append(" AND f.user_id = ?");
             params.add(filter.getUserId());
         }
 
-        // type
         if (filter.getType() != null) {
-            sql.append(" AND f.type = ?");
+            where.append(" AND f.type = ?");
             params.add(filter.getType());
         }
 
-        // date from
         if (filter.getDateFrom() != null) {
-            sql.append(" AND date(f.create_date) >= ?");
+            where.append(" AND date(f.create_date) >= ?");
             params.add(filter.getDateFrom().toString());
         }
 
-        // date to (inclusive)
         if (filter.getDateTo() != null) {
-            sql.append(" AND date(f.create_date) <= ?");
+            where.append(" AND date(f.create_date) <= ?");
             params.add(filter.getDateTo().toString());
         }
 
-        sql.append(" ORDER BY f.create_date DESC");
+        if (hasBookmarkUser && Boolean.TRUE.equals(filter.getBookmarkedOnly())) {
+            where.append(" AND b.id IS NOT NULL");
+        }
 
-        return jdbcTemplate.query(sql.toString(), this::mapRow, params.toArray(new Object[0]));
+        String sql = String.join("\n", select.toString(), join.toString(), where.toString())
+                + " ORDER BY f.create_date DESC";
+
+        return jdbcTemplate.query(sql, this::mapRow, params.toArray(new Object[0]));
     }
 
     // ── Mapping ──────────────────────────────────────────────────────────────
@@ -241,10 +265,10 @@ public class FileRepository {
         f.setStatus(rs.getString("status"));
         f.setCreateDate(rs.getString("create_date"));
 
-        return FileView.from(
-                f,
-                rs.getString("username"),
-                rs.getString("device_name"));
+        boolean bookmarked = rs.getInt("bookmarked") == 1;
+        String bookmarkedAt = rs.getString("bookmarked_at");
+
+        return FileView.from(f, rs.getString("username"), rs.getString("device_name"), bookmarked, bookmarkedAt);
     }
 
     /**

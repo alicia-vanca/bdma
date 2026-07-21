@@ -44,6 +44,8 @@ public class MapTileCacheService {
     private static final String UPSTREAM_PROBE_URL = "https://tile.openstreetmap.org/0/0/0.png";
     private static final byte[] EMPTY_TILE = new byte[0];
     private static final int MAX_CONCURRENT_REQUESTS = 16;
+    private static final long CLOUD_LOAD_DEBOUNCE_NANOS = Duration.ofMillis(300).toNanos();
+    private static final long UPSTREAM_FAILURE_CONFIRM_SECONDS = 4;
     private static final long UPSTREAM_PROBE_INTERVAL_SECONDS = 1;
 
     private final Path cacheDirectory;
@@ -56,7 +58,13 @@ public class MapTileCacheService {
     private final AtomicBoolean upstreamOnline = new AtomicBoolean(true);
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Object connectivityLock = new Object();
+    private final Object activeZoomLock = new Object();
+    private ScheduledFuture<?> upstreamFailureConfirmationTask;
     private ScheduledFuture<?> connectivityProbeTask;
+    private long upstreamStateGeneration;
+    private long upstreamFailureGeneration;
+    private int activeZoom = -1;
+    private long cloudLoadAllowedAtNanos;
 
     public MapTileCacheService() {
         try {
@@ -93,6 +101,10 @@ public class MapTileCacheService {
         return "http://127.0.0.1:" + server.getAddress().getPort() + "/tiles/{z}/{x}/{y}.png";
     }
 
+    public boolean isUpstreamOnline() {
+        return upstreamOnline.get();
+    }
+
     public void addUpstreamStateListener(Consumer<Boolean> listener) {
         synchronized (connectivityLock) {
             upstreamStateListeners.add(listener);
@@ -106,21 +118,50 @@ public class MapTileCacheService {
         upstreamStateListeners.remove(listener);
     }
 
-    public void reportUpstreamUnavailable() {
+    public void resetUpstreamState() {
         synchronized (connectivityLock) {
-            if (closed.get()) {
+            upstreamStateGeneration++;
+            upstreamFailureGeneration++;
+            if (upstreamFailureConfirmationTask != null) {
+                upstreamFailureConfirmationTask.cancel(false);
+                upstreamFailureConfirmationTask = null;
+            }
+            if (connectivityProbeTask != null) {
+                connectivityProbeTask.cancel(false);
+                connectivityProbeTask = null;
+            }
+            upstreamOnline.set(true);
+        }
+    }
+
+    private long upstreamStateGeneration() {
+        synchronized (connectivityLock) {
+            return upstreamStateGeneration;
+        }
+    }
+
+    private void recordUpstreamFailure(long stateGeneration) {
+        synchronized (connectivityLock) {
+            if (stateGeneration != upstreamStateGeneration || closed.get() || !upstreamOnline.get()
+                    || (upstreamFailureConfirmationTask != null && !upstreamFailureConfirmationTask.isDone())) {
                 return;
             }
-            if (upstreamOnline.compareAndSet(true, false)) {
-                notifyUpstreamStateListeners(false);
+            long generation = ++upstreamFailureGeneration;
+            upstreamFailureConfirmationTask = connectivityExecutor.schedule(
+                    () -> confirmUpstreamUnavailable(stateGeneration, generation),
+                    UPSTREAM_FAILURE_CONFIRM_SECONDS,
+                    TimeUnit.SECONDS);
+        }
+    }
+
+    public void setActiveZoom(int zoom) {
+        synchronized (activeZoomLock) {
+            if (zoom == activeZoom) {
+                return;
             }
-            if (connectivityProbeTask == null || connectivityProbeTask.isDone()) {
-                connectivityProbeTask = connectivityExecutor.scheduleWithFixedDelay(
-                        this::probeUpstream,
-                        UPSTREAM_PROBE_INTERVAL_SECONDS,
-                        UPSTREAM_PROBE_INTERVAL_SECONDS,
-                        TimeUnit.SECONDS);
-            }
+            activeZoom = zoom;
+            cloudLoadAllowedAtNanos = System.nanoTime() + CLOUD_LOAD_DEBOUNCE_NANOS;
+            activeZoomLock.notifyAll();
         }
     }
 
@@ -201,6 +242,9 @@ public class MapTileCacheService {
                 if (!upstreamOnline.get()) {
                     return EMPTY_TILE;
                 }
+                if (!awaitStableZoom(zoom) || !upstreamOnline.get()) {
+                    return EMPTY_TILE;
+                }
 
                 byte[] bytes = downloadTile(zoom, x, y);
                 if (bytes.length == 0) {
@@ -219,7 +263,25 @@ public class MapTileCacheService {
         }
     }
 
+    private boolean awaitStableZoom(int requestedZoom) throws InterruptedException {
+        synchronized (activeZoomLock) {
+            if (activeZoom < 0) {
+                activeZoom = requestedZoom;
+                cloudLoadAllowedAtNanos = System.nanoTime() + CLOUD_LOAD_DEBOUNCE_NANOS;
+            }
+            while (!closed.get() && requestedZoom == activeZoom) {
+                long remainingNanos = cloudLoadAllowedAtNanos - System.nanoTime();
+                if (remainingNanos <= 0) {
+                    return true;
+                }
+                TimeUnit.NANOSECONDS.timedWait(activeZoomLock, remainingNanos);
+            }
+            return false;
+        }
+    }
+
     private byte[] downloadTile(int zoom, int x, int y) throws InterruptedException {
+        long stateGeneration = upstreamStateGeneration();
         HttpRequest request = HttpRequest.newBuilder(
                 URI.create(UPSTREAM_TEMPLATE.formatted(zoom, x, y)))
                 .timeout(Duration.ofSeconds(10))
@@ -230,16 +292,43 @@ public class MapTileCacheService {
         try {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
         } catch (IOException e) {
+            recordUpstreamFailure(stateGeneration);
             return EMPTY_TILE;
         }
         if (response.statusCode() < 200 || response.statusCode() >= 300 || response.body().length == 0) {
+            recordUpstreamFailure(stateGeneration);
             return EMPTY_TILE;
         }
-        markUpstreamOnline();
+        recordUpstreamSuccess(stateGeneration);
         return response.body();
     }
 
+    private void confirmUpstreamUnavailable(long stateGeneration, long generation) {
+        synchronized (connectivityLock) {
+            if (stateGeneration != upstreamStateGeneration || generation != upstreamFailureGeneration) {
+                return;
+            }
+            upstreamFailureConfirmationTask = null;
+            if (closed.get() || !upstreamOnline.compareAndSet(true, false)) {
+                return;
+            }
+            notifyUpstreamStateListeners(false);
+            startConnectivityProbe();
+        }
+    }
+
+    private void startConnectivityProbe() {
+        if (connectivityProbeTask == null || connectivityProbeTask.isDone()) {
+            connectivityProbeTask = connectivityExecutor.scheduleWithFixedDelay(
+                    this::probeUpstream,
+                    UPSTREAM_PROBE_INTERVAL_SECONDS,
+                    UPSTREAM_PROBE_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS);
+        }
+    }
+
     private void probeUpstream() {
+        long stateGeneration = upstreamStateGeneration();
         HttpRequest request = HttpRequest.newBuilder(URI.create(UPSTREAM_PROBE_URL))
                 .timeout(Duration.ofSeconds(1))
                 .header("User-Agent", "BDMA-MediaViewer")
@@ -248,7 +337,7 @@ public class MapTileCacheService {
         try {
             HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                markUpstreamOnline();
+                recordUpstreamSuccess(stateGeneration);
             }
         } catch (IOException e) {
             log.trace("Map tile upstream probe failed: {}", e.getMessage());
@@ -257,8 +346,16 @@ public class MapTileCacheService {
         }
     }
 
-    private void markUpstreamOnline() {
+    private void recordUpstreamSuccess(long stateGeneration) {
         synchronized (connectivityLock) {
+            if (stateGeneration != upstreamStateGeneration) {
+                return;
+            }
+            upstreamFailureGeneration++;
+            if (upstreamFailureConfirmationTask != null) {
+                upstreamFailureConfirmationTask.cancel(false);
+                upstreamFailureConfirmationTask = null;
+            }
             if (!upstreamOnline.compareAndSet(false, true)) {
                 return;
             }
@@ -311,6 +408,9 @@ public class MapTileCacheService {
     @PreDestroy
     public void close() {
         closed.set(true);
+        synchronized (activeZoomLock) {
+            activeZoomLock.notifyAll();
+        }
         server.stop(0);
         executor.shutdownNow();
         connectivityExecutor.shutdownNow();

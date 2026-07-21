@@ -80,6 +80,32 @@ jobs:
             --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN -DBODYCAM_CRYPTO_PASSWORD=$env:BODYCAM_CRYPTO_PASSWORD -DPATCH_MASTER_KEY=$env:PATCH_MASTER_KEY -DTOTP_SECRET=$env:TOTP_SECRET -DAPP_UPDATE_GITHUB_TOKEN=$env:APP_UPDATE_GITHUB_TOKEN" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
+      - name: Require administrator for app launcher
+        run: |
+          $launcherPath = (Resolve-Path "build\dist\BDMA\BDMA.exe").Path
+          $kitsRoot = Get-ItemPropertyValue -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name KitsRoot10
+          $mtPath = Get-ChildItem -LiteralPath (Join-Path $kitsRoot "bin") -Filter mt.exe -Recurse |
+            Where-Object { $_.FullName -match '\\x64\\mt\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $mtPath) { throw "Windows SDK mt.exe was not found" }
+
+          $manifestPath = Join-Path $env:RUNNER_TEMP "BDMA-launcher.manifest"
+          & $mtPath "-inputresource:$launcherPath;#1" "-out:$manifestPath"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract BDMA.exe manifest" }
+
+          $utf8Strict = [System.Text.UTF8Encoding]::new($false, $true)
+          $manifest = [System.IO.File]::ReadAllText($manifestPath, $utf8Strict)
+          $levelPattern = '(?is)(<requestedExecutionLevel\b[^>]*\blevel\s*=\s*)(["''])asInvoker\2'
+          $levelRegex = [regex]::new($levelPattern)
+          if (-not $levelRegex.IsMatch($manifest)) { throw "BDMA.exe manifest has no asInvoker level" }
+          $manifest = $levelRegex.Replace($manifest, '$1$2requireAdministrator$2', 1)
+          [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
+
+          & $mtPath -manifest $manifestPath "-outputresource:$launcherPath;#1"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to embed administrator manifest into BDMA.exe" }
+          Remove-Item -LiteralPath $manifestPath -Force
+
       - name: Install NSIS
         run: |
           $nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"

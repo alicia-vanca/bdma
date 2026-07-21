@@ -180,6 +180,158 @@ public class MassStorageService {
     }
 
     /**
+     * Deletes a file from the mass-storage drive using the same virtual path format.
+     *
+     * @param driveLetter Windows drive letter with trailing backslash (e.g. {@code E:\})
+     * @param virtualPath ADB-style virtual path (e.g. {@code /mass_storage/video/2026-04-21/file.mp4})
+     * @return {@code true} if the file was deleted or did not exist
+     */
+    public boolean deleteFile(String driveLetter, String virtualPath) {
+        File source = toWindowsFile(driveLetter, virtualPath);
+        if (source == null) {
+            log.warn("Cannot resolve Windows path for mass-storage delete: {}", virtualPath);
+            return false;
+        }
+        if (!source.exists()) {
+            log.debug("MassStorage delete skipped because file does not exist: {}", source.getAbsolutePath());
+            return true;
+        }
+
+        try {
+            Files.delete(source.toPath());
+            log.debug("MassStorage deleted: {}", source.getAbsolutePath());
+            return true;
+        } catch (IOException e) {
+            log.warn("MassStorage delete failed: {}: {}", source.getAbsolutePath(), e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Lists all date-pattern subdirectories under each media type folder,
+     * returning ADB-style virtual directory paths.
+     * <p>
+     * Scans {@code {driveLetter}\Android\...\cache\{type}\} and returns paths like
+     * {@code /mass_storage/video/2026-04-21}.
+     *
+     * @param driveLetter Windows drive letter with trailing backslash (e.g. {@code E:\})
+     * @param types       list of media type folder names
+     * @return list of virtual directory paths for all discovered date directories
+     */
+    public List<String> listDateDirectories(String driveLetter, List<String> types) {
+        List<String> result = new ArrayList<>();
+        File cacheRoot = new File(driveLetter + BODYCAM_CACHE);
+        if (!cacheRoot.exists()) {
+            return result;
+        }
+
+        for (String type : types) {
+            File typeDir = new File(cacheRoot, type);
+            if (!typeDir.exists() || !typeDir.isDirectory()) {
+                continue;
+            }
+
+            File[] dateDirs = typeDir.listFiles(File::isDirectory);
+            if (dateDirs == null) {
+                continue;
+            }
+
+            for (File dateDir : dateDirs) {
+                result.add(MASS_STORAGE_PREFIX + type + "/" + dateDir.getName());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Lists file names inside the given virtual directory path.
+     * <p>
+     * Given {@code /mass_storage/video/2026-04-21}, returns file names (not full paths)
+     * found in the corresponding Windows directory.
+     *
+     * @param driveLetter   Windows drive letter with trailing backslash (e.g. {@code E:\})
+     * @param virtualDirPath virtual directory path (e.g. {@code /mass_storage/video/2026-04-21})
+     * @return list of file names, or empty list if the directory does not exist
+     */
+    public List<String> listDirectoryFiles(String driveLetter, String virtualDirPath) {
+        if (!virtualDirPath.startsWith(MASS_STORAGE_PREFIX)) {
+            return List.of();
+        }
+
+        String relative = virtualDirPath.substring(MASS_STORAGE_PREFIX.length());
+        String[] parts = relative.split("/");
+        if (parts.length != 2) {
+            log.warn("Unexpected virtual directory path format: {}", virtualDirPath);
+            return List.of();
+        }
+
+        File dir = new File(
+                new File(new File(driveLetter + BODYCAM_CACHE, parts[0]), parts[1])
+                        .getAbsolutePath());
+        if (!dir.exists() || !dir.isDirectory()) {
+            return List.of();
+        }
+
+        String[] files = dir.list();
+        if (files == null) {
+            return List.of();
+        }
+        return List.of(files);
+    }
+
+    /**
+     * Attempts to delete an empty date directory identified by its virtual path.
+     * <p>
+     * Converts {@code /mass_storage/video/2026-04-21} to the corresponding Windows
+     * path and deletes it only when it is empty.
+     *
+     * @param driveLetter   Windows drive letter with trailing backslash (e.g. {@code E:\})
+     * @param virtualDirPath virtual directory path to delete
+     * @return {@code true} if the directory was deleted
+     */
+    public boolean deleteDirectoryIfEmpty(String driveLetter, String virtualDirPath) {
+        if (!virtualDirPath.startsWith(MASS_STORAGE_PREFIX)) {
+            return false;
+        }
+
+        String relative = virtualDirPath.substring(MASS_STORAGE_PREFIX.length());
+        String[] parts = relative.split("/");
+        if (parts.length != 2) {
+            return false;
+        }
+
+        File dir = new File(
+                new File(new File(driveLetter + BODYCAM_CACHE, parts[0]), parts[1])
+                        .getAbsolutePath());
+
+        if (!dir.exists()) {
+            return false;
+        }
+
+        if (!dir.isDirectory()) {
+            return false;
+        }
+
+        String[] contents = dir.list();
+        if (contents == null) {
+            return false;
+        }
+        if (contents.length > 0) {
+            return false;
+        }
+
+        try {
+            Files.delete(dir.toPath());
+            log.debug("MassStorage deleted empty directory: {}", dir.getAbsolutePath());
+            return true;
+        } catch (IOException e) {
+            log.warn("MassStorage failed to delete directory {}: {}",
+                    dir.getAbsolutePath(), e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Returns total capacity, free space, and usable space for the mass storage drive.
      * Windows reports these metrics from the drive root, so values include the whole SD card.
      *

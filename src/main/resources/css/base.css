@@ -79,25 +79,6 @@
   -fx-spacing: 14;
 }
 
-/* ICON BUTTON */
-.icon-btn {
-  -fx-background-color: transparent;
-  -fx-text-fill: -text-color;
-  -fx-border-color: -border-color;
-  -fx-border-width: 2;
-  -fx-border-radius: 6;
-  -fx-background-radius: 6;
-  -fx-padding: 4 8;
-  -fx-font-size: 18px;
-  -fx-background-insets: 1.5;
-  -fx-cursor: hand;
-}
-
-.icon-btn:hover {
-  -fx-background-color: -table-hover;
-  -fx-background-insets: 1.5;
-}
-
 .icon-btn-control {
   -fx-background-color: transparent;
   -fx-text-fill: -text-color;
@@ -221,8 +202,9 @@
 /* -- ALERT -- */
 .dialog-pane.app-alert {
   -fx-background-color: -card-bg;
+  -fx-background-insets: 0 -1 0 0;
   -fx-border-color: -border-color;
-  -fx-border-width: 1;
+  -fx-border-width: 1 0 1 1;
 }
 
 .dialog-pane.app-alert:header .header-panel {
@@ -304,4 +286,23 @@
 
 .table-row-cell:selected {
   -fx-background-color: -table-selected;
+}
+
+/* ── BOOKMARK ICON ─────────────────────────── */
+.bookmark-icon {
+  -fx-cursor: hand;
+  -fx-icon-color: -bookmark-inactive;
+  -fx-icon-size: 18px;
+}
+
+.bookmark-icon:hover {
+  -fx-icon-color: -bookmark-active;
+}
+
+.bookmark-icon.bookmarked {
+  -fx-icon-color: -bookmark-active;
+}
+
+.bookmark-icon.bookmarked:hover {
+  -fx-icon-color: derive(-bookmark-active, -15%);
 }

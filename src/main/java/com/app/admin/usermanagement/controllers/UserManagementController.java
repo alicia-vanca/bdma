@@ -230,7 +230,7 @@ public class UserManagementController {
 
     private void setupPageSizeComboBox() {
         cbPageSize.getItems().setAll(AppConstants.PAGE_SIZE_THRESHOLDS);
-        cbPageSize.setValue(AppConstants.DEFAULT_PAGE_SIZE);
+        cbPageSize.setValue(pageSize);
 
         cbPageSize.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == null || Objects.equals(newValue, pageSize)) {

@@ -10,6 +10,7 @@
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.app.admin.layout.controllers.FileListController"
@@ -23,6 +24,7 @@
         </HBox>
         <ComboBox fx:id="userFilterCombo" promptText="%filter.allUsers"/>
         <ComboBox fx:id="typeFilterCombo"/>
+        <Button fx:id="btnBookmarkFilter" onAction="#onToggleBookmarkFilter" styleClass="btn-bookmark-filter"/>
         <Button text="%filter.reset" onAction="#clearFilter" styleClass="btn-secondary"/>
         <Region HBox.hgrow="ALWAYS"/>
         <Label fx:id="lblSelectedCount" text="%file.selected.count" styleClass="status-label" managed="false" visible="false"/>
@@ -35,6 +37,7 @@
         </columnResizePolicy>
         <columns>
             <TableColumn fx:id="colSelect" minWidth="45" maxWidth="45" styleClass="col-select" style="-fx-alignment: CENTER;"/>
+            <TableColumn fx:id="colBookmark" minWidth="40" maxWidth="40" style="-fx-alignment: CENTER;"/>
             <TableColumn fx:id="colName" text="%file.name" minWidth="80" prefWidth="270"/>
             <TableColumn fx:id="colDevice" text="%file.device" minWidth="60" prefWidth="110"/>
             <TableColumn fx:id="colUser" text="%file.user" minWidth="60" prefWidth="110"/>
@@ -54,13 +57,12 @@
         <Region HBox.hgrow="ALWAYS"/>
         <Button fx:id="btnOpenQueueDialog" onAction="#onOpenQueueDialog" styleClass="progress-bar-button,idle">
             <graphic>
-                <VBox spacing="4" styleClass="progress-bar-content">
-                    <HBox fx:id="progressBarHeader" alignment="CENTER" spacing="8" styleClass="progress-bar-header">
-                        <Label fx:id="lblProgressBarTitle" text="%progress.bar.idle" styleClass="progress-bar-title"/>
-                        <Region fx:id="progressBarSpacer" HBox.hgrow="ALWAYS" managed="false" visible="false"/>
+                <VBox styleClass="progress-bar-content">
+                    <HBox styleClass="progress-bar-header" >
+                        <StackPane fx:id="progressStatusIcon" styleClass="progress-status-icon"/>
+                        <ProgressBar fx:id="progressBar" progress="0" styleClass="progress-bar"/>
                         <Label fx:id="lblProgressBarPercent" text="0%" styleClass="progress-bar-percent" managed="false" visible="false"/>
                     </HBox>
-                    <ProgressBar fx:id="progressBar" progress="0" styleClass="progress-bar"/>
                 </VBox>
             </graphic>
         </Button>

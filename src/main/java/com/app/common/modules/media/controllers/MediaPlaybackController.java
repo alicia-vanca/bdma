@@ -1,5 +1,6 @@
 package com.app.common.modules.media.controllers;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.DoubleConsumer;
 import java.util.function.Predicate;
 
@@ -8,7 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import com.app.common.dtos.FileView;
 
-import javafx.animation.AnimationTimer;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.geometry.Bounds;
@@ -17,12 +18,15 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
+import javafx.scene.media.VideoTrack;
 import javafx.scene.paint.Color;
 import javafx.stage.Popup;
 import javafx.util.Duration;
@@ -60,34 +64,9 @@ final class MediaPlaybackController {
     private MediaPlayer mediaPlayer;
     private boolean playbackEnded;
     private boolean seekingAwayFromEnd;
-    private Duration playbackClockTime = Duration.ZERO;
-    private long playbackClockNanos;
     private ChangeListener<Bounds> boundsListener;
     private ChangeListener<Number> videoPaneWidthListener;
     private ChangeListener<Number> videoPaneHeightListener;
-
-    private final AnimationTimer playbackProgressTimer = new AnimationTimer() {
-        @Override
-        public void handle(long now) {
-            MediaPlayer player = mediaPlayer;
-            if (player == null || sliderDragging) {
-                return;
-            }
-            Duration total = player.getTotalDuration();
-            if (!isDurationValid(total)) {
-                return;
-            }
-            Duration displayedTime = playbackClockTime;
-            if (player.getStatus() == MediaPlayer.Status.PLAYING && playbackClockNanos > 0) {
-                double elapsedSeconds = (System.nanoTime() - playbackClockNanos) / 1_000_000_000.0;
-                displayedTime = displayedTime.add(Duration.seconds(elapsedSeconds * player.getRate()));
-            }
-            if (displayedTime.greaterThan(total)) {
-                displayedTime = total;
-            }
-            renderPlaybackPosition(displayedTime, total);
-        }
-    };
 
     private enum PlaybackState {
         READY, PLAYING, PAUSED, SEEKING, ENDED, STOPPED
@@ -187,7 +166,6 @@ final class MediaPlaybackController {
         }
         try {
             double rate = Double.parseDouble(cbSpeed.getValue().replace("x", ""));
-            syncPlaybackClock(mediaPlayer.getCurrentTime());
             mediaPlayer.setRate(rate);
         } catch (NumberFormatException e) {
             log.warn("Invalid speed format: {}", cbSpeed.getValue());
@@ -279,7 +257,7 @@ final class MediaPlaybackController {
 
         MediaPlayer activePlayer = mediaPlayer;
         handlePlaybackState(PlaybackState.READY, Duration.ZERO);
-        attachPlaybackEventHandlers(activePlayer, onPlaybackError);
+        attachPlaybackEventHandlers(file, activePlayer, onPlaybackError);
         setupSeekControls(activePlayer);
         attachPlaybackKeyboardShortcuts();
         mediaView.setOnMouseClicked(e -> togglePlayback());
@@ -312,18 +290,44 @@ final class MediaPlaybackController {
         cbSpeed.setValue("1x");
     }
 
-    private void attachPlaybackEventHandlers(MediaPlayer activePlayer, Runnable onPlaybackError) {
+    private void attachPlaybackEventHandlers(FileView file, MediaPlayer activePlayer,
+            Runnable onPlaybackError) {
+        Media media = activePlayer.getMedia();
+        AtomicBoolean playbackErrorReported = new AtomicBoolean();
         configurePlayerVolume(activePlayer);
-        activePlayer.setOnPlaying(() -> handlePlayingEvent(activePlayer));
+        AtomicBoolean frameCheckScheduled = new AtomicBoolean();
+        activePlayer.setOnPlaying(() -> {
+            handlePlayingEvent(activePlayer);
+            if (frameCheckScheduled.compareAndSet(false, true)) {
+                scheduleFrameCheck(file, activePlayer);
+            }
+        });
         activePlayer.currentTimeProperty()
                 .addListener((obs, oldVal, newVal) -> handleCurrentTimeChange(activePlayer, newVal));
         activePlayer.setOnReady(() -> handleReadyEvent(activePlayer));
         activePlayer.setOnEndOfMedia(() -> handlePlaybackEndEvent(activePlayer));
-        activePlayer.setOnError(() -> {
+        activePlayer.statusProperty().addListener((obs, oldStatus, newStatus) -> {
             if (activePlayer == mediaPlayer) {
-                Platform.runLater(onPlaybackError);
+                log.info("Media player status changed: file={}, oldStatus={}, newStatus={}, currentTime={}, duration={}",
+                        file.name(), oldStatus, newStatus, activePlayer.getCurrentTime(),
+                        activePlayer.getTotalDuration());
             }
         });
+        activePlayer.setOnStalled(() -> {
+            if (activePlayer == mediaPlayer) {
+                log.warn("Media player stalled: file={}, currentTime={}, duration={}, status={}",
+                        file.name(), activePlayer.getCurrentTime(), activePlayer.getTotalDuration(),
+                        activePlayer.getStatus());
+            }
+        });
+        activePlayer.setOnHalted(() -> reportPlaybackError(file, activePlayer, onPlaybackError,
+                playbackErrorReported, "player-halted", activePlayer.getError()));
+        activePlayer.setOnError(() -> reportPlaybackError(file, activePlayer, onPlaybackError,
+                playbackErrorReported, "player-error-event", activePlayer.getError()));
+        media.setOnError(() -> reportPlaybackError(file, activePlayer, onPlaybackError,
+                playbackErrorReported, "media-error-event", media.getError()));
+        mediaView.setOnError(event -> reportPlaybackError(file, activePlayer, onPlaybackError,
+                playbackErrorReported, "media-view-error-event", event.getMediaError()));
     }
 
     private void configurePlayerVolume(MediaPlayer activePlayer) {
@@ -334,7 +338,54 @@ final class MediaPlaybackController {
 
     private void handlePlayingEvent(MediaPlayer activePlayer) {
         if (activePlayer == mediaPlayer) {
+            log.info("Media player playing: source={}, currentTime={}, duration={}, tracks={}",
+                    activePlayer.getMedia().getSource(), activePlayer.getCurrentTime(),
+                    activePlayer.getTotalDuration(), activePlayer.getMedia().getTracks());
             handlePlaybackState(PlaybackState.PLAYING, null);
+        }
+    }
+
+    private void scheduleFrameCheck(FileView file, MediaPlayer activePlayer) {
+        boolean hasVideoTrack = activePlayer.getMedia().getTracks().stream()
+                .anyMatch(VideoTrack.class::isInstance);
+        if (!hasVideoTrack) {
+            return;
+        }
+        PauseTransition delay = new PauseTransition(Duration.seconds(1.5));
+        delay.setOnFinished(event -> inspectRenderedFrame(file, activePlayer));
+        delay.play();
+    }
+
+    private void inspectRenderedFrame(FileView file, MediaPlayer activePlayer) {
+        if (activePlayer != mediaPlayer || !mediaView.isVisible()) {
+            return;
+        }
+        Bounds bounds = mediaView.getBoundsInLocal();
+        if (bounds.getWidth() <= 1 || bounds.getHeight() <= 1) {
+            log.warn("Media view has no render area: file={}, status={}, currentTime={}, viewSize={}x{}",
+                    file.name(), activePlayer.getStatus(), activePlayer.getCurrentTime(),
+                    bounds.getWidth(), bounds.getHeight());
+            return;
+        }
+        try {
+            WritableImage image = mediaView.snapshot(null, null);
+            int width = (int) image.getWidth();
+            int height = (int) image.getHeight();
+            assert width > 0 && height > 0;
+            int centerArgb = image.getPixelReader().getArgb(width / 2, height / 2);
+            if (((centerArgb >>> 24) & 0xff) == 0) {
+                Media media = activePlayer.getMedia();
+                log.warn("Media player produced no rendered video frame: file={}, status={}, currentTime={}, duration={}, mediaSize={}x{}, viewSize={}x{}, tracks={}, prismOrder={}",
+                        file.name(), activePlayer.getStatus(), activePlayer.getCurrentTime(),
+                        activePlayer.getTotalDuration(), media.getWidth(), media.getHeight(),
+                        width, height, media.getTracks(), System.getProperty("prism.order", "default"));
+            } else {
+                log.info("Media video frame rendered: file={}, currentTime={}",
+                        file.name(), activePlayer.getCurrentTime());
+            }
+        } catch (RuntimeException error) {
+            log.warn("Failed to inspect rendered video frame: file={}, status={}, currentTime={}",
+                    file.name(), activePlayer.getStatus(), activePlayer.getCurrentTime(), error);
         }
     }
 
@@ -342,7 +393,6 @@ final class MediaPlaybackController {
         if (activePlayer != mediaPlayer) {
             return;
         }
-        syncPlaybackClock(newVal);
         Duration total = activePlayer.getTotalDuration();
         if (shouldRecoverFromSeekingEnd(total, newVal)) {
             seekingAwayFromEnd = false;
@@ -351,6 +401,7 @@ final class MediaPlaybackController {
             }
         }
         if (shouldUpdateSliderAndTime(activePlayer)) {
+            renderPlaybackPosition(newVal, total);
             onPlaybackTimeChanged.accept(newVal.toSeconds());
         }
     }
@@ -364,9 +415,33 @@ final class MediaPlaybackController {
             return;
         }
         updateDetailDimensions(activePlayer);
+        Media media = activePlayer.getMedia();
+        log.info("Media player ready: fileSource={}, duration={}, mediaSize={}x{}, tracks={}, metadata={}, javafx={}, java={}, osName={}, osVersion={}, arch={}, prismOrder={}",
+                media.getSource(), activePlayer.getTotalDuration(), media.getWidth(), media.getHeight(),
+                media.getTracks(), media.getMetadata(),
+                System.getProperty("javafx.version", "unknown"),
+                Runtime.version(), System.getProperty("os.name"), System.getProperty("os.version"),
+                System.getProperty("os.arch"), System.getProperty("prism.order", "default"));
         handlePlaybackState(PlaybackState.READY, Duration.ZERO);
         startPlayback(activePlayer);
         Platform.runLater(videoPane::requestFocus);
+    }
+
+    private void reportPlaybackError(FileView file, MediaPlayer activePlayer, Runnable onPlaybackError,
+            AtomicBoolean playbackErrorReported, String source, Throwable error) {
+        if (activePlayer != mediaPlayer) {
+            return;
+        }
+        Media media = activePlayer.getMedia();
+        log.error("Media playback pipeline error: file={}, source={}, error={}, playerStatus={}, playerError={}, mediaError={}, uri={}, mediaSize={}x{}, tracks={}, javafx={}, osName={}, osVersion={}, arch={}, prismOrder={}",
+                file.name(), source, String.valueOf(error), activePlayer.getStatus(), activePlayer.getError(),
+                media.getError(), media.getSource(), media.getWidth(), media.getHeight(),
+                media.getTracks(), System.getProperty("javafx.version", "unknown"),
+                System.getProperty("os.name"), System.getProperty("os.version"),
+                System.getProperty("os.arch"), System.getProperty("prism.order", "default"), error);
+        if (playbackErrorReported.compareAndSet(false, true)) {
+            Platform.runLater(onPlaybackError);
+        }
     }
 
     private void handlePlaybackEndEvent(MediaPlayer activePlayer) {
@@ -538,11 +613,6 @@ final class MediaPlaybackController {
         return !sliderDragging && activePlayer == mediaPlayer;
     }
 
-    private void syncPlaybackClock(Duration time) {
-        playbackClockTime = time != null && !time.isUnknown() ? time : Duration.ZERO;
-        playbackClockNanos = System.nanoTime();
-    }
-
     private void handlePlaybackState(PlaybackState state, Duration position) {
         MediaPlayer player = mediaPlayer;
         Duration total = player != null ? player.getTotalDuration() : Duration.UNKNOWN;
@@ -557,7 +627,6 @@ final class MediaPlaybackController {
     }
 
     private void handleReadyState(Duration total) {
-        playbackProgressTimer.stop();
         playbackEnded = false;
         seekingAwayFromEnd = false;
         sliderDragging = false;
@@ -568,13 +637,10 @@ final class MediaPlaybackController {
 
     private void handlePlayingState() {
         playbackEnded = false;
-        playbackClockNanos = System.nanoTime();
-        playbackProgressTimer.start();
         btnPlayPause.setText("⏸");
     }
 
     private void handlePausedState(Duration position, Duration total) {
-        playbackProgressTimer.stop();
         btnPlayPause.setText("▶");
         anchorPlaybackPosition(position, total, false);
     }
@@ -600,7 +666,6 @@ final class MediaPlaybackController {
     }
 
     private void handleEndedState(Duration position, Duration total) {
-        playbackProgressTimer.stop();
         playbackEnded = true;
         seekingAwayFromEnd = false;
         btnPlayPause.setText("▶");
@@ -608,7 +673,6 @@ final class MediaPlaybackController {
     }
 
     private void handleStoppedState() {
-        playbackProgressTimer.stop();
         playbackEnded = false;
         seekingAwayFromEnd = false;
         btnPlayPause.setText("▶");
@@ -617,7 +681,6 @@ final class MediaPlaybackController {
 
     private void anchorPlaybackPosition(Duration position, Duration total, boolean updateGps) {
         Duration safePosition = position != null && !position.isUnknown() ? position : Duration.ZERO;
-        syncPlaybackClock(safePosition);
         renderPlaybackPosition(safePosition, total);
         if (updateGps) {
             onPlaybackTimeChanged.accept(safePosition.toSeconds());
@@ -640,7 +703,6 @@ final class MediaPlaybackController {
             return;
         }
         player.play();
-        handlePlaybackState(PlaybackState.PLAYING, null);
     }
 
     private void pausePlayback(MediaPlayer player) {

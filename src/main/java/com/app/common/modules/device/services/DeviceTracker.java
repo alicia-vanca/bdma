@@ -1,6 +1,8 @@
 package com.app.common.modules.device.services;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.HashSet;
 import java.util.List;
@@ -112,7 +114,19 @@ public class DeviceTracker implements Runnable {
 
         Process p = activeProcess.getAndSet(null);
         if (p != null) {
-            p.destroyForcibly();
+            try {
+                p.destroyForcibly();
+                if (!p.waitFor(2, TimeUnit.SECONDS)) {
+                    log.warn("Timed out waiting for adb track-devices process to exit");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while waiting for adb track-devices process to exit");
+            } catch (SecurityException e) {
+                log.warn("Unable to force-stop adb track-devices process", e);
+            } finally {
+                closeProcessStreams(p);
+            }
         }
         log.info("Device tracking stopped and state reset");
     }
@@ -191,8 +205,28 @@ public class DeviceTracker implements Runnable {
         } finally {
             activeProcess.compareAndSet(p, null);
             if (p != null) {
-                p.destroyForcibly();
+                try {
+                    p.destroyForcibly();
+                } catch (SecurityException e) {
+                    log.warn("Unable to force-stop adb track-devices process", e);
+                } finally {
+                    closeProcessStreams(p);
+                }
             }
+        }
+    }
+
+    private void closeProcessStreams(Process process) {
+        closeProcessStream(process.getInputStream(), "input");
+        closeProcessStream(process.getOutputStream(), "output");
+        closeProcessStream(process.getErrorStream(), "error");
+    }
+
+    private void closeProcessStream(Closeable stream, String streamName) {
+        try {
+            stream.close();
+        } catch (IOException e) {
+            log.debug("Failed to close adb track-devices {} stream", streamName, e);
         }
     }
 

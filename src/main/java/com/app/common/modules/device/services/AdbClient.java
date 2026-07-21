@@ -2,6 +2,7 @@ package com.app.common.modules.device.services;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -28,7 +29,6 @@ import org.springframework.stereotype.Service;
 
 import com.app.common.exceptions.AppException;
 import com.app.common.exceptions.DeviceDisconnectedException;
-
 import jakarta.annotation.PreDestroy;
 
 @Service
@@ -86,20 +86,99 @@ public class AdbClient {
     public void killServer() {
         try {
             String adbExecutable = adbRuntimeService.resolveAdbExecutable();
-            Process process = new ProcessBuilder(adbExecutable, "kill-server")
-                    .redirectErrorStream(true)
-                    .start();
-            try {
-                process.waitFor(5, TimeUnit.SECONDS);
-                log.info("ADB server killed on shutdown");
-            } finally {
-                process.destroyForcibly();
+            boolean killServerCommandCompleted = requestAdbServerShutdown(adbExecutable);
+            if (!killServerCommandCompleted) {
+                log.warn("ADB kill-server command did not stop cleanly; forcing bundled ADB processes to exit");
+            }
+
+            int forcedProcessCount = terminateBundledAdbProcesses(adbExecutable);
+            List<ProcessHandle> remainingProcesses = waitForBundledAdbProcessesToExit(adbExecutable);
+            if (remainingProcesses.isEmpty()) {
+                log.info("Bundled ADB shutdown verified. killServerCommandCompleted={}, forcedProcessCount={}",
+                        killServerCommandCompleted, forcedProcessCount);
+            } else {
+                log.error("Bundled ADB shutdown incomplete. Remaining process IDs: {}",
+                        remainingProcesses.stream().map(ProcessHandle::pid).toList());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn("Interrupted while shutting down bundled ADB", e);
         } catch (Exception e) {
             log.warn("Failed to kill ADB server on shutdown", e);
         }
+    }
+
+    private boolean requestAdbServerShutdown(String adbExecutable) throws IOException, InterruptedException {
+        Process process = new ProcessBuilder(adbExecutable, "kill-server")
+                .redirectErrorStream(true)
+                .start();
+        boolean finished = process.waitFor(5, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            process.waitFor(1, TimeUnit.SECONDS);
+            return false;
+        }
+
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            log.warn("ADB kill-server exited with code {}: {}", exitCode, output);
+            return false;
+        }
+        return true;
+    }
+
+    private int terminateBundledAdbProcesses(String adbExecutable) {
+        Path bundledAdbPath = Path.of(adbExecutable).toAbsolutePath().normalize();
+        List<ProcessHandle> bundledAdbProcesses = findBundledAdbProcesses(bundledAdbPath);
+
+        for (ProcessHandle process : bundledAdbProcesses) {
+            forceStopBundledAdbProcess(process);
+        }
+        return bundledAdbProcesses.size();
+    }
+
+    private List<ProcessHandle> waitForBundledAdbProcessesToExit(String adbExecutable) throws InterruptedException {
+        Path bundledAdbPath = Path.of(adbExecutable).toAbsolutePath().normalize();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            List<ProcessHandle> remainingProcesses = findBundledAdbProcesses(bundledAdbPath);
+            if (remainingProcesses.isEmpty()) {
+                return remainingProcesses;
+            }
+            for (ProcessHandle process : remainingProcesses) {
+                forceStopBundledAdbProcess(process);
+            }
+            Thread.sleep(100);
+        }
+        return findBundledAdbProcesses(bundledAdbPath);
+    }
+
+    private void forceStopBundledAdbProcess(ProcessHandle process) {
+        process.descendants().forEach(this::forceStopProcess);
+        forceStopProcess(process);
+    }
+
+    private void forceStopProcess(ProcessHandle process) {
+        try {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        } catch (SecurityException e) {
+            log.warn("Unable to force-stop bundled ADB process {}", process.pid(), e);
+        }
+    }
+
+    private List<ProcessHandle> findBundledAdbProcesses(Path bundledAdbPath) {
+        return ProcessHandle.allProcesses()
+                .filter(process -> isBundledAdbProcess(process, bundledAdbPath))
+                .toList();
+    }
+
+    private boolean isBundledAdbProcess(ProcessHandle process, Path bundledAdbPath) {
+        return process.info().command()
+                .map(command -> Path.of(command).toAbsolutePath().normalize().toString()
+                        .equalsIgnoreCase(bundledAdbPath.toString()))
+                .orElse(false);
     }
 
     // -------------------------------------------------------------------------
@@ -690,13 +769,129 @@ public class AdbClient {
     }
 
     public boolean deleteRemoteFile(String serial, String remote) {
+        log.info("[{}] Remote file delete requested: {}", serial, remote);
         try {
-            return executeAdbCommand(serial, QUICK_TIMEOUT, ADB_SHELL, "rm", "-f", remote).exitCode() == 0;
+            RunResult result = executeAdbCommand(serial, QUICK_TIMEOUT, ADB_SHELL, "rm", "-f", remote);
+            boolean success = result.exitCode() == 0;
+            log.info("[{}] Remote file delete completed: path={}, exitCode={}, success={}",
+                    serial, remote, result.exitCode(), success);
+            return success;
         } catch (AppException e) {
-            log.debug("deleteRemoteFile failed: {}", e.getMessage());
+            log.warn("[{}] Remote file delete failed: path={}, error={}", serial, remote, e.getMessage(), e);
             return false;
         }
     }
+
+    /**
+     * Checks whether a remote directory is empty, then deletes it using rmdir.
+     *
+     * @param serial ADB device serial
+     * @param path   remote directory path
+     * @return {@code true} if the directory was deleted
+     */
+    public boolean deleteRemoteDirectoryIfEmpty(String serial, String path) {
+        RunResult contents;
+        try {
+            contents = executeAdbCommand(serial, QUICK_TIMEOUT, ADB_SHELL, "ls", "-A", path);
+        } catch (AppException e) {
+            log.warn("[{}] Failed to inspect remote directory {}: {}", serial, path, e.getMessage());
+            return false;
+        }
+
+        if (contents.exitCode() != 0) {
+            log.warn("[{}] Failed to inspect remote directory {}: exit={}, output={}",
+                    serial, path, contents.exitCode(), contents.output());
+            return false;
+        }
+        if (!contents.output().isBlank()) {
+            return false;
+        }
+
+        try {
+            RunResult result = executeAdbCommand(serial, QUICK_TIMEOUT, ADB_SHELL, "rmdir", path);
+            if (result.exitCode() == 0) {
+                log.debug("[{}] Deleted empty remote directory: {}", serial, path);
+                return true;
+            }
+            log.warn("[{}] Failed to delete remote directory {}: exit={}, output={}",
+                    serial, path, result.exitCode(), result.output());
+            return false;
+        } catch (AppException e) {
+            log.warn("[{}] Failed to delete remote directory {}: {}", serial, path, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Finds all date-pattern directories one level under each media type root.
+     * 
+     * @param serial     ADB device serial
+     * @param root       storage root path (e.g., /storage/emulated/0/DCIM)
+     * @param mediaTypes list of media type folder names (e.g., ["video", "image"])
+     * @return list of directory paths matching find criteria
+     */
+    public List<String> findDateDirectories(String serial, String root, List<String> mediaTypes) {
+        List<String> allDirectories = new ArrayList<>();
+        for (String type : mediaTypes) {
+            String typeRoot = root + "/" + type;
+            try {
+                RunResult result = executeAdbCommand(serial, FIND_TIMEOUT, ADB_SHELL,
+                        "find", typeRoot, "-mindepth", "1", "-maxdepth", "1", "-type", "d");
+                if (result.exitCode() == 0) {
+                    String[] lines = result.output().split("\\R");
+                    for (String line : lines) {
+                        String trimmed = line.trim();
+                        if (!trimmed.isBlank()) {
+                            allDirectories.add(trimmed);
+                        }
+                    }
+                } else {
+                    log.debug("[{}] find date directories under {} failed: exit={}", serial, typeRoot,
+                            result.exitCode());
+                }
+            } catch (AppException e) {
+                log.debug("[{}] find date directories under {} exception: {}", serial, typeRoot, e.getMessage());
+            }
+        }
+        return allDirectories;
+    }
+
+    /**
+     * Lists all files (not directories) directly inside a remote directory
+     * (non-recursive). Returns only the file names, not full paths.
+     *
+     * @param serial        ADB device serial
+     * @param directoryPath remote directory path to inspect
+     * @return list of file names inside the directory, or empty list if the
+     *         directory is missing, empty, or the command fails
+     */
+    public List<String> listFilesInDirectory(String serial, String directoryPath) {
+        try {
+            RunResult result = executeAdbCommand(serial, FIND_TIMEOUT, ADB_SHELL,
+                    "find", directoryPath, "-mindepth", "1", "-maxdepth", "1", "-type", "f");
+            if (result.exitCode() != 0) {
+                log.debug("[{}] listFilesInDirectory failed for {}: exit={}", serial, directoryPath,
+                        result.exitCode());
+                return List.of();
+            }
+
+            List<String> fileNames = new ArrayList<>();
+            for (String line : result.output().split("\\R")) {
+                String trimmed = line.trim();
+                if (!trimmed.isBlank() && !trimmed.startsWith("find:")) {
+                    int lastSlash = trimmed.lastIndexOf('/');
+                    fileNames.add(lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed);
+                }
+            }
+            return fileNames;
+        } catch (DeviceDisconnectedException e) {
+            throw e;
+        } catch (AppException e) {
+            log.debug("[{}] listFilesInDirectory exception for {}: {}", serial, directoryPath, e.getMessage());
+            return List.of();
+        }
+    }
+
 
     public boolean isDeviceAlive(String serial) {
         try {

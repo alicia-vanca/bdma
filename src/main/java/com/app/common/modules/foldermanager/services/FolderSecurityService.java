@@ -1,10 +1,9 @@
 package com.app.common.modules.foldermanager.services;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -17,10 +16,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.app.common.definitions.AppConstants;
+import com.app.common.services.WindowsCommandService;
+import com.app.common.services.WindowsCommandService.CommandResult;
 
 /**
  * Static utility service for protecting paths inside bdma folders.
- * 
+ * <p>
  * Strategy:
  * - bdma root folder: deny delete (D)
  * - child folders created by ensureBdmaDir: lock with the same delete-deny rule
@@ -28,12 +29,17 @@ import com.app.common.definitions.AppConstants;
 public class FolderSecurityService {
 
     private static final Logger log = LoggerFactory.getLogger(FolderSecurityService.class);
+    private static final WindowsCommandService WINDOWS_COMMAND_SERVICE = new WindowsCommandService();
 
     private static final String CMD_ATTRIB = "attrib";
     private static final String CMD_ICACLS = "icacls";
+    private static final String CMD_TAKEOWN = "takeown";
     private static final String PROPERTY_USER_NAME = "user.name";
+    private static final String WINDOWS_EVERYONE_SID = "*S-1-1-0";
     private static final String ICACLS_DENY = "/deny";
+    private static final String ICACLS_GRANT_REPLACE = "/grant:r";
     private static final String ICACLS_REMOVE_DENY = "/remove:d";
+    private static final String ICACLS_RESET = "/reset";
     private static final String CHECKSUM_EXT = ".sha256";
     private static final String CHECKSUM_BACKUP_EXT = ".sha256.backup";
     private static final Pattern SHA256_PATTERN = Pattern.compile("(?i)\\b[a-f0-9]{64}\\b");
@@ -49,24 +55,9 @@ public class FolderSecurityService {
     // ── Public API ───────────────────────────────────────────────────────────
 
     /**
-     * Ensure directory path exists and is accessible.
-     *
-     * If the path is inside a bdma folder, lock the bdma folder with delete-deny
-     * (D).
-     * Otherwise, simply create the directory structure.
-     *
-     * @param dirPath absolute path to the directory
-     * @throws IOException if path exists but is not a directory, or directory
-     *                     creation fails
-     */
-    public static void ensureDirAccessible(String dirPath) throws IOException {
-        ensureDirAccessible(dirPath, true);
-    }
-
-    /**
      * Ensure directory path exists and is accessible, with optional bdma folder
      * protection.
-     *
+     * <p>
      * @param dirPath           absolute path to the directory
      * @param protectionEnabled true to lock bdma folder if found, false to unlock
      *                          it
@@ -79,31 +70,36 @@ public class FolderSecurityService {
             throw new IOException("Path is not a directory: " + dirPath);
         }
 
+        Path bdmaFolder = findDeepestBdmaFolder(target);
+        boolean repairEnabled = bdmaFolder != null;
+
+        if (bdmaFolder != null) {
+            repairStorageRootIfInaccessible(bdmaFolder);
+        }
+
         // Walk from drive root to target, creating each missing directory.
         Path root = target.getRoot();
         if (root != null) {
             Path current = root;
             for (Path segment : root.relativize(target)) {
                 current = current.resolve(segment);
-                if (!Files.exists(current)) {
-                    Files.createDirectory(current);
+                if (Files.notExists(current)) {
+                    createDirectoryWithRepair(current, repairEnabled);
                 }
             }
         }
 
         // Apply protection only if path is inside a bdma folder
-        Path bdmaFolder = findDeepestBdmaFolder(dirPath);
-        if (bdmaFolder != null) {
-            if (protectionEnabled) {
-                lockSinglePath(bdmaFolder);
-            } else {
-                unlockSinglePath(bdmaFolder);
-            }
+        if (bdmaFolder != null && !protectionEnabled) {
+            unlockSinglePathWithRepair(bdmaFolder);
         }
         // Unlock any non-bdma parent folders to avoid unintended access issues, but
         // keep the bdma folder protected
-        if (bdmaFolder == null || !target.equals(bdmaFolder)) {
-            unlockSinglePath(target);
+        if (!target.equals(bdmaFolder)) {
+            unlockSinglePathWithRepair(target);
+        }
+        if (bdmaFolder != null && protectionEnabled) {
+            lockSinglePathWithRepair(bdmaFolder);
         }
     }
 
@@ -111,15 +107,24 @@ public class FolderSecurityService {
 
     /**
      * Lock a single directory path by denying delete.
-     *
+     * <p>
      * @param path the path to lock
      * @throws IOException if lock operations fail
      */
     public static void lockSinglePath(Path path) throws IOException {
+        lockSinglePathWithRepair(path);
+    }
+
+    private static void lockSinglePathWithRepair(Path path) throws IOException {
+        runWithAclRepair(path, () -> lockSinglePathRaw(path));
+    }
+
+    private static void lockSinglePathRaw(Path path) throws IOException {
         try {
             String user = buildIcaclsTrustee();
             hideSinglePath(path);
-            runCommand(CMD_ICACLS,
+            runRequiredCommand(path, "Lock folder",
+                    CMD_ICACLS,
                     path.toString(),
                     ICACLS_DENY,
                     user + ":(D)");
@@ -131,13 +136,14 @@ public class FolderSecurityService {
 
     /**
      * Hide a single path from normal Explorer views without changing ACLs.
-     *
+     * <p>
      * @param path the path to hide
      * @throws IOException if the hide operation fails
      */
     public static void hideSinglePath(Path path) throws IOException {
         try {
-            runCommand(CMD_ATTRIB, "+h", "+s", path.toString());
+            runOptionalCommand(path, "Apply hidden attributes",
+                    CMD_ATTRIB, "+h", "+s", path.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Hide interrupted for: " + path, e);
@@ -149,13 +155,23 @@ public class FolderSecurityService {
      * Existing files/subdirectories retain inherited ACL updates from the root.
      */
     public static void unlockSinglePath(Path path) throws IOException {
+        unlockSinglePathWithRepair(path);
+    }
+
+    private static void unlockSinglePathWithRepair(Path path) throws IOException {
+        runWithAclRepair(path, () -> unlockSinglePathRaw(path));
+    }
+
+    private static void unlockSinglePathRaw(Path path) throws IOException {
         try {
             String user = buildIcaclsTrustee();
-            runCommand(CMD_ICACLS,
+            runRequiredCommand(path, "Unlock folder",
+                    CMD_ICACLS,
                     path.toString(),
                     ICACLS_REMOVE_DENY,
                     user);
-            runCommand(CMD_ATTRIB, "-h", "-s", path.toString());
+            runOptionalCommand(path, "Remove hidden attributes",
+                    CMD_ATTRIB, "-h", "-s", path.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Unlock interrupted for: " + path, e);
@@ -164,11 +180,11 @@ public class FolderSecurityService {
 
     /**
      * Generate checksum sidecar files for a backup file.
-     *
+     * <p>
      * Creates two files in the same directory as the input file:
      * - {@code <name>.sha256}
      * - {@code <name>.sha256.backup}
-     *
+     * <p>
      * @param backupPath the backup file path
      * @throws IOException if input file is missing/not a regular file or checksum
      *                     files cannot be written
@@ -189,7 +205,7 @@ public class FolderSecurityService {
 
     /**
      * Check whether a path is a checksum sidecar file created for a backup file.
-     *
+     * <p>
      * @param path candidate file path
      * @return true when the filename ends with .sha256 or .sha256.backup
      */
@@ -212,17 +228,15 @@ public class FolderSecurityService {
 
     /**
      * Find the deepest bdma folder (data or backup) in the given path hierarchy.
-     *
-     * @param filePath absolute path to search within
+     * <p>
+     * @param path absolute path to search within
      * @return the deepest bdma folder path, or null if not found
      * @throws IllegalArgumentException if path is not absolute
      */
-    private static Path findDeepestBdmaFolder(String filePath) {
-        Path path = Path.of(filePath);
-
+    private static Path findDeepestBdmaFolder(Path path) {
         // Ensure we're working with an absolute path
         if (!path.isAbsolute()) {
-            throw new IllegalArgumentException("Path must be absolute: " + filePath);
+            throw new IllegalArgumentException("Path must be absolute: " + path);
         }
 
         Path current = path;
@@ -238,52 +252,173 @@ public class FolderSecurityService {
         return null;
     }
 
+    private static void createDirectoryWithRepair(Path directory, boolean repairEnabled) throws IOException {
+        try {
+            Files.createDirectory(directory);
+        } catch (IOException e) {
+            if (!repairEnabled || directory.getParent() == null) {
+                throw e;
+            }
+            repairAclFromNearestAncestor(directory.getParent(), directory.getParent(), e);
+            Files.createDirectory(directory);
+        }
+    }
+
+    private static void repairStorageRootIfInaccessible(Path bdmaFolder) throws IOException {
+        Path storageRoot = bdmaFolder.getParent();
+        if (storageRoot == null || Files.notExists(storageRoot) || Files.isReadable(storageRoot)) {
+            return;
+        }
+
+        repairAclFromNearestAncestor(
+                storageRoot,
+                storageRoot,
+                new AccessDeniedException(storageRoot.toString()));
+        if (!Files.isReadable(storageRoot)) {
+            throw new AccessDeniedException(storageRoot.toString());
+        }
+    }
+
+    private static void runWithAclRepair(Path path, AclOperation operation) throws IOException {
+        try {
+            operation.run();
+        } catch (IOException firstFailure) {
+            if (findDeepestBdmaFolder(path) == null) {
+                throw firstFailure;
+            }
+            Path parent = path.getParent();
+            if (parent == null) {
+                throw firstFailure;
+            }
+            repairAclFromNearestAncestor(parent, path, firstFailure);
+            operation.run();
+        }
+    }
+
+    private static void repairAclFromNearestAncestor(
+            Path repairStart,
+            Path repairTarget,
+            IOException firstFailure) throws IOException {
+        Path root = repairTarget.getRoot();
+        if (root == null || repairStart == null) {
+            throw firstFailure;
+        }
+
+        Path current = repairStart;
+        IOException lastFailure = firstFailure;
+        Path repairedAncestor = null;
+        while (!current.equals(root)) {
+            try {
+                repairSinglePathAcl(current);
+                repairedAncestor = current;
+                break;
+            } catch (IOException repairFailure) {
+                lastFailure = repairFailure;
+                current = current.getParent();
+            }
+        }
+
+        if (repairedAncestor == null) {
+            throw new IOException(
+                    "Unable to repair folder permissions before filesystem root: " + repairTarget,
+                    lastFailure);
+        }
+
+        Path descendant = repairedAncestor;
+        for (Path segment : repairedAncestor.relativize(repairTarget)) {
+            descendant = descendant.resolve(segment);
+            repairSinglePathAcl(descendant);
+        }
+    }
+
+    private static void repairSinglePathAcl(Path path) throws IOException {
+        Path root = path.getRoot();
+        if (path.equals(root)) {
+            throw new IOException("Refusing to repair filesystem root ACL: " + path);
+        }
+        if (Files.notExists(path)) {
+            throw new IOException("Cannot repair missing path: " + path);
+        }
+
+        try {
+            String user = buildIcaclsTrustee();
+            CommandResult takeownResult = runCommand(CMD_TAKEOWN, "/F", path.toString());
+            if (takeownResult.exitCode() != 0 && log.isDebugEnabled()) {
+                log.debug("[acl-repair] takeown failed for {}: {}", path, takeownResult.output());
+            }
+            runRequiredCommand(path, "Reset folder ACL",
+                    CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_RESET);
+            runRequiredCommand(path, "Grant folder control",
+                    CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_GRANT_REPLACE,
+                    user + ":(OI)(CI)F");
+            runRequiredCommand(path, "Remove deny ACL",
+                    CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_REMOVE_DENY,
+                    user);
+            runRequiredCommand(path, "Remove Everyone deny ACL",
+                    CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_REMOVE_DENY,
+                    WINDOWS_EVERYONE_SID);
+            runOptionalCommand(path, "Remove hidden attributes",
+                    CMD_ATTRIB, "-h", "-s", path.toString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("ACL repair interrupted for: " + path, e);
+        }
+    }
+
     /**
-     * Execute a system command and capture output.
-     *
+     * Execute a system command and throw when it exits unsuccessfully.
+     * <p>
+     * @param path    path used for diagnostics
+     * @param action  action name used for diagnostics
      * @param command command and arguments to execute
-     * @return exit code of the command
      * @throws IOException          if command execution fails
      * @throws InterruptedException if command is interrupted
      */
-    private static int runCommand(String... command) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .start();
-
-        StringBuilder sb = new StringBuilder();
-        try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (!sb.isEmpty())
-                    sb.append('\n');
-                sb.append(line);
-            }
+    private static void runRequiredCommand(Path path, String action, String... command)
+            throws IOException, InterruptedException {
+        CommandResult result = runCommand(command);
+        if (result.exitCode() != 0) {
+            log.warn("[cmd] {} failed with exit code {} for {}: {}",
+                    action, result.exitCode(), path, result.output());
+            throw new IOException(action + " failed for " + path + " (exit " + result.exitCode() + "): "
+                    + result.output());
         }
-        String output = sb.toString().trim();
-        int code = process.waitFor();
+    }
 
-        if (code != 0) {
-            if (log.isWarnEnabled()) {
-                log.warn("[cmd] Command failed with exit code {}: {} - Output: {}",
-                        code, String.join(" ", command), output);
-            }
-        } else if (log.isDebugEnabled()) {
-            // log.debug("[cmd] {} => {}", String.join(" ", command), output.isEmpty() ?
-            // "(no output)" : output);
+    private static void runOptionalCommand(Path path, String action, String... command)
+            throws IOException, InterruptedException {
+        CommandResult result = runCommand(command);
+        if (result.exitCode() != 0 && log.isDebugEnabled()) {
+            log.debug("[cmd] Optional operation '{}' failed for {} (exit {}): {}",
+                    action, path, result.exitCode(), result.output());
         }
+    }
 
-        return code;
+    private static CommandResult runCommand(String... command) throws IOException, InterruptedException {
+        return WINDOWS_COMMAND_SERVICE.runCmdWithOutput(null, command);
+    }
+
+    @FunctionalInterface
+    private interface AclOperation {
+        void run() throws IOException;
     }
 
     /**
      * Validate backup file integrity using SHA-256 sidecar files.
-     *
+     * <p>
      * Validation order:
      * 1) Compare file hash with {@code <name>.sha256}
      * 2) If mismatch/missing, compare with {@code <name>.sha256.backup}
      * 3) Return false if neither sidecar matches
-     *
+     * <p>
      * @param backupPath backup file path
      * @return true when checksum matches primary or backup sidecar, otherwise false
      */
@@ -297,8 +432,8 @@ public class FolderSecurityService {
             String expectedPrimary = readChecksumValue(primaryChecksumPath(backupPath));
             String expectedBackup = readChecksumValue(backupChecksumPath(backupPath));
 
-            boolean primaryValid = expectedPrimary != null && actualChecksum.equalsIgnoreCase(expectedPrimary);
-            boolean backupValid = expectedBackup != null && actualChecksum.equalsIgnoreCase(expectedBackup);
+            boolean primaryValid = actualChecksum.equalsIgnoreCase(expectedPrimary);
+            boolean backupValid = actualChecksum.equalsIgnoreCase(expectedBackup);
 
             // If at least one hash file is valid, regenerate both to ensure consistency
             if (primaryValid || backupValid) {

@@ -41,6 +41,7 @@ import com.app.common.events.FailureSummaryRequestedEvent;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
 import com.app.common.helpers.ViewLoader;
+import com.app.common.helpers.WarningPopupHelper;
 import com.app.common.models.ValidatedDevice;
 import com.app.common.modules.appupdate.controllers.AppUpdateController;
 import com.app.common.modules.baselayout.controllers.BaseLayoutController;
@@ -81,6 +82,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 @Component
 public class AdminLayoutController extends BaseLayoutController {
@@ -93,7 +95,10 @@ public class AdminLayoutController extends BaseLayoutController {
     private static final String STATUS_BACKUP_DRIVE = "status.backupDrive";
     private static final String CSS_STORAGE_WARN = "storage-warn";
     private static final String CSS_STORAGE_CRITICAL = "storage-critical";
-    private static final String STYLE_CLASS_WARNING = "-fx-text-fill: -warning-color;";
+    private static final double WARNING_POPUP_GAP = 10;
+    private static final Duration WARNING_POPUP_FADE_IN = Duration.millis(200);
+    private static final Duration WARNING_POPUP_VISIBLE_DURATION = Duration.seconds(1.0);
+    private static final Duration WARNING_POPUP_FADE_OUT = Duration.millis(200);
 
     // I18n keys
     private static final String I18N_SETTINGS_TITLE = "settings.title";
@@ -150,6 +155,8 @@ public class AdminLayoutController extends BaseLayoutController {
     @FXML
     private Label lblCombinedWarning;
     @FXML
+    private Label lblAppVersion;
+    @FXML
     private ProgressBar pbDataStorage;
     @FXML
     private ProgressBar pbBackupStorage;
@@ -198,6 +205,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final Queue<FailureSummaryRequestedEvent> pendingFailureSummaries = new ArrayDeque<>();
     private boolean failureSummaryVisible;
     private boolean shouldShowPendingValidateDevice = true;
+    private WarningPopupHelper warningPopupHelper;
 
     public AdminLayoutController(ViewLoader viewLoader,
             AppUpdateController appUpdateController,
@@ -287,6 +295,8 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         appNoticeService.bindNoticeContainer(noticeContainer);
+        configureWarningPopup();
+        updateAppVersionLabel();
 
         devOtpGuardService.start(this::logout);
         setIconNte();
@@ -361,6 +371,29 @@ public class AdminLayoutController extends BaseLayoutController {
         }
         node.setVisible(visible);
         node.setManaged(visible);
+    }
+
+    private void configureWarningPopup() {
+        if (lblCombinedWarning == null) {
+            return;
+        }
+
+        warningPopupHelper = new WarningPopupHelper(
+                lblCombinedWarning,
+                WARNING_POPUP_GAP,
+                WARNING_POPUP_FADE_IN,
+                WARNING_POPUP_VISIBLE_DURATION,
+                WARNING_POPUP_FADE_OUT);
+        warningPopupHelper.initialize();
+    }
+
+    private void updateAppVersionLabel() {
+        Platform.runLater(() -> {
+            if (lblAppVersion != null) {
+                lblAppVersion.setText(I18n.get("setting.startWithWindows.checkversion",
+                        AdminSettingsDialogController.getVersionCurrent()));
+            }
+        });
     }
 
     @FXML
@@ -573,10 +606,22 @@ public class AdminLayoutController extends BaseLayoutController {
 
     private void configureSettingsDialogStage(Stage stage) {
         stage.setResizable(false);
-        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
         stage.setMinWidth(650);
-        stage.setMaxHeight(screen.getHeight() * 0.80);
-        stage.setMaxWidth(screen.getWidth() * 0.50);
+        stage.setOnShowing(event -> {
+            stage.setMaxWidth(Double.MAX_VALUE);
+            stage.setMaxHeight(Double.MAX_VALUE);
+        });
+        stage.setOnShown(event -> Platform.runLater(() -> {
+            Rectangle2D bounds = Screen.getScreensForRectangle(
+                    stage.getX(), stage.getY(), stage.getWidth(), stage.getHeight()
+            ).get(0).getVisualBounds();
+            double maxH = bounds.getHeight() * 0.80;
+            double maxW = bounds.getWidth() * 0.50;
+            if (stage.getWidth() > maxW) stage.setWidth(maxW);
+            if (stage.getHeight() > maxH) stage.setHeight(maxH);
+            stage.setMaxWidth(maxW);
+            stage.setMaxHeight(maxH);
+        }));
         stage.showAndWait();
     }
 
@@ -896,9 +941,10 @@ public class AdminLayoutController extends BaseLayoutController {
         }
 
         boolean autoDelete = adminSettingsService.getAutoDelete();
+        boolean deleteEmptyDateFolders = autoDelete && adminSettingsService.getDeleteEmptyDateFolders();
 
         boolean queued = deviceSyncQueue.add(new SyncContext(folderManagerService.getSyncDir(),
-                autoDelete, deviceName, hardwareId, cameraId));
+                autoDelete, deleteEmptyDateFolders, deviceName, hardwareId, cameraId));
         // Only show success notice if device wasn't already in queue
         if (queued) {
             showNoticeSuccess(I18n.get(I18N_DEVICE_SYNC_QUEUED, deviceName));
@@ -982,17 +1028,16 @@ public class AdminLayoutController extends BaseLayoutController {
                     lblDataStorageTitle, lblDataStoragePercent, lblDataStorageUsage, syncDir);
             int backupState = updateStorageBar(STATUS_BACKUP_DRIVE, pbBackupStorage,
                     lblBackupStorageTitle, lblBackupStoragePercent, lblBackupStorageUsage, backupDir);
-
-            String storageWarning = resolveStorageWarningKey(syncState, backupState);
-            if (storageWarning != null) {
+            for (String storageWarning : resolveStorageWarningKeys(syncState, backupState)) {
                 String msg = I18n.get(storageWarning);
                 warningText = warningText.isEmpty() ? msg : warningText + " | " + msg;
             }
 
-            lblCombinedWarning.setText(warningText);
-            lblCombinedWarning.setStyle(warningText.isEmpty() ? "" : STYLE_CLASS_WARNING);
-
             boolean hasWarning = !warningText.isEmpty();
+            if (warningPopupHelper != null) {
+                warningPopupHelper.setText(warningText);
+            }
+
             warningStrip.getStyleClass().removeAll("status-warning-strip-active");
             if (hasWarning) {
                 warningStrip.getStyleClass().add("status-warning-strip-active");
@@ -1012,27 +1057,29 @@ public class AdminLayoutController extends BaseLayoutController {
         return syncRoot.toString().equalsIgnoreCase(backupRoot.toString());
     }
 
-    private String resolveStorageWarningKey(int syncState, int backupState) {
+    private List<String> resolveStorageWarningKeys(int syncState, int backupState) {
+        List<String> warnings = new ArrayList<>();
+
         if (syncState == STORAGE_OK && backupState == STORAGE_OK) {
-            return null;
-        }
-        if (syncState == STORAGE_UNAVAILABLE && backupState == STORAGE_UNAVAILABLE) {
-            return "status.storage.both.unavailable";
-        }
-        if (syncState == STORAGE_UNAVAILABLE) {
-            return "status.storage.syncDrive.unavailable";
-        }
-        if (backupState == STORAGE_UNAVAILABLE) {
-            return "status.storage.backupDrive.unavailable";
+            return warnings;
         }
 
+        if (syncState == STORAGE_UNAVAILABLE && backupState == STORAGE_UNAVAILABLE) {
+            warnings.add("status.storage.both.unavailable");
+        } else if (syncState == STORAGE_UNAVAILABLE) {
+            warnings.add("status.storage.syncDrive.unavailable");
+        } else if (backupState == STORAGE_UNAVAILABLE) {
+            warnings.add("status.storage.backupDrive.unavailable");
+        }
         if (syncState == STORAGE_CRITICAL && backupState == STORAGE_CRITICAL) {
-            return "status.storage.both.critical";
+            warnings.add("status.storage.both.critical");
+        } else if (syncState == STORAGE_CRITICAL) {
+            warnings.add("status.storage.syncDrive.critical");
+        } else if (backupState == STORAGE_CRITICAL) {
+            warnings.add("status.storage.backupDrive.critical");
         }
-        if (syncState == STORAGE_CRITICAL) {
-            return "status.storage.syncDrive.critical";
-        }
-        return "status.storage.backupDrive.critical";
+
+        return warnings;
     }
 
     private int updateStorageBar(String labelKey, ProgressBar pb,
@@ -1196,3 +1243,4 @@ public class AdminLayoutController extends BaseLayoutController {
     }
 
 }
+

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.FileView;
+import com.app.common.events.FileBookmarkToggledEvent;
 import com.app.common.events.LanguageChangedEvent;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.helpers.CssLoader;
@@ -198,6 +199,13 @@ public class MediaViewerService {
                     activeController.refreshLocalizedText();
                 }
             });
+        }
+    }
+
+    @EventListener
+    public void onBookmarkChanged(FileBookmarkToggledEvent event) {
+        if (controller != null) {
+            controller.onBookmarkChanged(event);
         }
     }
 }

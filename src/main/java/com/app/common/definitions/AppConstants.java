@@ -49,6 +49,8 @@ public final class AppConstants {
     // any file/folder picker.
     public static final String KEY_USER_LAST_OPEN_PATH = "picker.lastOpenPath";
     public static final String KEY_IS_AUTO_DELETE_AFTER_SYNC = "dataSync.isAutoDeleteAfterSync";
+    public static final String KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC =
+            "dataSync.isDeleteEmptyDateFolderAfterSync";
     public static final String KEY_IS_START_WITH_WINDOWS = "appConfig.isStartWithWindows";
     public static final String KEY_LANGUAGE = "appConfig.language";
     public static final String KEY_THEME = "appConfig.theme";
@@ -88,13 +90,17 @@ public final class AppConstants {
     public static final int MAX_RETRY = 3;
     public static final String TMP_EXTENSION = ".tmp";
     public static final String BODYCAM_ENCRYPTED_FILENAME_MARKER = "_enc";
+    public static final String REMOTE_MD5_EXTENSION = ".md5";
+    public static final String REMOTE_DATE_FOLDER_FORMAT = "uuuu-MM-dd";
 
     // ────────────── File List ──────────────
     public static final String DATE_PICKER_FORMAT = "dd/MM/yyyy";
     public static final String DATE_DISPLAY_FORMAT = "dd/MM/yyyy";
 
     // ────────────── Update ──────────────
-    public static final String GITHUB_API = "https://api.github.com/repos/alicia-vanca/bdma/releases";
+    public static final String GITHUB_API = "https://api.github.com/repos/DucVietTech/bdma/releases";
+    public static final String R2_DOWNLOAD_BASE_URL = "https://pub-961ecb30a581433e95b5e5f6f625da18.r2.dev/BDMA.exe";
+    public static final String DOWNLOAD_HOMEPAGE_URL = "https://download.dvid.com.vn/bdma";
     public static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     // ────────────── Default password ──────────────

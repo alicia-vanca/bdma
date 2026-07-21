@@ -64,6 +64,15 @@
                 <Label fx:id="lblDetailDimensionKey" styleClass="media-viewer-detail-label"/>
                 <Label fx:id="detailDimension" styleClass="media-viewer-detail-value"/>
             </VBox>
+            <Separator/>
+            <VBox spacing="6" styleClass="media-viewer-detail-actions">
+                <HBox spacing="8" alignment="CENTER_LEFT" minHeight="24">
+                    <Label fx:id="detailBookmark" style="-fx-cursor: hand;"/>
+                    <Label fx:id="detailBookmarkStatus" styleClass="media-viewer-detail-value" minHeight="24"/>
+                </HBox>
+                <Label fx:id="detailBookmarkAt" styleClass="media-viewer-detail-bookmark-at" minHeight="24" wrapText="true"/>
+                <Button fx:id="btnExport" styleClass="btn-primary" onAction="#onExport"/>
+            </VBox>
         </VBox>
         <!-- /detailPane -->
         <!-- Location tab content -->
