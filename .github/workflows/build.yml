@@ -103,10 +103,10 @@ jobs:
           $manifest = $levelRegex.Replace($manifest, '$1$2requireAdministrator$2', 1)
           [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
 
-          [System.IO.File]::Copy($launcherPath, $patchedLauncherPath, $true)
-          & $mtPath -manifest $manifestPath "-outputresource:$patchedLauncherPath;#1"
+          $launcher = Get-Item -LiteralPath $launcherPath
+          $launcher.IsReadOnly = $false
+          & $mtPath -manifest $manifestPath "-outputresource:$launcherPath;#1"
           if ($LASTEXITCODE -ne 0) { throw "Failed to embed administrator manifest into BDMA.exe" }
-          [System.IO.File]::Replace($patchedLauncherPath, $launcherPath, $null)
           Remove-Item -LiteralPath $manifestPath -Force
       - name: Install NSIS
         run: |
