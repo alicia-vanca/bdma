@@ -263,33 +263,26 @@ FunctionEnd
 ; ── Stop BDMA-owned ADB processes left behind by forced app termination ─────
 Function KillBundledAdb
   ; Kill only adb.exe processes owned by BDMA.
-  ; Covers:
-  ;   - $INSTDIR\...\adb.exe
-  ;   - ${APP_DATA_DIR}\...\adb.exe
-  ; Avoids killing Android Studio / platform-tools ADB.
+  ; Covers the current installed runtime and the legacy AppData extraction path.
+  ; Exact executable matching avoids killing Android Studio / platform-tools ADB.
 
   StrCpy $0 "$TEMP\bdma-kill-adb.ps1"
 
   FileOpen $1 $0 w
 
   FileWrite $1 "param([string]$$Mode)$\r$\n"
-  FileWrite $1 "$$roots = @()$\r$\n"
   FileWrite $1 "$$installDir = '$INSTDIR'$\r$\n"
-  FileWrite $1 "$$appDataRoot = '${APP_DATA_DIR}'$\r$\n"
-
-  FileWrite $1 "if (Test-Path -LiteralPath $$installDir) {$\r$\n"
-  FileWrite $1 "  $$roots += (Resolve-Path -LiteralPath $$installDir).Path.TrimEnd('\') + '\'$\r$\n"
-  FileWrite $1 "}$\r$\n"
-
-  FileWrite $1 "if (Test-Path -LiteralPath $$appDataRoot) {$\r$\n"
-  FileWrite $1 "  $$roots += (Resolve-Path -LiteralPath $$appDataRoot).Path.TrimEnd('\') + '\'$\r$\n"
-  FileWrite $1 "}$\r$\n"
+  FileWrite $1 "$$candidatePaths = @($\r$\n"
+  FileWrite $1 "  [IO.Path]::GetFullPath((Join-Path $$installDir 'app\adb\adb.exe')),$\r$\n"
+  FileWrite $1 "  [IO.Path]::GetFullPath((Join-Path $$env:LOCALAPPDATA 'bdma\tmp\adb\adb.exe'))$\r$\n"
+  FileWrite $1 ")$\r$\n"
 
   FileWrite $1 "function Get-BdmaAdbProcesses {$\r$\n"
-  FileWrite $1 "  if ($$roots.Count -eq 0) { return @() }$\r$\n"
   FileWrite $1 "  @(Get-Process adb -ErrorAction SilentlyContinue | Where-Object {$\r$\n"
   FileWrite $1 "    $$processPath = $$_.Path$\r$\n"
-  FileWrite $1 "    $$processPath -and ($$roots | Where-Object { $$processPath.StartsWith($$_, [System.StringComparison]::OrdinalIgnoreCase) })$\r$\n"
+  FileWrite $1 "    $$processPath -and ($$candidatePaths | Where-Object {$\r$\n"
+  FileWrite $1 "      [string]::Equals([IO.Path]::GetFullPath($$processPath), $$_, [System.StringComparison]::OrdinalIgnoreCase)$\r$\n"
+  FileWrite $1 "    })$\r$\n"
   FileWrite $1 "  })$\r$\n"
   FileWrite $1 "}$\r$\n"
 
@@ -335,12 +328,14 @@ Function KillBundledAdb
   Pop $1 ; output
 
   Sleep 1500
+  Delete "$TEMP\bdma-kill-adb.ps1"
 FunctionEnd
 
 Function PrepareForSetupChanges
   Call EnsureAppClosed
   ; ADB can outlive BDMA, so stop BDMA-owned ADB even when BDMA was already closed.
   Call KillBundledAdb
+  RMDir /r "${APP_DATA_DIR}\tmp\adb"
 FunctionEnd
 
 ; ── Main section ────────────────────────────────────────────────

@@ -20,7 +20,7 @@ import ch.qos.logback.core.LayoutBase;
  */
 public class LogglyJsonLayout extends LayoutBase<ILoggingEvent> {
 
-    private static final String APP_NAME = "bdma";
+    private static final String APP_NAME = "BDMA";
     private static final ZoneId APP_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final DateTimeFormatter TIMESTAMP_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 

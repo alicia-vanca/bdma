@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -19,8 +20,11 @@ public class WindowsCommandService {
 
     private static final Logger log = LoggerFactory.getLogger(WindowsCommandService.class);
     private static final int DEFAULT_TIMEOUT_SECONDS = 10;
+    private static final int DEFAULT_COMMAND_TIMEOUT_SECONDS = 60;
+    private static final int ELEVATED_COMMAND_TIMEOUT_SECONDS = 360;
     private static final int INSTALLER_LAUNCH_ATTEMPTS = 3;
     private static final int INSTALLER_LAUNCH_RETRY_DELAY_SECONDS = 2;
+    private static final int PROCESS_TIMEOUT_EXIT_CODE = 124;
     private static final String ATTRIB_CMD = "attrib";
     private static final String DEFAULT_WINDOWS_ROOT = "C:\\Windows";
     private static final String POWERSHELL_RELATIVE_PATH = "WindowsPowerShell\\v1.0\\powershell.exe";
@@ -103,15 +107,97 @@ public class WindowsCommandService {
     }
 
     public CommandResult runCmdWithOutput(File workingDir, String... args) throws IOException, InterruptedException {
+        return runCmdWithTimeout(DEFAULT_COMMAND_TIMEOUT_SECONDS, workingDir, args);
+    }
+
+    private CommandResult runCmdWithTimeout(int timeoutSeconds, File workingDir, String... args)
+            throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(args)
                 .directory(workingDir)
                 .redirectErrorStream(true);
         Process process = pb.start();
         CompletableFuture<String> outputFuture = readOutputAsync(process);
 
-        int code = process.waitFor();
-        String output = waitForOutput(outputFuture);
-        return new CommandResult(code, output);
+        try {
+            boolean finished = timeoutSeconds <= 0
+                    ? process.waitFor(Long.MAX_VALUE, TimeUnit.NANOSECONDS)
+                    : process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            if (!finished) {
+                terminateProcessTree(process);
+                return new CommandResult(PROCESS_TIMEOUT_EXIT_CODE,
+                        "Process timed out after " + timeoutSeconds + " seconds");
+            }
+
+            return new CommandResult(process.exitValue(), waitForOutput(outputFuture));
+        } catch (InterruptedException e) {
+            terminateProcessTree(process);
+            Thread.currentThread().interrupt();
+            throw e;
+        } finally {
+            if (process.isAlive()) {
+                terminateProcessTree(process);
+            }
+        }
+    }
+
+    public CommandResult runElevatedPowerShell(String script) throws IOException, InterruptedException {
+        String encodedScript = Base64.getEncoder()
+                .encodeToString(script.getBytes(StandardCharsets.UTF_16LE));
+        String escapedPowerShell = escapePowerShellSingleQuotedValue(resolvePowerShell());
+        String escapedScript = escapePowerShellSingleQuotedValue(encodedScript);
+        String wrapper = "$encoded = '" + escapedScript + "'; "
+                + "try { "
+                + "$child = Start-Process -FilePath '" + escapedPowerShell + "' "
+                + "-ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-EncodedCommand',$encoded) "
+                + "-Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop; "
+                + "exit $child.ExitCode "
+                + "} catch { "
+                + "$exception = $_.Exception; "
+                + "$uacDenied = $false; "
+                + "while ($null -ne $exception) { "
+                + "$nativeCode = $exception.NativeErrorCode; "
+                + "$hresult = $exception.HResult; "
+                + "$message = [string]$exception.Message; "
+                + "if ($nativeCode -eq 1223 -or $hresult -eq -2147023673 "
+                + "-or $message -match '(?i)cancelled|canceled|1223|800704c7') { "
+                + "$uacDenied = $true; break "
+                + "}; "
+                + "$exception = $exception.InnerException "
+                + "}; "
+                + "if ($uacDenied) { exit 10 }; "
+                + "exit 17 "
+                + "}";
+
+        return runCmdWithTimeout(
+                ELEVATED_COMMAND_TIMEOUT_SECONDS,
+                null,
+                resolvePowerShell(), "-NoProfile", "-NonInteractive", "-Command", wrapper);
+    }
+
+    private void terminateProcessTree(Process process) {
+        if (!process.isAlive()) {
+            return;
+        }
+
+        try {
+            Process killer = new ProcessBuilder(
+                    "taskkill", "/PID", Long.toString(process.pid()), "/T", "/F")
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            if (!killer.waitFor(5, TimeUnit.SECONDS)) {
+                killer.destroyForcibly();
+            }
+        } catch (IOException e) {
+            log.debug("Failed to terminate process tree for PID {}", process.pid(), e);
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+        }
+
+        if (process.isAlive()) {
+            process.destroyForcibly();
+        }
     }
 
     public record CommandResult(int exitCode, String output) {
