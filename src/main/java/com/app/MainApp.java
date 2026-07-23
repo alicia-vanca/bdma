@@ -27,6 +27,7 @@ import org.flywaydb.core.api.exception.FlywayValidateException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
+import com.app.common.configs.AppContext;
 import com.app.common.configs.AppRuntimeInitializer;
 
 import ch.qos.logback.classic.LoggerContext;
@@ -53,6 +54,7 @@ import lombok.Getter;
 public class MainApp extends Application {
 
     private static final Logger log = LoggerFactory.getLogger(MainApp.class);
+    private static final long APPLICATION_START_NANOS = System.nanoTime();
     private static final Object SINGLE_INSTANCE_MONITOR = new Object();
 
     // S1450: assigned in acquireSingleInstanceLock() at runtime, cannot be final
@@ -84,7 +86,8 @@ public class MainApp extends Application {
 
     public static void main(String[] args) {
         LogbackConfigInitializer.initialize();
-        log.info("========== APPLICATION START REQUESTED ==========");
+        log.info("========== APPLICATION START REQUESTED (Version {}, Java {}, PID {}) ==========",
+                AppContext.getVersion(), System.getProperty("java.version"), ProcessHandle.current().pid());
 
         if (!ensureSingleInstanceOrSignal()) {
             log.warn("App is already running. Bringing existing window to front.");
@@ -104,6 +107,7 @@ public class MainApp extends Application {
         AppRuntimeInitializer.initialize();
 
         SpringApplication application = new SpringApplication(SpringBootApp.class);
+        application.setLogStartupInfo(false);
         application.setDefaultProperties(loadBundledApplicationProperties());
         try {
             springContext = application.run();
@@ -160,7 +164,6 @@ public class MainApp extends Application {
             return;
         }
 
-        log.info("App started");
         AppStartupService startupService = springContext.getBean(AppStartupService.class);
         startupService.initialize();
 
@@ -170,7 +173,9 @@ public class MainApp extends Application {
         showAdmin();
         Platform.runLater(() -> {
             if (primaryStage.isShowing()) {
-                log.info("========== APPLICATION INITIALIZATION FINISHED - UI SHOWN ==========");
+                long startupDurationMillis = (System.nanoTime() - APPLICATION_START_NANOS) / 1_000_000;
+                log.info("========== APPLICATION INITIALIZATION FINISHED - UI SHOWN (startup time: {} ms) ==========",
+                        startupDurationMillis);
             }
         });
     }
