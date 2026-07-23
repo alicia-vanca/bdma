@@ -1,4 +1,5 @@
 name: Build and Release
+run-name: ${{ github.event.head_commit.message || github.workflow }}
 
 on:
   push:
@@ -51,10 +52,13 @@ jobs:
 
       - name: Prepare package folder
         run: |
-          mkdir build\package
-          copy build\libs\app-*.jar build\package\
-          copy src\main\resources\image\logo.ico build\package\
-
+          $jarPath = Get-ChildItem -LiteralPath build\libs -Filter app-*.jar | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $jarPath) { throw 'Shadow JAR was not found' }
+          New-Item -ItemType Directory -Force -Path build\package | Out-Null
+          Copy-Item -LiteralPath $jarPath -Destination build\package
+          Copy-Item -LiteralPath src\main\resources\image\logo.ico -Destination build\package
+          Copy-Item -LiteralPath vendor\adb -Destination build\package\adb -Recurse
+          Copy-Item -LiteralPath vendor\vlc -Destination build\package\vlc -Recurse
       - name: Build app-image
         env:
           LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
@@ -76,38 +80,10 @@ jobs:
             --icon build\package\logo.ico `
             --dest build\dist `
             --module-path "$modulePath" `
-            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.media,javafx.web,java.sql,java.logging,java.net.http,jdk.httpserver" `
+            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.web,java.sql,java.logging,java.net.http,jdk.httpserver" `
             --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN -DBODYCAM_CRYPTO_PASSWORD=$env:BODYCAM_CRYPTO_PASSWORD -DPATCH_MASTER_KEY=$env:PATCH_MASTER_KEY -DTOTP_SECRET=$env:TOTP_SECRET -DAPP_UPDATE_GITHUB_TOKEN=$env:APP_UPDATE_GITHUB_TOKEN" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
-      - name: Require administrator for app launcher
-        run: |
-          $launcherPath = [System.IO.Path]::GetFullPath("build\dist\BDMA\BDMA.exe")
-          $patchedLauncherPath = Join-Path (Split-Path -Parent $launcherPath) "BDMA.patched.exe"
-          $kitsRoot = Get-ItemPropertyValue -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots" -Name KitsRoot10
-          $mtPath = Get-ChildItem -LiteralPath (Join-Path $kitsRoot "bin") -Filter mt.exe -Recurse |
-            Where-Object { $_.FullName -match '\\x64\\mt\.exe$' } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1 -ExpandProperty FullName
-          if (-not $mtPath) { throw "Windows SDK mt.exe was not found" }
-
-          $manifestPath = Join-Path $env:RUNNER_TEMP "BDMA-launcher.manifest"
-          & $mtPath "-inputresource:$launcherPath;#1" "-out:$manifestPath"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to extract BDMA.exe manifest" }
-
-          $utf8Strict = [System.Text.UTF8Encoding]::new($false, $true)
-          $manifest = [System.IO.File]::ReadAllText($manifestPath, $utf8Strict)
-          $levelPattern = '(?is)(<requestedExecutionLevel\b[^>]*\blevel\s*=\s*)(["''])asInvoker\2'
-          $levelRegex = [regex]::new($levelPattern)
-          if (-not $levelRegex.IsMatch($manifest)) { throw "BDMA.exe manifest has no asInvoker level" }
-          $manifest = $levelRegex.Replace($manifest, '$1$2requireAdministrator$2', 1)
-          [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
-
-          $launcher = Get-Item -LiteralPath $launcherPath
-          $launcher.IsReadOnly = $false
-          & $mtPath -manifest $manifestPath "-outputresource:$launcherPath;#1"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to embed administrator manifest into BDMA.exe" }
-          Remove-Item -LiteralPath $manifestPath -Force
       - name: Install NSIS
         run: |
           $nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"

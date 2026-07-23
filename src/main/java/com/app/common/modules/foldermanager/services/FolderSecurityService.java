@@ -9,6 +9,11 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,8 +21,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.app.common.definitions.AppConstants;
+import com.app.common.helpers.AlertHelper;
+import com.app.common.modules.i18n.I18n;
 import com.app.common.services.WindowsCommandService;
 import com.app.common.services.WindowsCommandService.CommandResult;
+
+import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
+
+import javafx.stage.WindowEvent;
 
 /**
  * Static utility service for protecting paths inside bdma folders.
@@ -33,13 +46,22 @@ public class FolderSecurityService {
 
     private static final String CMD_ATTRIB = "attrib";
     private static final String CMD_ICACLS = "icacls";
-    private static final String CMD_TAKEOWN = "takeown";
     private static final String PROPERTY_USER_NAME = "user.name";
+    private static final String WINDOWS_AUTHENTICATED_USERS_SID = "*S-1-5-11";
     private static final String WINDOWS_EVERYONE_SID = "*S-1-1-0";
     private static final String ICACLS_DENY = "/deny";
     private static final String ICACLS_GRANT_REPLACE = "/grant:r";
     private static final String ICACLS_REMOVE_DENY = "/remove:d";
-    private static final String ICACLS_RESET = "/reset";
+    private static final int ACL_REPAIR_CANCELLED = 10;
+    private static final int ACL_REPAIR_INVALID_PATH = 11;
+    private static final int ACL_REPAIR_OWNERSHIP_FAILED = 12;
+    private static final int ACL_REPAIR_ACL_FAILED = 13;
+    private static final int ACL_REPAIR_VERIFICATION_FAILED = 14;
+    private static final int ACL_REPAIR_INTERRUPTED = 15;
+    private static final int ACL_REPAIR_SCRIPT_FAILED = 16;
+    private static final int ACL_REPAIR_REPARSE_POINT = 18;
+    private static final int ACL_REPAIR_PROGRESS_FAILED = 19;
+    private static final int ACL_REPAIR_DIALOG_DISMISS_TIMEOUT_SECONDS = 5;
     private static final String CHECKSUM_EXT = ".sha256";
     private static final String CHECKSUM_BACKUP_EXT = ".sha256.backup";
     private static final Pattern SHA256_PATTERN = Pattern.compile("(?i)\\b[a-f0-9]{64}\\b");
@@ -121,13 +143,13 @@ public class FolderSecurityService {
 
     private static void lockSinglePathRaw(Path path) throws IOException {
         try {
-            String user = buildIcaclsTrustee();
+            grantSharedFolderAccess(path);
             hideSinglePath(path);
             runRequiredCommand(path, "Lock folder",
                     CMD_ICACLS,
                     path.toString(),
                     ICACLS_DENY,
-                    user + ":(D)");
+                    WINDOWS_AUTHENTICATED_USERS_SID + ":(D)");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Lock interrupted for: " + path, e);
@@ -164,18 +186,58 @@ public class FolderSecurityService {
 
     private static void unlockSinglePathRaw(Path path) throws IOException {
         try {
-            String user = buildIcaclsTrustee();
+            grantSharedFolderAccess(path);
             runRequiredCommand(path, "Unlock folder",
                     CMD_ICACLS,
                     path.toString(),
                     ICACLS_REMOVE_DENY,
-                    user);
+                    WINDOWS_AUTHENTICATED_USERS_SID);
+            runOptionalCommand(path, "Remove legacy user deny ACL",
+                    CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_REMOVE_DENY,
+                    buildLegacyCurrentUserTrustee());
+            runOptionalCommand(path, "Remove legacy Everyone deny ACL",
+                    CMD_ICACLS,
+                    path.toString(),
+                    ICACLS_REMOVE_DENY,
+                    WINDOWS_EVERYONE_SID);
             runOptionalCommand(path, "Remove hidden attributes",
                     CMD_ATTRIB, "-h", "-s", path.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Unlock interrupted for: " + path, e);
         }
+    }
+
+    private static void grantSharedFolderAccess(Path path) throws IOException, InterruptedException {
+        runRequiredCommand(path, "Grant shared folder access",
+                CMD_ICACLS,
+                path.toString(),
+                ICACLS_GRANT_REPLACE,
+                WINDOWS_AUTHENTICATED_USERS_SID + ":(OI)(CI)(M,WDAC)");
+    }
+
+    private static boolean isPermissionFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+
+            if (current instanceof AccessDeniedException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("access is denied")
+                        || normalized.contains("access denied")
+                        || normalized.contains("permission denied")
+                        || normalized.contains("exit 5")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**
@@ -217,7 +279,7 @@ public class FolderSecurityService {
         return name.endsWith(CHECKSUM_EXT) || name.endsWith(CHECKSUM_BACKUP_EXT);
     }
 
-    private static String buildIcaclsTrustee() {
+    private static String buildLegacyCurrentUserTrustee() {
         String user = System.getProperty(PROPERTY_USER_NAME);
         String domain = System.getenv("USERDOMAIN");
 
@@ -256,10 +318,14 @@ public class FolderSecurityService {
         try {
             Files.createDirectory(directory);
         } catch (IOException e) {
-            if (!repairEnabled || directory.getParent() == null) {
+            if (!repairEnabled || directory.getParent() == null || !isPermissionFailure(e)) {
                 throw e;
             }
-            repairAclFromNearestAncestor(directory.getParent(), directory.getParent(), e);
+            repairAclFromNearestAncestor(
+                    directory.getParent(),
+                    directory,
+                    findDeepestBdmaFolder(directory),
+                    e);
             Files.createDirectory(directory);
         }
     }
@@ -272,7 +338,8 @@ public class FolderSecurityService {
 
         repairAclFromNearestAncestor(
                 storageRoot,
-                storageRoot,
+                bdmaFolder,
+                bdmaFolder,
                 new AccessDeniedException(storageRoot.toString()));
         if (!Files.isReadable(storageRoot)) {
             throw new AccessDeniedException(storageRoot.toString());
@@ -283,14 +350,19 @@ public class FolderSecurityService {
         try {
             operation.run();
         } catch (IOException firstFailure) {
-            if (findDeepestBdmaFolder(path) == null) {
+            if (!isPermissionFailure(firstFailure)) {
+                throw firstFailure;
+            }
+            Path protectedFolder = findDeepestBdmaFolder(path);
+            if (protectedFolder == null) {
                 throw firstFailure;
             }
             Path parent = path.getParent();
             if (parent == null) {
                 throw firstFailure;
             }
-            repairAclFromNearestAncestor(parent, path, firstFailure);
+            Path repairStart = path.equals(protectedFolder) || Files.exists(path) ? path : parent;
+            repairAclFromNearestAncestor(repairStart, path, protectedFolder, firstFailure);
             operation.run();
         }
     }
@@ -298,79 +370,297 @@ public class FolderSecurityService {
     private static void repairAclFromNearestAncestor(
             Path repairStart,
             Path repairTarget,
+            Path protectedFolder,
             IOException firstFailure) throws IOException {
-        Path root = repairTarget.getRoot();
-        if (root == null || repairStart == null) {
+        if (repairStart == null || protectedFolder == null) {
             throw firstFailure;
         }
 
-        Path current = repairStart;
-        IOException lastFailure = firstFailure;
-        Path repairedAncestor = null;
-        while (!current.equals(root)) {
-            try {
-                repairSinglePathAcl(current);
-                repairedAncestor = current;
-                break;
-            } catch (IOException repairFailure) {
-                lastFailure = repairFailure;
-                current = current.getParent();
-            }
+        Path repairPath = repairStart.toAbsolutePath().normalize();
+        Path protectedPath = protectedFolder.toAbsolutePath().normalize();
+        Path protectedParent = protectedPath.getParent();
+        boolean parentRepair = repairPath.equals(protectedParent)
+                && repairTarget.toAbsolutePath().normalize().equals(protectedPath);
+        boolean validRepairPath = repairPath.equals(protectedPath)
+                || repairPath.startsWith(protectedPath)
+                || parentRepair;
+        if (!validRepairPath) {
+            throw new IOException("Refusing to repair unrelated path: " + repairTarget, firstFailure);
         }
 
-        if (repairedAncestor == null) {
+        RepairResult result = runAclRepairWithPrompt(repairPath, !parentRepair);
+
+        if (result.exitCode() != 0) {
+            log.warn("[acl-repair] Failed for {} with exit code {}: {}",
+                    repairPath, result.exitCode(), result.output());
             throw new IOException(
-                    "Unable to repair folder permissions before filesystem root: " + repairTarget,
-                    lastFailure);
-        }
-
-        Path descendant = repairedAncestor;
-        for (Path segment : repairedAncestor.relativize(repairTarget)) {
-            descendant = descendant.resolve(segment);
-            repairSinglePathAcl(descendant);
+                    "Elevated ACL repair failed for " + repairPath + " (exit " + result.exitCode() + ")",
+                    firstFailure);
         }
     }
 
-    private static void repairSinglePathAcl(Path path) throws IOException {
-        Path root = path.getRoot();
-        if (path.equals(root)) {
-            throw new IOException("Refusing to repair filesystem root ACL: " + path);
+    private static RepairResult runAclRepairWithPrompt(Path repairPath, boolean recursiveRepair) throws IOException {
+        boolean javaFxAvailable = isJavaFxRuntimeAvailable();
+        while (true) {
+            if (javaFxAvailable) {
+                showAclRepairRequiredNotice(repairPath);
+            }
+
+            RepairResult result = javaFxAvailable
+                    ? runElevatedRepairWithProgress(repairPath, recursiveRepair)
+                    : executeAclRepair(repairPath, recursiveRepair);
+            if (result.exitCode() != ACL_REPAIR_CANCELLED) {
+                return result;
+            }
+
+            log.info("[acl-repair] UAC denied for {}; prompting again", repairPath);
         }
-        if (Files.notExists(path)) {
-            throw new IOException("Cannot repair missing path: " + path);
+    }
+
+    private static boolean isJavaFxRuntimeAvailable() {
+        try {
+            Platform.runLater(() -> {
+            });
+            return true;
+        } catch (IllegalStateException e) {
+            return false;
+        }
+    }
+
+    private static void showAclRepairRequiredNotice(Path repairPath) throws IOException {
+        if (Platform.isFxApplicationThread()) {
+            showAclRepairRequiredNoticeNow(repairPath);
+            return;
         }
 
+        CompletableFuture<Void> notice = new CompletableFuture<>();
         try {
-            String user = buildIcaclsTrustee();
-            CommandResult takeownResult = runCommand(CMD_TAKEOWN, "/F", path.toString());
-            if (takeownResult.exitCode() != 0 && log.isDebugEnabled()) {
-                log.debug("[acl-repair] takeown failed for {}: {}", path, takeownResult.output());
-            }
-            runRequiredCommand(path, "Reset folder ACL",
-                    CMD_ICACLS,
-                    path.toString(),
-                    ICACLS_RESET);
-            runRequiredCommand(path, "Grant folder control",
-                    CMD_ICACLS,
-                    path.toString(),
-                    ICACLS_GRANT_REPLACE,
-                    user + ":(OI)(CI)F");
-            runRequiredCommand(path, "Remove deny ACL",
-                    CMD_ICACLS,
-                    path.toString(),
-                    ICACLS_REMOVE_DENY,
-                    user);
-            runRequiredCommand(path, "Remove Everyone deny ACL",
-                    CMD_ICACLS,
-                    path.toString(),
-                    ICACLS_REMOVE_DENY,
-                    WINDOWS_EVERYONE_SID);
-            runOptionalCommand(path, "Remove hidden attributes",
-                    CMD_ATTRIB, "-h", "-s", path.toString());
+            Platform.runLater(() -> {
+                try {
+                    showAclRepairRequiredNoticeNow(repairPath);
+                    notice.complete(null);
+                } catch (RuntimeException e) {
+                    notice.completeExceptionally(e);
+                }
+            });
+            notice.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("ACL repair interrupted for: " + path, e);
+            throw new IOException("ACL repair notice interrupted", e);
+        } catch (ExecutionException e) {
+            throw new IOException("Unable to show ACL repair notice", e.getCause());
         }
+    }
+
+    private static void showAclRepairRequiredNoticeNow(Path repairPath) {
+        Alert alert = AlertHelper.createInformation(
+                I18n.get("storage.permission.repair.title"),
+                I18n.get("storage.permission.repair.header"),
+                I18n.get("storage.permission.repair.content"));
+
+        alert.setOnShowing(event -> {
+            var scene = alert.getDialogPane().getScene();
+            if (scene != null && scene.getWindow() != null) {
+                scene.getWindow().addEventFilter(
+                        WindowEvent.WINDOW_CLOSE_REQUEST, closeEvent -> closeEvent.consume());
+            }
+        });
+        alert.showAndWait();
+    }
+
+    private static RepairResult runElevatedRepairWithProgress(Path repairPath, boolean recursiveRepair)
+            throws IOException {
+        if (Platform.isFxApplicationThread()) {
+            Alert progress = createAclRepairProgressAlert();
+            CompletableFuture<RepairResult> repair = CompletableFuture.supplyAsync(
+                    () -> executeAclRepair(repairPath, recursiveRepair));
+            repair.whenComplete((result, error) -> dismissAclRepairProgress(progress));
+            progress.showAndWait();
+            return repair.join();
+        }
+
+        CompletableFuture<Alert> progressFuture = new CompletableFuture<>();
+        AtomicBoolean progressAbandoned = new AtomicBoolean();
+        Platform.runLater(() -> {
+            if (progressAbandoned.get()) {
+                return;
+            }
+            try {
+                Alert progress = createAclRepairProgressAlert();
+                progress.show();
+                if (!progressFuture.complete(progress)) {
+                    dismissAclRepairProgress(progress);
+                }
+            } catch (Throwable e) {
+                progressFuture.completeExceptionally(e);
+            }
+        });
+
+        Alert progress;
+        try {
+            progress = progressFuture.get();
+        } catch (InterruptedException e) {
+            progressAbandoned.set(true);
+            progressFuture.thenAccept(FolderSecurityService::dismissAclRepairProgress);
+            Thread.currentThread().interrupt();
+            throw new IOException("ACL repair progress interrupted", e);
+        } catch (ExecutionException e) {
+            throw new IOException("Unable to show ACL repair progress", e.getCause());
+        }
+
+        RepairResult result;
+        boolean progressDismissed;
+        try {
+            result = executeAclRepair(repairPath, recursiveRepair);
+        } finally {
+            progressDismissed = dismissAclRepairProgress(progress);
+        }
+        if (!progressDismissed) {
+            return new RepairResult(ACL_REPAIR_PROGRESS_FAILED, "ACL repair progress dialog did not close");
+        }
+        return result;
+    }
+
+    private static Alert createAclRepairProgressAlert() {
+        Alert progress = AlertHelper.createInformation(
+                I18n.get("storage.permission.repair.progress.title"),
+                I18n.get("storage.permission.repair.progress.header"),
+                I18n.get("storage.permission.repair.progress.content"));
+        var progressButton = progress.getDialogPane().lookupButton(ButtonType.OK);
+        progressButton.setVisible(false);
+        progressButton.setManaged(false);
+        return progress;
+    }
+
+    private static boolean dismissAclRepairProgress(Alert progress) {
+        if (Platform.isFxApplicationThread()) {
+            return closeAclRepairProgress(progress);
+        }
+
+        CompletableFuture<Boolean> dismissed = new CompletableFuture<>();
+        try {
+            Platform.runLater(() -> dismissed.complete(closeAclRepairProgress(progress)));
+            return dismissed.get(ACL_REPAIR_DIALOG_DISMISS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[acl-repair] Progress dismissal interrupted");
+        } catch (ExecutionException | TimeoutException | IllegalStateException e) {
+            log.warn("[acl-repair] Could not dismiss progress dialog: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    private static boolean closeAclRepairProgress(Alert progress) {
+        try {
+            progress.setResult(ButtonType.OK);
+            progress.hide();
+        } catch (RuntimeException e) {
+            log.warn("[acl-repair] Alert hide failed: {}", e.getMessage());
+        }
+
+        if (progress.isShowing()
+                && progress.getDialogPane().getScene() != null
+                && progress.getDialogPane().getScene().getWindow() != null) {
+            progress.getDialogPane().getScene().getWindow().hide();
+        }
+        return !progress.isShowing();
+    }
+
+    private static RepairResult executeAclRepair(Path repairPath, boolean recursiveRepair) {
+        log.info("[acl-repair] Starting elevated repair for {}", repairPath);
+        try {
+            CommandResult result = WINDOWS_COMMAND_SERVICE.runElevatedPowerShell(
+                    buildAclRepairScript(repairPath, recursiveRepair));
+            if (result.exitCode() == 0) {
+                log.info("[acl-repair] Elevated repair succeeded for {}", repairPath);
+            } else if (result.exitCode() == ACL_REPAIR_CANCELLED) {
+                log.info("[acl-repair] UAC denied for {}", repairPath);
+            } else {
+                log.warn("[acl-repair] Elevated repair failed for {} with exit code {}: {}",
+                        repairPath, result.exitCode(), result.output());
+            }
+            return new RepairResult(result.exitCode(), result.output());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[acl-repair] Elevated repair interrupted for {}", repairPath);
+            return new RepairResult(ACL_REPAIR_INTERRUPTED, "ACL repair interrupted");
+        } catch (IOException e) {
+            log.warn("[acl-repair] Could not start elevated repair for {}: {}", repairPath, e.getMessage());
+            return new RepairResult(ACL_REPAIR_ACL_FAILED, e.getMessage());
+        }
+    }
+
+    private static String buildAclRepairScript(Path repairPath, boolean recursiveRepair) {
+        String target = repairPath.toString().replace("'", "''");
+        String takeownScope = recursiveRepair ? " /R /D Y" : "";
+        String icaclsScope = recursiveRepair ? " '/T' '/C'" : "";
+        String attribScope = recursiveRepair ? " '/S' '/D'" : "";
+        String sharedGrant = recursiveRepair ? "*S-1-5-11:(OI)(CI)(M,WDAC)" : "*S-1-5-11:(M,WDAC)";
+        return "$ErrorActionPreference = 'Stop'; "
+                + "$watchdog = Start-Job -ScriptBlock { "
+                + "param($processId); "
+                + "Start-Sleep -Seconds 290; "
+                + "& taskkill.exe '/PID' $processId '/T' '/F' | Out-Null "
+                + "} -ArgumentList $PID; "
+                + "try { "
+                + "$target = '" + target + "'; "
+                + "if (-not (Test-Path -LiteralPath $target -PathType Container)) { exit "
+                + ACL_REPAIR_INVALID_PATH + " }; "
+                + "$cursor = $target; "
+                + "while ($cursor) { "
+                + "$cursorItem = Get-Item -LiteralPath $cursor -Force; "
+                + "if (($cursorItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { exit "
+                + ACL_REPAIR_REPARSE_POINT + " }; "
+                + "$parentItem = $cursorItem.Parent; "
+                + "if ($null -eq $parentItem) { break }; "
+                + "$parent = $parentItem.FullName; "
+                + "if ([string]::IsNullOrEmpty($parent) -or $parent -eq $cursor) { break }; "
+                + "$cursor = $parent; "
+                + "}; "
+                + (recursiveRepair
+                        ? "if (Get-ChildItem -LiteralPath $target -Force -Recurse -ErrorAction SilentlyContinue | Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 }) { exit "
+                                + ACL_REPAIR_REPARSE_POINT + " }; "
+                        : "")
+                + "& icacls.exe $target '/reset'" + icaclsScope + " | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { "
+                + "& takeown.exe /F $target" + takeownScope + " | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_OWNERSHIP_FAILED + " }; "
+                + "& icacls.exe $target '/reset'" + icaclsScope + " | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_ACL_FAILED + " } "
+                + "}; "
+                + "& icacls.exe $target '/grant:r' '" + sharedGrant + "'" + icaclsScope + " | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_ACL_FAILED + " }; "
+                + "& icacls.exe $target '/remove:d' '*S-1-5-11'" + icaclsScope + " | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_ACL_FAILED + " }; "
+                + "& icacls.exe $target '/remove:d' '*S-1-1-0'" + icaclsScope + " | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_ACL_FAILED + " }; "
+                + "& attrib.exe '-h' '-s' $target" + attribScope + " | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_ACL_FAILED + " }; "
+                + "try { "
+                + "$acl = Get-Acl -LiteralPath $target; "
+                + "$hasAclControl = $false; "
+                + "foreach ($rule in $acl.Access) { "
+                + "try { $sid = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { continue }; "
+                + "if ($sid -eq 'S-1-5-11' -and (($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::ChangePermissions) -ne 0)) { $hasAclControl = $true; break } "
+                + "}; "
+                + "if (-not $hasAclControl) { exit " + ACL_REPAIR_VERIFICATION_FAILED + " }; "
+                + "$hasDeny = $acl.Access | Where-Object { "
+                + "try { $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = '' }; "
+                + "($sid -eq 'S-1-5-11' -or $sid -eq 'S-1-1-0') -and $_.AccessControlType -eq 'Deny' "
+                + "}; "
+                + "if ($hasDeny) { exit " + ACL_REPAIR_VERIFICATION_FAILED + " } "
+                + "} catch { exit " + ACL_REPAIR_VERIFICATION_FAILED + " }; "
+                + "exit 0; "
+                + "} catch { "
+                + "exit " + ACL_REPAIR_SCRIPT_FAILED + " "
+                + "} finally { "
+                + "Stop-Job -Job $watchdog -ErrorAction SilentlyContinue; "
+                + "Remove-Job -Job $watchdog -Force -ErrorAction SilentlyContinue "
+                + "}";
+    }
+
+
+    private record RepairResult(int exitCode, String output) {
     }
 
     /**

@@ -62,7 +62,6 @@ public final class AppRuntimeInitializer {
     private static void ensureBaseDirectories() {
         ensureDir(AppDataPaths.appDir());
         ensureDir(AppDataPaths.appTmpDir());
-        ensureDir(AppDataPaths.adbTmpDir());
         ensureDir(AppDataPaths.sqliteTmpDir());
     }
 

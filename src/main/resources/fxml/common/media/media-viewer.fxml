@@ -11,7 +11,6 @@
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
-<?import javafx.scene.media.MediaView?>
 <?import javafx.scene.layout.Pane?>
 <?import javafx.scene.web.WebView?>
 <HBox xmlns:fx="http://javafx.com/fxml/1"
@@ -116,7 +115,7 @@
           prefWidth="5"
           minWidth="5"
           maxWidth="5"/>
-    <VBox HBox.hgrow="ALWAYS">
+    <VBox HBox.hgrow="ALWAYS" minWidth="0" minHeight="0">
         <HBox styleClass="media-viewer-toolbar" alignment="CENTER_LEFT" spacing="8">
             <Button fx:id="btnPrev" text="◀" onAction="#onPrev" styleClass="icon-btn-control"/>
             <Button fx:id="btnNext" text="▶" onAction="#onNext" styleClass="icon-btn-control"/>
@@ -129,7 +128,7 @@
             <Region HBox.hgrow="ALWAYS"/>
             <Label fx:id="lblCounter" styleClass="media-viewer-counter"/>
         </HBox>
-        <StackPane VBox.vgrow="ALWAYS" styleClass="media-viewer-content">
+        <StackPane VBox.vgrow="ALWAYS" minWidth="0" minHeight="0" styleClass="media-viewer-content">
             <ScrollPane fx:id="scrollPane" pannable="true"
                         styleClass="media-viewer-scroll" visible="false" managed="false">
                 <StackPane fx:id="imageContainer">
@@ -139,8 +138,9 @@
             <VBox fx:id="videoPane" focusTraversable="true" styleClass="media-viewer-content"
                   minWidth="0" minHeight="0" visible="false" managed="false">
                 <StackPane fx:id="videoContentPane" minWidth="0" minHeight="0" VBox.vgrow="ALWAYS">
-                    <Pane fx:id="mediaViewWrapper" maxWidth="Infinity" maxHeight="Infinity">
-                        <MediaView fx:id="mediaView"/>
+                    <Pane fx:id="mediaViewWrapper" minWidth="0" minHeight="0"
+                          maxWidth="Infinity" maxHeight="Infinity">
+                        <ImageView fx:id="videoImageView" preserveRatio="true" smooth="true"/>
                     </Pane>
                     <Label fx:id="lblAudioPlaceholder" text="🎵"
                            visible="false" managed="false" StackPane.alignment="CENTER"/>

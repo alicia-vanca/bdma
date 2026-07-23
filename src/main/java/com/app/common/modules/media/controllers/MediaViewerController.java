@@ -56,9 +56,6 @@ import javafx.scene.image.ImageView;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.media.Media;
-import javafx.scene.media.MediaPlayer;
-import javafx.scene.media.MediaView;
 import javafx.scene.transform.Rotate;
 import javafx.scene.web.WebView;
 import lombok.Setter;
@@ -156,7 +153,7 @@ public class MediaViewerController {
   @FXML
   private Pane mediaViewWrapper;
   @FXML
-  private MediaView mediaView;
+  private ImageView videoImageView;
   @FXML
   private Button btnPlayPause;
   @FXML
@@ -290,7 +287,7 @@ public class MediaViewerController {
   private void initializePlaybackController() {
     playbackController = new MediaPlaybackController(
         new MediaPlaybackController.PlaybackControllerDependencies(videoPane, videoContentPane,
-            mediaViewWrapper, mediaView, btnPlayPause, btnMute, videoSlider, volumeSlider,
+            mediaViewWrapper, videoImageView, btnPlayPause, btnMute, videoSlider, volumeSlider,
             lblVideoTime, cbSpeed, lblAudioPlaceholder, detailDimension,
             mediaViewerService::isAudio, this::updateGpsForTime));
     playbackController.initialize();
@@ -425,8 +422,7 @@ public class MediaViewerController {
     executor.submit(() -> {
       try {
         Path absolutePath = resolveMediaPath(file);
-        String uri = absolutePath.toUri().toString();
-        loadVideoInternal(file, uri, absolutePath);
+        loadVideoInternal(file, absolutePath);
       } catch (Exception e) {
         log.error("Failed to load video: {}", file.syncedPath(), e);
         Platform.runLater(
@@ -435,24 +431,21 @@ public class MediaViewerController {
     });
   }
 
-  private void loadVideoInternal(FileView file, String uri, Path absolutePath) {
+  private void loadVideoInternal(FileView file, Path absolutePath) {
     Platform.runLater(() -> {
       if (isNotCurrentRequestedFile(file)) {
         log.debug("Ignoring stale video load.");
         return;
       }
       try {
-        Media media = new Media(uri);
-        MediaPlayer player = new MediaPlayer(media);
-
         loadGpsTimeline(file, absolutePath);
-        playbackController.attach(file, player,
+        playbackController.attach(file, absolutePath.toUri().toString(),
             () -> showError(I18n.get("media.viewer.error.video.playback", file.name())));
         showVideoPane();
         updateVideoStatusBar(file);
         updateVideoDetailPanel(file);
       } catch (Exception e) {
-        log.error("Failed to create MediaPlayer: {}", file.syncedPath(), e);
+        log.error("Failed to start libVLC playback: {}", file.syncedPath(), e);
         showError(I18n.get("media.viewer.error.video.play", file.name()));
       }
     });
@@ -693,6 +686,8 @@ public class MediaViewerController {
   private void showLoading() {
     scrollPane.setVisible(false);
     scrollPane.setManaged(false);
+    videoPane.setVisible(false);
+    videoPane.setManaged(false);
     lblError.setVisible(false);
     lblError.setManaged(false);
     lblLoading.setVisible(true);
@@ -717,6 +712,8 @@ public class MediaViewerController {
     lblLoading.setManaged(false);
     scrollPane.setVisible(false);
     scrollPane.setManaged(false);
+    videoPane.setVisible(false);
+    videoPane.setManaged(false);
     lblError.setText(message);
     lblError.setVisible(true);
     lblError.setManaged(true);
@@ -859,7 +856,7 @@ public class MediaViewerController {
   }
 
   public void cleanup() {
-    stopCurrentMedia();
+    playbackController.release();
     gpsMapController.cleanup();
     executor.shutdownNow();
   }

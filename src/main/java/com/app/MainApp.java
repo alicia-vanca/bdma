@@ -84,6 +84,7 @@ public class MainApp extends Application {
 
     public static void main(String[] args) {
         LogbackConfigInitializer.initialize();
+        log.info("========== APPLICATION START REQUESTED ==========");
 
         if (!ensureSingleInstanceOrSignal()) {
             log.warn("App is already running. Bringing existing window to front.");
@@ -167,6 +168,11 @@ public class MainApp extends Application {
         DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
         dataSyncRunner.startDeviceTracker();
         showAdmin();
+        Platform.runLater(() -> {
+            if (primaryStage.isShowing()) {
+                log.info("========== APPLICATION INITIALIZATION FINISHED - UI SHOWN ==========");
+            }
+        });
     }
 
     /**
