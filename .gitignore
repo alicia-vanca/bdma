@@ -1,9 +1,11 @@
 .gradle
 build/
+/.local/
 javafx-runtime/
 *.class
 *.jar
 *.exe
+!vendor/adb/adb.exe
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/

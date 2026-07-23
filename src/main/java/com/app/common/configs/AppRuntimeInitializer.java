@@ -97,7 +97,6 @@ public final class AppRuntimeInitializer {
 
     private static void initializeAppContext() {
         resolveAppIdentity();
-        log.info("App started - version: {}", AppContext.getVersion());
     }
 
     // Resolves and stores device ID, device name, and version early for logging
