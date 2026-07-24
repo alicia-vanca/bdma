@@ -46,6 +46,8 @@
                         <VBox spacing="8" styleClass="settings-split-right" GridPane.columnIndex="1"
                               GridPane.valignment="CENTER">
                             <Button fx:id="btnInfo" maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
+                            <Button fx:id="btnDefaultSettings" onAction="#onResetDefaultSettings"
+                                    maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
                         </VBox>
                     </GridPane>
                     <Separator styleClass="settings-sep"/>
@@ -66,11 +68,12 @@
                         <Label fx:id="lblDriveConflictWarning" wrapText="true" styleClass="settings-warning"
                                managed="false" visible="false"/>
                         <HBox spacing="8" alignment="CENTER_LEFT">
-                            <Button fx:id="btnRestore" onAction="#onRestore" styleClass="btn-secondary"/>
-                            <Label fx:id="lblStorageProgress" wrapText="true" styleClass="settings-note"
+                            <Button fx:id="btnRestore" onAction="#onRestore" minWidth="-Infinity"
+                                    styleClass="btn-secondary"/>
+                            <Label fx:id="lblStorageProgress" minWidth="0" wrapText="true" styleClass="settings-note"
                                    HBox.hgrow="ALWAYS"/>
                             <Button fx:id="btnRetryFailedRestore" onAction="#onRetryFailedRestore"
-                                    managed="false" visible="false" styleClass="btn-secondary"/>
+                                    minWidth="-Infinity" managed="false" visible="false" styleClass="btn-secondary"/>
                         </HBox>
                         <HBox fx:id="storageActionBox" managed="false" visible="false"/>
                     </VBox>
@@ -93,7 +96,14 @@
                             <CheckBox fx:id="chkAutoDelete" onAction="#onToggleAutoDelete"/>
                             <Label fx:id="lblAutoDeleteTitle" onMouseClicked="#onClickAutoDelete"/>
                         </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="8" styleClass="settings-child-row">
+                            <CheckBox fx:id="chkDeleteEmptyDateFolders"
+                                      onAction="#onToggleDeleteEmptyDateFolders"/>
+                            <Label fx:id="lblDeleteEmptyDateFoldersTitle"
+                                   onMouseClicked="#onClickDeleteEmptyDateFolders"/>
+                        </HBox>
                         <Label fx:id="lblAutoDeleteDescription" wrapText="true" styleClass="settings-note"/>
+
                     </VBox>
                     <Separator styleClass="settings-sep"/>
                     <VBox spacing="4" styleClass="settings-card">
@@ -110,6 +120,7 @@
                                     styleClass="settings-action-btn"/>
                         </HBox>
                     </VBox>
+
                 </VBox>
             </content>
         </ScrollPane>

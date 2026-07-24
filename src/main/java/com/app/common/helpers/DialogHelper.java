@@ -21,6 +21,8 @@ import javafx.scene.input.KeyCode;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.WindowEvent;
+import javafx.stage.Screen;
+import javafx.geometry.Rectangle2D;
 
 @Component
 public class DialogHelper {
@@ -52,6 +54,11 @@ public class DialogHelper {
         StageUtil.applyAppIcon(stage);
         stage.setTitle(title);
         stage.setScene(scene);
+        
+        // Capping dialog height to 80% of the screen height
+        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        stage.setMaxHeight(screenBounds.getHeight() * 0.8);
+        
         stage.initOwner(MainApp.getPrimaryStage());
         stage.initModality(modality);
         stage.setOnShowing(e -> ThemeManager.apply(scene));

@@ -7,6 +7,8 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntConsumer;
 
@@ -101,7 +103,7 @@ public class AppUpdateService {
 
         String currentVersion = resolveCurrentVersion();
         try {
-            Request request = githubRequest(AppConstants.GITHUB_API, "application/vnd.github.v3+json").build();
+            Request request = buildRequest(AppConstants.GITHUB_API, "application/vnd.github.v3+json").build();
 
             try (Response response = httpClient.newCall(request).execute()) {
                 if (!response.isSuccessful() || response.body() == null) {
@@ -128,11 +130,11 @@ public class AppUpdateService {
                     return null;
                 }
 
-                String downloadUrl = "";
+                String fallbackDownloadUrl = "";
                 for (int i = 0; i < assets.length(); i++) {
                     JSONObject asset = assets.optJSONObject(i);
                     if (asset != null && asset.optString("name").endsWith(".exe")) {
-                        downloadUrl = asset.optString("url", "");
+                        fallbackDownloadUrl = asset.optString("url", "");
                         break;
                     }
                 }
@@ -141,7 +143,7 @@ public class AppUpdateService {
                 log.info("Version check — current: {}, latest: {}, hasUpdate: {}",
                         currentVersion, latestVersion, hasUpdate);
 
-                return new AppUpdateInfo(latestVersion, downloadUrl, hasUpdate);
+                return new AppUpdateInfo(latestVersion, AppConstants.R2_DOWNLOAD_BASE_URL, fallbackDownloadUrl, hasUpdate);
             }
 
         } catch (JSONException e) {
@@ -165,11 +167,44 @@ public class AppUpdateService {
      * @throws IOException when download or file write fails
      */
     public File downloadInstaller(AppUpdateInfo info, IntConsumer progressConsumer) throws IOException {
-        Request request = githubRequest(info.downloadUrl(), "application/octet-stream").build();
-
+        List<String> candidateUrls = buildDownloadCandidateUrls(info.fallbackDownloadUrl());
+        List<IOException> failures = new ArrayList<>();
         Path dest = Path.of(
                 System.getProperty("user.home"), "Downloads",
                 "BDMA-" + info.latestVersion() + ".exe");
+
+        for (int i = 0; i < candidateUrls.size(); i++) {
+            String candidateUrl = candidateUrls.get(i);
+            log.info("Downloading installer from URL {}/{}: {}", i + 1, candidateUrls.size(), candidateUrl);
+            try {
+                return downloadInstallerFromUrl(candidateUrl, dest, progressConsumer);
+            } catch (IOException e) {
+                failures.add(e);
+                log.warn("Installer download attempt {}/{} failed for URL {}. {}",
+                        i + 1, candidateUrls.size(), candidateUrl, e.getMessage());
+            }
+        }
+
+        IOException combinedFailure = new IOException("All installer download attempts failed. Last error: "
+                + failures.getLast().getMessage());
+        combinedFailure.addSuppressed(failures.getLast());
+        throw combinedFailure;
+    }
+
+    // ── Private ──────────────────────────────────────────────────────────────
+
+    List<String> buildDownloadCandidateUrls(String fallbackDownloadUrl) {
+        List<String> candidateUrls = new ArrayList<>();
+        candidateUrls.add(AppConstants.R2_DOWNLOAD_BASE_URL);
+        candidateUrls.add(AppConstants.DOWNLOAD_HOMEPAGE_URL);
+        if (fallbackDownloadUrl != null && !fallbackDownloadUrl.isBlank()) {
+            candidateUrls.add(fallbackDownloadUrl);
+        }
+        return candidateUrls;
+    }
+
+    private File downloadInstallerFromUrl(String downloadUrl, Path dest, IntConsumer progressConsumer) throws IOException {
+        Request request = buildRequest(downloadUrl, "application/octet-stream").build();
 
         int attempt = 1;
         while (true) {
@@ -177,10 +212,10 @@ public class AppUpdateService {
                 ResponseBody body = response.body();
                 if (!response.isSuccessful() || body == null) {
                     int code = response.code();
-                    IOException failure = new IOException("Download failed with HTTP " + code);
+                    IOException failure = new IOException("Download failed with HTTP " + code + " for " + downloadUrl);
                     if (isTransientHttpError(code) && attempt < 3) {
                         log.warn("Installer download attempt {}/3 failed with HTTP {}. Retrying. URL: {}",
-                                attempt, code, info.downloadUrl());
+                                attempt, code, downloadUrl);
                         waitBeforeRetry(attempt);
                         attempt++;
                         continue;
@@ -193,7 +228,7 @@ public class AppUpdateService {
                     copyWithProgress(in, out, body.contentLength(), progressConsumer);
                 }
 
-                log.info("Installer downloaded to: {}", dest);
+                log.info("Installer downloaded from: {} to: {}", downloadUrl, dest);
                 return dest.toFile();
             } catch (IOException e) {
                 if (attempt >= 3) {
@@ -201,22 +236,20 @@ public class AppUpdateService {
                 }
 
                 log.warn("Installer download attempt {}/3 failed. Retrying. URL: {}",
-                        attempt, info.downloadUrl(), e);
+                        attempt, downloadUrl, e);
                 waitBeforeRetry(attempt);
                 attempt++;
             }
         }
     }
 
-    // ── Private ──────────────────────────────────────────────────────────────
-
-    private Request.Builder githubRequest(String url, String acceptHeader) {
+    private Request.Builder buildRequest(String url, String acceptHeader) {
         Request.Builder builder = new Request.Builder()
                 .url(url)
                 .header("Accept", acceptHeader)
                 .header("User-Agent", "BDMA-App-Updater");
 
-        if (!githubToken.isBlank()) {
+        if (!githubToken.isBlank() && "api.github.com".equals(builder.build().url().host())) {
             builder.header("Authorization", "Bearer " + githubToken);
         }
 

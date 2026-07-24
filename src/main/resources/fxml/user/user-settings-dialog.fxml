@@ -46,6 +46,8 @@
                         <VBox spacing="8" styleClass="settings-split-right" GridPane.columnIndex="1"
                               GridPane.valignment="CENTER">
                             <Button fx:id="btnInfo" maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
+                            <Button fx:id="btnDefaultSettings" onAction="#onResetDefaultSettings"
+                                    maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
                         </VBox>
                     </GridPane>
                     <Separator styleClass="settings-sep"/>
@@ -65,6 +67,7 @@
                                     styleClass="settings-action-btn"/>
                         </HBox>
                     </VBox>
+
                 </VBox>
             </content>
         </ScrollPane>

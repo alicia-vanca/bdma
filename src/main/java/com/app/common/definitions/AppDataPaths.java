@@ -23,10 +23,6 @@ public final class AppDataPaths {
         return Path.of(APP_DIR, "tmp", "app").toString();
     }
 
-    public static String adbTmpDir() {
-        return Path.of(APP_DIR, "tmp", "adb").toString();
-    }
-
     public static String sqliteTmpDir() {
         return Path.of(APP_DIR, "tmp", "sqlite").toString();
     }

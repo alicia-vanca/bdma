@@ -24,11 +24,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AppUpdateController {
 
     private static final Logger log = LoggerFactory.getLogger(AppUpdateController.class);
-    private static final String INSTALLER_AUTO_UPDATE_ARGUMENT = "/BDMA_AUTO_UPDATE";
+    private static final String INSTALLER_AUTO_UPDATE_ARGUMENT = "/BDMA_AUTO_UPDATE /BDMA_AUTO_OPEN";
 
     private final AppUpdateService appUpdateService;
     private final AppNoticeService appNoticeService;
     private final WindowsCommandService windowsCommandService;
+    private final AtomicBoolean startupCheckStarted = new AtomicBoolean(false);
     private final AtomicBoolean updateInstallInProgress = new AtomicBoolean(false);
 
     @Setter
@@ -47,6 +48,9 @@ public class AppUpdateController {
     // ── Public API ───────────────────────────────────────────────────────────
 
     public void checkOnStartup() {
+        if (!startupCheckStarted.compareAndSet(false, true)) {
+            return;
+        }
         Task<AppUpdateInfo> task = new Task<>() {
             @Override
             protected AppUpdateInfo call() {

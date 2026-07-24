@@ -28,8 +28,11 @@ public class FileService {
     public List<FileView> query(FileFilter filter) {
         User currentUser = session.getUser();
 
-        if (currentUser != null && !session.isAdmin()) {
-            filter.setUserId(currentUser.getId());
+        if (currentUser != null) {
+            if (!session.isAdmin()) {
+                filter.setUserId(currentUser.getId());
+            }
+            filter.setBookmarkUserId(currentUser.getId());
         }
 
         return fileRepository.findByFilter(filter);

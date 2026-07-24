@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Media Location Map</title>
+    <link rel="stylesheet" href="leaflet/leaflet.css" />
+    <script src="leaflet/leaflet.js"></script>
+    <style>
+        html,
+        body,
+        #map {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .leaflet-container {
+            background: #d8d8d8;
+        }
+
+        #map.no-gps-background {
+            background-color: #add8e6;
+            background-image: url('world-map-fallback.png');
+            background-position: center;
+            background-repeat: no-repeat;
+            background-size: cover;
+        }
+
+        .leaflet-tile-container,
+        .leaflet-marker-pane,
+        .leaflet-shadow-pane,
+        .leaflet-overlay-pane,
+        .leaflet-popup-pane {
+            -webkit-transform: none !important;
+            transform: none !important;
+        }
+
+        .path-marker-icon,
+        .gap-path-marker-icon,
+        .start-marker-icon,
+        .current-marker-icon {
+            box-sizing: border-box;
+        }
+
+        /* Path marker (orange) */
+        .path-marker-icon {
+            background-color: orange;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 1px solid white;
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .gap-path-marker-icon {
+            background-color: rgba(120, 120, 120, 0.8);
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            box-shadow: 0 0 2px rgba(0, 0, 0, 0.22);
+        }
+
+        /* Marker start (green) */
+        .start-marker-icon {
+            background-color: #2ecc71;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Current marker (blue) – 14px (1.5x + 2x) + blinks for 1 second */
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.6);
+            }
+
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 12px rgba(52, 152, 219, 0);
+            }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(52, 152, 219, 0);
+            }
+        }
+
+        .current-marker-icon {
+            background-color: #3498db;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+            animation: pulse 1.5s infinite;
+        }
+
+        .center-marker-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            height: 30px;
+            padding: 0 8px;
+            border: 2px solid rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            background: #fff;
+            background-clip: padding-box;
+            color: #000;
+            display: none;
+            font: 12px/26px Arial, sans-serif;
+            cursor: pointer;
+            box-shadow: none;
+        }
+
+        .center-marker-button:hover {
+            background: #f4f4f4;
+        }
+
+        .leaflet-control-attribution {
+            display: none !important;
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 10px;
+        }
+
+        .leaflet-popup-content {
+            margin: 7px 20px 7px 10px;
+        }
+
+        .leaflet-popup-content-wrapper,
+        .leaflet-popup-tip {
+            background: rgba(255, 255, 255, 0.88);
+        }
+
+        body.dark-theme .leaflet-popup-content-wrapper,
+        body.dark-theme .leaflet-popup-tip {
+            background: rgba(30, 41, 59, 0.88);
+            color: #f1f5f9;
+        }
+
+        .no-data-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            display: none;
+            pointer-events: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.58);
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+            color: #666;
+            font-size: 22px;
+            padding: 12px 8px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        body.dark-theme .no-data-message {
+            background: rgba(30, 41, 59, 0.65);
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.28);
+            color: #f1f5f9;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <button id="centerMarkerButton" class="center-marker-button" type="button"
+        onclick="enableAutoCenterAndCenter()">Center</button>
+    <!-- Notification when GPS is unavailable. -->
+    <div id="noDataMessage" class="no-data-message">
+        Không có dữ liệu GPS
+    </div>
+    <script>
+        var map, tileLayer, zoomControl, currentMarker;
+        var pathMarkers = [];
+        var logicalPath = [];
+        var renderedZoom = null;
+        var lastRenderedLayerPoint = null;
+        var pathMarkerSequence = 0;
+        var startMarker = null;
+        var currentMarkerPopupOpen = true;
+        var autoCenterMarker = true;
+        var latestMarkerLatLng = null;
+        var suppressManualMove = false;
+        var PATH_MARKER_SPACING_PIXELS = 10;
+        var LOST_SIGNAL_SEGMENT_METERS = 100;
+        var PRELOAD_TILE_BUFFER = 1;
+        var FAILED_TILE_RETRY_DELAY_MS = 1000;
+        var failedTileRetries = new Map();
+        var tileCloudOnline = true;
+        var noGpsMode = false;
+
+        function tileKey(coords) {
+            return coords.z + '/' + coords.x + '/' + coords.y;
+        }
+
+        function trackFailedTile(tile, coords) {
+            if (!tile || !coords) return;
+            var key = tileKey(coords);
+            var retry = failedTileRetries.get(key);
+            if (!retry) {
+                retry = {
+                    tile: tile,
+                    coords: { x: coords.x, y: coords.y, z: coords.z },
+                    timer: null,
+                    attempts: 0
+                };
+                failedTileRetries.set(key, retry);
+            } else {
+                retry.tile = tile;
+                retry.coords = { x: coords.x, y: coords.y, z: coords.z };
+            }
+            scheduleFailedTileRetry(key, retry);
+        }
+
+        function scheduleFailedTileRetry(key, retry, delay) {
+            if (!tileCloudOnline || noGpsMode || retry.timer !== null) return;
+            retry.timer = setTimeout(function () {
+                retry.timer = null;
+                if (!tileCloudOnline || noGpsMode || !retry.tile.isConnected
+                        || retry.coords.z !== map.getZoom()) {
+                    removeFailedTileRetry(key);
+                    return;
+                }
+                retry.attempts += 1;
+                var url = tileLayer.getTileUrl(retry.coords);
+                var separator = url.includes('?') ? '&' : '?';
+                retry.tile.src = url + separator + 'retry=' + retry.attempts;
+            }, delay === undefined ? FAILED_TILE_RETRY_DELAY_MS : delay);
+        }
+
+        function removeFailedTileRetry(key) {
+            var retry = failedTileRetries.get(key);
+            if (!retry) return;
+            clearTimeout(retry.timer);
+            failedTileRetries.delete(key);
+        }
+
+        function clearFailedTileRetries() {
+            failedTileRetries.forEach(function (retry) {
+                clearTimeout(retry.timer);
+            });
+            failedTileRetries.clear();
+        }
+
+        function setTileCloudOnline(online) {
+            tileCloudOnline = Boolean(online);
+            if (!tileCloudOnline) clearFailedTileRetries();
+        }
+
+        // Fix cho JavaFX WebView
+        L.Browser.any3d = false;
+        L.Browser.webkit3d = false;
+        L.Browser.gecko3d = false;
+        L.Browser.ie3d = false;
+        L.Browser.android23 = true;
+
+        // Leaflet's keepBuffer only retains tiles that were already requested.
+        // Expand the requested pixel bounds so nearby tiles are downloaded into
+        // the app-session disk cache before the user drags them into view.
+        var PreloadingTileLayer = L.TileLayer.extend({
+            _getTiledPixelBounds: function (center) {
+                var bounds = L.GridLayer.prototype._getTiledPixelBounds.call(this, center);
+                var tileBuffer = Math.max(0, this.options.preloadBuffer || 0);
+                if (tileBuffer === 0) return bounds;
+
+                var padding = this.getTileSize().multiplyBy(tileBuffer);
+                return new L.Bounds(
+                    bounds.min.subtract(padding),
+                    bounds.max.add(padding)
+                );
+            }
+        });
+
+        function initMap() {
+            if (map) map.remove();
+
+            map = L.map('map', {
+                zoomAnimation: false,
+                fadeAnimation: false,
+                markerZoomAnimation: false,
+                inertia: false
+            });
+            map.attributionControl.setPrefix(false);
+            zoomControl = map.zoomControl;
+
+            tileLayer = new PreloadingTileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                updateWhenIdle: false,
+                updateWhenZooming: false,
+                updateInterval: 50,
+                preloadBuffer: PRELOAD_TILE_BUFFER,
+                keepBuffer: 4,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            });
+
+            tileLayer.on('tileerror', function (e) {
+                if (e.tile) {
+                    e.tile.classList.add('session-tile-error');
+                }
+                trackFailedTile(e.tile, e.coords);
+            });
+
+            tileLayer.on('tileload', function (e) {
+                if (e.tile) e.tile.classList.remove('session-tile-error');
+                if (e.coords) removeFailedTileRetry(tileKey(e.coords));
+            });
+
+            tileLayer.on('tileunload', function (e) {
+                if (e.coords) removeFailedTileRetry(tileKey(e.coords));
+            });
+
+            setViewFromApp(0, 0, 2);
+            map.on('dragstart', disableAutoCenterFromUserMove);
+            map.on('zoom', notifyZoomChanged);
+            map.on('zoomend', function () {
+                rebuildPathMarkersForZoom();
+                if (autoCenterMarker) {
+                    centerOnCurrentMarker();
+                }
+                updateCenterButtonVisibility();
+            });
+            map.on('moveend', function () {
+                updateCenterButtonVisibility();
+            });
+
+            invalidateMapSize();
+        }
+
+        function isMapReady() {
+            return globalThis.L !== undefined && map !== undefined && map !== null;
+        }
+
+        function notifyZoomChanged() {
+            if (map && globalThis.javaApp) {
+                globalThis.javaApp.onZoomChanged(map.getZoom());
+            }
+        }
+
+        function setTileUrlTemplate(template) {
+            if (tileLayer && template) {
+                tileLayer.setUrl(template, false);
+            }
+        }
+
+        function updateTheme(dark) {
+            document.body.classList.toggle('dark-theme', Boolean(dark));
+        }
+
+        function startMapTiles() {
+            if (!noGpsMode && map && tileLayer && !map.hasLayer(tileLayer)) {
+                tileLayer.addTo(map);
+            }
+        }
+
+        function suspendMapTiles() {
+            clearFailedTileRetries();
+            if (map && tileLayer && map.hasLayer(tileLayer)) {
+                map.removeLayer(tileLayer);
+            }
+        }
+
+        function retryMapTiles() {
+            if (noGpsMode || !tileLayer || tileLayer.isLoading()) return false;
+            clearFailedTileRetries();
+            if (map.hasLayer(tileLayer)) {
+                tileLayer.redraw();
+            } else {
+                tileLayer.addTo(map);
+            }
+            return true;
+        }
+
+        function setMapInteractionsEnabled(enabled) {
+            var handlers = [
+                map.dragging,
+                map.touchZoom,
+                map.doubleClickZoom,
+                map.boxZoom,
+                map.keyboard,
+                map.tap
+            ];
+            handlers.forEach(function (handler) {
+                if (!handler) return;
+                if (enabled) handler.enable(); else handler.disable();
+            });
+        }
+
+        function enterNoGpsMode() {
+            noGpsMode = true;
+            clearFailedTileRetries();
+            if (map.hasLayer(tileLayer)) map.removeLayer(tileLayer);
+            setMapInteractionsEnabled(false);
+            if (zoomControl && zoomControl._map) zoomControl.remove();
+        }
+
+        function exitNoGpsMode() {
+            if (!noGpsMode) return;
+            noGpsMode = false;
+            setMapInteractionsEnabled(true);
+            if (zoomControl && !zoomControl._map) zoomControl.addTo(map);
+        }
+
+        function disableAutoCenterFromUserMove() {
+            if (!suppressManualMove) {
+                autoCenterMarker = false;
+                updateCenterButtonVisibility();
+            }
+        }
+
+        function runWithoutManualMoveTracking(action) {
+            suppressManualMove = true;
+            action();
+            setTimeout(function () { suppressManualMove = false; }, 0);
+        }
+
+        function setViewFromApp(lat, lon, zoom) {
+            runWithoutManualMoveTracking(function () {
+                map.setView([lat, lon], zoom);
+            });
+        }
+
+        function centerOnCurrentMarker() {
+            if (!latestMarkerLatLng) return;
+            runWithoutManualMoveTracking(function () {
+                map.panTo(latestMarkerLatLng, { animate: false });
+            });
+        }
+
+        function enableAutoCenterAndCenter() {
+            autoCenterMarker = true;
+            centerOnCurrentMarker();
+            updateCenterButtonVisibility();
+        }
+
+        function updateCenterButtonLabel(label) {
+            var button = document.getElementById('centerMarkerButton');
+            if (button) {
+                button.textContent = label;
+            }
+        }
+
+        function updateNoDataMessageLabel(label) {
+            var message = document.getElementById('noDataMessage');
+            if (message) {
+                message.textContent = label;
+            }
+        }
+
+        function updateCenterButtonVisibility() {
+            var button = document.getElementById('centerMarkerButton');
+            if (button) {
+                button.style.display = latestMarkerLatLng && !autoCenterMarker ? 'block' : 'none';
+            }
+        }
+
+        function resetLogicalPath(points) {
+            logicalPath = [];
+            if (points) {
+                for (const point of points) {
+                    logicalPath.push(L.latLng(point[0], point[1]));
+                }
+            }
+            rebuildPathMarkersForZoom();
+        }
+
+        function appendLogicalPathPoint(lat, lon) {
+            var point = L.latLng(lat, lon);
+            var previous = logicalPath.length > 0 ? logicalPath[logicalPath.length - 1] : null;
+            logicalPath.push(point);
+            if (previous === null) {
+                lastRenderedLayerPoint = map.project(point, map.getZoom());
+                renderedZoom = map.getZoom();
+                return;
+            }
+            if (renderedZoom !== map.getZoom()) {
+                rebuildPathMarkersForZoom();
+                return;
+            }
+            appendSegmentPathMarkers(previous, point, isLostSignalSegment(previous, point), true);
+        }
+
+        function rebuildPathMarkersForZoom() {
+            clearPathMarkers();
+            renderedZoom = map.getZoom();
+            pathMarkerSequence = 0;
+            lastRenderedLayerPoint = null;
+            if (!logicalPath || logicalPath.length === 0) {
+                return;
+            }
+            lastRenderedLayerPoint = map.project(logicalPath[0], renderedZoom);
+            for (var i = 1; i < logicalPath.length; i++) {
+                appendSegmentPathMarkers(
+                    logicalPath[i - 1],
+                    logicalPath[i],
+                    isLostSignalSegment(logicalPath[i - 1], logicalPath[i]),
+                    true
+                );
+            }
+        }
+
+        function isLostSignalSegment(startLatLng, endLatLng) {
+            return startLatLng.distanceTo(endLatLng) >= LOST_SIGNAL_SEGMENT_METERS;
+        }
+
+        function appendSegmentPathMarkers(startLatLng, endLatLng, isGap, includeEndpoint) {
+            var zoom = map.getZoom();
+            var startPoint = map.project(startLatLng, zoom);
+            var endPoint = map.project(endLatLng, zoom);
+            var segmentLength = startPoint.distanceTo(endPoint);
+            if (segmentLength <= 0) {
+                return;
+            }
+            if (lastRenderedLayerPoint === null) {
+                lastRenderedLayerPoint = startPoint;
+            }
+
+            var direction = endPoint.subtract(startPoint);
+            var distanceFromPreviousPathMarker = startPoint.distanceTo(lastRenderedLayerPoint);
+            var nextDistance = Math.max(0, PATH_MARKER_SPACING_PIXELS - distanceFromPreviousPathMarker);
+            var endpointClearance = endpointPathMarkerClearance(isGap, includeEndpoint);
+            var pathMarkerLimit = segmentLength - endpointClearance;
+
+            while (nextDistance <= pathMarkerLimit) {
+                var ratio = nextDistance / segmentLength;
+                var layerPoint = startPoint.add(direction.multiplyBy(ratio));
+                var latLng = map.unproject(layerPoint, zoom);
+                addPathMarker(latLng, isGap);
+                lastRenderedLayerPoint = layerPoint;
+                nextDistance += PATH_MARKER_SPACING_PIXELS;
+            }
+
+            if (includeEndpoint && isGap) {
+                addPathMarker(endLatLng, false);
+                lastRenderedLayerPoint = endPoint;
+            }
+        }
+
+        function endpointPathMarkerClearance(isGap, includeEndpoint) {
+            if (!isGap || !includeEndpoint) {
+                return 0;
+            }
+            var gapSize = markerIconSize('gap-path-marker-icon');
+            var endpointSize = markerIconSize('path-marker-icon');
+            return (gapSize + endpointSize) / 2;
+        }
+
+        function addPathMarker(latLng, isGap) {
+            var className = isGap ? 'gap-path-marker-icon' : 'path-marker-icon';
+            var size = markerIconSize(className);
+            var icon = L.divIcon({
+                className: className,
+                iconSize: [size, size],
+                iconAnchor: [size / 2, size / 2],
+                popupAnchor: [0, -(size / 2)]
+            });
+            pathMarkerSequence += 1;
+            var label = latLng.lat.toFixed(6) + ', ' + latLng.lng.toFixed(6);
+            var marker = L.marker(latLng, {
+                icon: icon,
+                zIndexOffset: 1000 + pathMarkerSequence
+            })
+                .bindPopup(createPopupText(label))
+                .addTo(map);
+            pathMarkers.push(marker);
+        }
+
+        function markerIconSize(className) {
+            var probe = document.createElement('div');
+            probe.className = className;
+            probe.style.position = 'absolute';
+            probe.style.visibility = 'hidden';
+            document.body.appendChild(probe);
+            var size = Number.parseFloat(globalThis.getComputedStyle(probe).width);
+            probe.remove();
+            return Number.isFinite(size) && size > 0 ? size : 8;
+        }
+
+        function clearPathMarkers() {
+            pathMarkers.forEach(function (m) { map.removeLayer(m); });
+            pathMarkers = [];
+        }
+
+        function clearStartMarker() {
+            if (startMarker) {
+                map.removeLayer(startMarker);
+                startMarker = null;
+            }
+        }
+
+        function clearAll() {
+            if (currentMarker) {
+                var wasPopupOpen = currentMarker.isPopupOpen();
+                map.removeLayer(currentMarker);
+                currentMarker = null;
+                currentMarkerPopupOpen = wasPopupOpen;
+            }
+            clearPathMarkers();
+            clearStartMarker();
+            logicalPath = [];
+            renderedZoom = null;
+            lastRenderedLayerPoint = null;
+            pathMarkerSequence = 0;
+
+            latestMarkerLatLng = null;
+            autoCenterMarker = true;
+            updateCenterButtonVisibility();
+            hideNoDataMessage();
+        }
+
+        // Start marker (green, 12px)
+        function addStartMarker(lat, lon, label) {
+            clearStartMarker();
+            var icon = L.divIcon({
+                className: 'start-marker-icon',
+                iconSize: [14, 14],
+                iconAnchor: [7, 7],
+                popupAnchor: [0, -7]
+            });
+            startMarker = L.marker([lat, lon], {
+                icon: icon,
+                zIndexOffset: 100000
+            })
+                .bindPopup(createPopupText(label))
+                .addTo(map);
+
+        }
+
+        // The hidden function displays a message when there is no GPS.
+        function hideNoDataMessage() {
+            var msg = document.getElementById('noDataMessage');
+            if (msg) {
+                msg.style.display = 'none';
+            }
+            var mapElement = document.getElementById('map');
+            if (mapElement) mapElement.classList.remove('no-gps-background');
+            exitNoGpsMode();
+        }
+        // Current marker (blue, 14px) – blinking due to CSS
+        function updateCurrentMarker(lat, lon, label) {
+            var latlng = [lat, lon];
+            latestMarkerLatLng = latlng;
+            if (currentMarker) {
+                currentMarker.setLatLng(latlng);
+                currentMarker.setPopupContent(createPopupText(label));
+            } else {
+                var icon = L.divIcon({
+                    className: 'current-marker-icon',
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7],
+                    popupAnchor: [0, -7]
+                });
+                currentMarker = L.marker(latlng, {
+                    icon: icon,
+                    zIndexOffset: 200000
+                })
+                    .addTo(map)
+                    .bindPopup(createPopupText(label), { autoPan: false })
+                    .on('popupopen', function () { currentMarkerPopupOpen = true; })
+                    .on('popupclose', function () { currentMarkerPopupOpen = false; });
+            }
+            if (currentMarker.setZIndexOffset) {
+                currentMarker.setZIndexOffset(200000);
+            }
+
+            if (currentMarkerPopupOpen && !currentMarker.isPopupOpen()) {
+                currentMarker.openPopup();
+            }
+
+            if (autoCenterMarker) {
+                centerOnCurrentMarker();
+            }
+
+            updateCenterButtonVisibility();
+        }
+
+        function showNoDataMessage(text) {
+            var msg = document.getElementById('noDataMessage');
+            if (msg) {
+                msg.textContent = text || 'No GPS data available';
+                msg.style.display = 'block';
+            }
+            var mapElement = document.getElementById('map');
+            if (mapElement) mapElement.classList.add('no-gps-background');
+            enterNoGpsMode();
+        }
+
+        function createPopupText(label) {
+            return document.createTextNode(label == null ? '' : String(label));
+        }
+
+        function invalidateMapSize() {
+            if (map) {
+                requestAnimationFrame(function () {
+                    map.invalidateSize(true);
+                });
+            }
+        }
+
+        initMap();
+    </script>
+</body>
+
+</html>

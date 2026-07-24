@@ -15,7 +15,6 @@
 
 .media-viewer-scroll {
     -fx-background-color: transparent;
-    -fx-background: transparent;
 }
 
 .media-viewer-scroll > .viewport {
@@ -62,12 +61,6 @@
     -fx-background-color: -card-bg;
 }
 
-.media-viewer-detail-title {
-    -fx-font-size: 14px;
-    -fx-font-weight: bold;
-    -fx-text-fill: -text-color;
-}
-
 .media-viewer-detail-label {
     -fx-font-size: 13px;
     -fx-text-fill: -text-color;
@@ -86,18 +79,26 @@
 
 .video-controls-bar {
     -fx-background-color: -media-controls-bg;
-    -fx-padding: 6 10;
+    -fx-padding: 8 10;
+}
+
+.video-controls-bar>.button,
+.video-controls-bar>.combo-box,
+.video-controls-bar>.slider {
+    -fx-min-height: 25px;
+    -fx-pref-height: 25px;
+    -fx-max-height: 25px;
 }
 
 .video-controls-bar .button {
-    -fx-background-color: -media-controls-hover;
+    -fx-background-color: -media-controls-item-bg;
     -fx-text-fill: -media-controls-text;
     -fx-background-radius: 4;
     -fx-border-color: transparent;
 }
 
 .video-controls-bar .button:hover {
-    -fx-background-color: derive(-media-controls-hover, -10%);
+    -fx-background-color: -media-controls-item-hover;
 }
 
 .video-controls-bar .label {
@@ -105,7 +106,7 @@
 }
 
 .video-controls-bar .combo-box {
-    -fx-background-color: -media-controls-hover;
+    -fx-background-color: -media-controls-item-bg;
     -fx-text-fill: -media-controls-text;
     -fx-border-color: transparent;
 }
@@ -121,27 +122,50 @@
     -fx-background-color: transparent;
 }
 
-.video-controls-bar .combo-box .list-cell {
+.video-controls-bar .combo-box>.list-cell {
     -fx-text-fill: -media-controls-text;
     -fx-background-color: transparent;
 }
 
-.video-controls-bar .slider .track {
-    -fx-background-color: derive(-media-controls-hover, 20%);
-}
-
-.video-controls-bar .slider .thumb {
-    -fx-background-color: -primary;
-}
-
 .video-slider {
     -fx-pref-height: 18px;
+    -fx-cursor: hand;
+}
+
+.video-controls-bar > .video-slider .thumb {
+    -fx-translate-y: 1px;
+}
+
+.video-progress-slider {
+    -fx-pref-height: 14px;
 }
 
 .video-speed-combo {
     -fx-pref-width: 75px;
-    -fx-pref-height: 28px;
+    -fx-min-width: 75px;
     -fx-font-size: 13px;
+}
+
+.video-speed-combo>.list-cell {
+    -fx-padding: 4 1 4 8;
+}
+
+.video-speed-combo>.arrow-button {
+    -fx-padding: 0 7 0 4;
+}
+
+.media-viewer-detail-actions {
+    -fx-padding: 4 0 0 0;
+}
+
+.media-viewer-detail-bookmark-at {
+    -fx-font-size: 13px;
+    -fx-text-fill: -text-color;
+    -fx-opacity: 0.65;
+}
+
+.media-viewer-detail-actions .button {
+    -fx-pref-width: 180px;
 }
 
 .video-ctrl-btn {
@@ -153,5 +177,76 @@
 }
 
 .video-ctrl-btn:hover {
-    -fx-background-color: -media-controls-hover;
+    -fx-background-color: -media-controls-item-hover;
+}
+
+.video-volume-btn {
+    -fx-padding: 2 4;
+    -fx-min-width: 32px;
+    -fx-pref-width: 32px;
+    -fx-max-width: 32px;
+    -fx-cursor: hand;
+}
+
+.media-slider-tooltip {
+    -fx-padding: 4 7;
+    -fx-font-size: 12px;
+    -fx-background-radius: 4px;
+    -fx-border-radius: 4px;
+}
+
+/* ── Tab bar ──────────────────────────────────────────────────────────────── */
+.media-viewer-tab-bar {
+    -fx-background-color: -sidebar-bg;
+}
+
+.media-viewer-tab-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-color;
+    -fx-font-size: 13px;
+    -fx-padding: 8 0;
+    -fx-border-color: transparent transparent -border-color transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-cursor: hand;
+    -fx-background-radius: 0;
+    -fx-opacity: 0.6;
+}
+
+.media-viewer-tab-btn:hover {
+    -fx-opacity: 0.9;
+    -fx-background-color: derive(-sidebar-bg, -5%);
+}
+
+.media-viewer-tab-btn-active {
+    -fx-opacity: 1.0;
+    -fx-border-color: transparent transparent -primary transparent;
+    -fx-text-fill: -primary;
+    -fx-font-weight: bold;
+}
+
+.media-viewer-tab-content {
+    -fx-padding: 12 14;
+}
+
+/* ── Location tab ─────────────────────────────────────────────────────────── */
+.media-viewer-location-value {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-color;
+}
+
+.media-viewer-map-error-pane {
+    -fx-background-color: -media-map-pill-bg;
+    -fx-background-radius: 6;
+    -fx-padding: 3;
+}
+
+.media-viewer-map-error-label {
+    -fx-font-size: 13px;
+    -fx-text-fill: -media-map-pill-text;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+    -fx-padding: 3 7;
+    -fx-background-radius: 6;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 6, 0, 0, 1);
 }

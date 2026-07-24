@@ -2,6 +2,8 @@ package com.app.common.modules.databackup;
 
 import com.app.common.modules.databackup.workers.DataBackupWorker;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -10,6 +12,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class DataBackupRunner {
+
+    private static final Logger log = LoggerFactory.getLogger(DataBackupRunner.class);
+    private static final long SHUTDOWN_TIMEOUT_MILLIS = 5000;
 
     private final DataBackupWorker worker;
     private Thread backupThread;
@@ -55,8 +60,20 @@ public class DataBackupRunner {
                 if (worker.isIdleForShutdown()) {
                     backupThread.interrupt();
                 }
-                waitForThreadToStop(backupThread);
-                backupThread = null;
+                boolean stopped = waitForThreadToStop(backupThread);
+                if (!stopped && !Thread.currentThread().isInterrupted()) {
+                    worker.requestForcedShutdown();
+                    backupThread.interrupt();
+                    stopped = waitForThreadToStop(backupThread);
+                    if (stopped) {
+                        log.warn("Backup worker forced shutdown");
+                    }
+                }
+                if (stopped) {
+                    backupThread = null;
+                } else if (!Thread.currentThread().isInterrupted()) {
+                    log.error("Backup worker did not stop after interruption");
+                }
             }
         } finally {
             shuttingDown = false;
@@ -64,11 +81,13 @@ public class DataBackupRunner {
         }
     }
 
-    private void waitForThreadToStop(Thread thread) {
+    private boolean waitForThreadToStop(Thread thread) {
         try {
-            thread.join(5000);
+            thread.join(SHUTDOWN_TIMEOUT_MILLIS);
+            return !thread.isAlive();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return !thread.isAlive();
         }
     }
 }
