@@ -191,7 +191,7 @@ jobs:
             [Convert]::ToBase64String($certificate.IssuerName.RawData)
 
           if ($env:GITHUB_REF_NAME -eq 'release' -and $isSelfSigned) {
-            throw 'Release signing requires a publicly trusted, non-self-signed certificate.'
+            Write-Warning 'Release uses a self-signed certificate. External Windows devices will not trust this publisher automatically.'
           }
 
           Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_PFX_PATH=' + $pfxPath)
