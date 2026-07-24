@@ -100,6 +100,7 @@ jobs:
 
       - name: Import Current User code-signing certificate
         shell: pwsh
+        timeout-minutes: 2
         env:
           BDMA_SIGNING_PFX_BASE64: ${{ secrets.BDMA_SIGNING_PFX_BASE64 }}
           BDMA_SIGNING_PFX_PASSWORD: ${{ secrets.BDMA_SIGNING_PFX_PASSWORD }}
@@ -110,6 +111,10 @@ jobs:
 
           if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_PFX_PASSWORD)) {
             throw 'Missing GitHub secret: BDMA_SIGNING_PFX_PASSWORD'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_CERT_THUMBPRINT)) {
+            throw 'Missing GitHub variable: BDMA_SIGNING_CERT_THUMBPRINT'
           }
 
           $pfxPath = Join-Path $env:RUNNER_TEMP 'bdma-code-signing.pfx'
@@ -123,10 +128,15 @@ jobs:
 
           [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
 
-          $securePassword = ConvertTo-SecureString $env:BDMA_SIGNING_PFX_PASSWORD -AsPlainText -Force
-          $importedCertificates = @(
-            Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation 'Cert:\CurrentUser\My' -Password $securePassword
-          )
+          $keyStorageFlags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet -bor
+            [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet
+          $importedCertificates = [Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+
+          try {
+            $importedCertificates.Import($pfxBytes, $env:BDMA_SIGNING_PFX_PASSWORD, $keyStorageFlags)
+          } catch {
+            throw ('Unable to load code-signing PFX: ' + $_.Exception.Message)
+          }
 
           $expectedThumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
           $certificate = $importedCertificates |
@@ -160,13 +170,28 @@ jobs:
             throw 'The imported certificate is not valid for Code Signing.'
           }
 
-          [IO.File]::WriteAllBytes(
-            $publicCertificatePath,
-            $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-          )
+          $publicCertificateBytes = $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+          [IO.File]::WriteAllBytes($publicCertificatePath, $publicCertificateBytes)
+          $publicCertificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($publicCertificateBytes)
+          $certificatesByStore = @{
+            My = $certificate
+            Root = $publicCertificate
+            TrustedPublisher = $publicCertificate
+          }
 
-          Import-Certificate -FilePath $publicCertificatePath -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
-          Import-Certificate -FilePath $publicCertificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' | Out-Null
+          foreach ($storeName in $certificatesByStore.Keys) {
+            $store = [Security.Cryptography.X509Certificates.X509Store]::new(
+              $storeName,
+              [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+            )
+
+            try {
+              $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+              $store.Add($certificatesByStore[$storeName])
+            } finally {
+              $store.Dispose()
+            }
+          }
 
           Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_PFX_PATH=' + $pfxPath)
           Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_PUBLIC_CERT_PATH=' + $publicCertificatePath)
