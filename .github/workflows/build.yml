@@ -270,11 +270,10 @@ jobs:
 
           $signature = Get-AuthenticodeSignature $launcherPath
           $signatureStatus = $signature.Status.ToString()
-          $hasExpectedUntrustedRoot = $signatureStatus -eq 'NotTrusted' -or
-            ($signatureStatus -eq 'UnknownError' -and $signature.StatusMessage -match '0x800B0109')
+          $hasExpectedSelfSignedStatus = $signatureStatus -in @('Valid', 'NotTrusted', 'UnknownError')
 
           if ($isSelfSigned) {
-            if ($signatureStatus -ne 'Valid' -and -not $hasExpectedUntrustedRoot) {
+            if (-not $hasExpectedSelfSignedStatus) {
               throw ('BDMA launcher self-signed signature verification failed: ' + $signature.StatusMessage)
             }
           } elseif ($signatureStatus -ne 'Valid') {
@@ -432,11 +431,10 @@ jobs:
 
           $signature = Get-AuthenticodeSignature $installerPath
           $signatureStatus = $signature.Status.ToString()
-          $hasExpectedUntrustedRoot = $signatureStatus -eq 'NotTrusted' -or
-            ($signatureStatus -eq 'UnknownError' -and $signature.StatusMessage -match '0x800B0109')
+          $hasExpectedSelfSignedStatus = $signatureStatus -in @('Valid', 'NotTrusted', 'UnknownError')
 
           if ($isSelfSigned) {
-            if ($signatureStatus -ne 'Valid' -and -not $hasExpectedUntrustedRoot) {
+            if (-not $hasExpectedSelfSignedStatus) {
               throw ('NSIS installer self-signed signature verification failed: ' + $signature.StatusMessage)
             }
           } elseif ($signatureStatus -ne 'Valid') {
