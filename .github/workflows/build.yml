@@ -79,7 +79,7 @@ jobs:
             --icon build\package\logo.ico `
             --dest build\dist `
             --module-path "$modulePath" `
-            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.media,javafx.web,java.sql,java.logging,java.net.http,jdk.httpserver" `
+            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.web,java.sql,java.logging,java.net.http,jdk.httpserver" `
             --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN -DBODYCAM_CRYPTO_PASSWORD=$env:BODYCAM_CRYPTO_PASSWORD -DPATCH_MASTER_KEY=$env:PATCH_MASTER_KEY -DTOTP_SECRET=$env:TOTP_SECRET -DAPP_UPDATE_GITHUB_TOKEN=$env:APP_UPDATE_GITHUB_TOKEN" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
