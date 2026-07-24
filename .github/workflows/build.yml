@@ -523,17 +523,3 @@ jobs:
           }
 
           Write-Host 'Current User code-signing certificate cleanup completed.'
-
-      - name: Notify failure
-        if: failure()
-        env:
-          X_WEBHOOK_SECRET: ${{ secrets.X_WEBHOOK_SECRET }}
-        run: |
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            -H "X-Webhook-Secret: ${X_WEBHOOK_SECRET}" \
-            -d '{
-              "sender":"${{ github.actor }}",
-              "message":"BDMA: ${{ github.workflow }} failed! (#${{ github.run_number }})"
-            }' \
-            "https://forward-to-snt.quyendt3k4.workers.dev"
