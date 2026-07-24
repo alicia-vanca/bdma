@@ -98,9 +98,9 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNTOOL_PATH=' + $signTool.FullName)
           Write-Host 'SignTool found.'
 
-      - name: Import Current User code-signing certificate
+      - name: Prepare code-signing certificate
         shell: pwsh
-        timeout-minutes: 2
+        timeout-minutes: 5
         env:
           BDMA_SIGNING_PFX_BASE64: ${{ secrets.BDMA_SIGNING_PFX_BASE64 }}
           BDMA_SIGNING_PFX_PASSWORD: ${{ secrets.BDMA_SIGNING_PFX_PASSWORD }}
@@ -118,7 +118,6 @@ jobs:
           }
 
           $pfxPath = Join-Path $env:RUNNER_TEMP 'bdma-code-signing.pfx'
-          $publicCertificatePath = Join-Path $env:RUNNER_TEMP 'bdma-code-signing.cer'
 
           try {
             $pfxBytes = [Convert]::FromBase64String($env:BDMA_SIGNING_PFX_BASE64)
@@ -128,8 +127,8 @@ jobs:
 
           [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
 
-          $keyStorageFlags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet -bor
-            [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet
+          Write-Host 'Loading PFX into memory without importing its private key into Windows...'
+          $keyStorageFlags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
           $importedCertificates = [Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
 
           try {
@@ -137,6 +136,8 @@ jobs:
           } catch {
             throw ('Unable to load code-signing PFX: ' + $_.Exception.Message)
           }
+
+          Write-Host 'PFX loaded in memory.'
 
           $expectedThumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
           $certificate = $importedCertificates |
@@ -170,37 +171,88 @@ jobs:
             throw 'The imported certificate is not valid for Code Signing.'
           }
 
-          $publicCertificateBytes = $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-          [IO.File]::WriteAllBytes($publicCertificatePath, $publicCertificateBytes)
-          $publicCertificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($publicCertificateBytes)
-          $certificatesByStore = @{
-            My = $certificate
-            Root = $publicCertificate
-            TrustedPublisher = $publicCertificate
+          $utcNow = [DateTime]::UtcNow
+          $notBefore = $certificate.NotBefore.ToUniversalTime()
+          $notAfter = $certificate.NotAfter.ToUniversalTime()
+
+          if ($notBefore -gt $utcNow) {
+            throw ('The code-signing certificate is not valid before ' + $notBefore.ToString('O'))
           }
 
-          foreach ($storeName in $certificatesByStore.Keys) {
-            $store = [Security.Cryptography.X509Certificates.X509Store]::new(
-              $storeName,
-              [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-            )
+          if ($notAfter -le $utcNow) {
+            throw ('The code-signing certificate expired at ' + $notAfter.ToString('O'))
+          }
 
-            try {
-              $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-              $store.Add($certificatesByStore[$storeName])
-            } finally {
-              $store.Dispose()
+          if ($notAfter -le $utcNow.AddDays(30)) {
+            Write-Warning ('The code-signing certificate expires soon: ' + $notAfter.ToString('O'))
+          }
+
+          $isSelfSigned = [Convert]::ToBase64String($certificate.SubjectName.RawData) -eq
+            [Convert]::ToBase64String($certificate.IssuerName.RawData)
+
+          if ($env:GITHUB_REF_NAME -eq 'release' -and $isSelfSigned) {
+            throw 'Release signing requires a publicly trusted, non-self-signed certificate.'
+          }
+
+          $certificatesByStore = @{}
+
+          if ($env:GITHUB_REF_NAME -ne 'release' -and $isSelfSigned) {
+            Write-Host 'Adding temporary trust for development self-signed certificate.'
+            $publicCertificateBytes = $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+            $publicCertificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($publicCertificateBytes)
+            $certificatesByStore.Root = $publicCertificate
+            $certificatesByStore.TrustedPublisher = $publicCertificate
+          }
+
+          $addedStores = [Collections.Generic.List[string]]::new()
+
+          try {
+            foreach ($storeName in $certificatesByStore.Keys) {
+              $store = [Security.Cryptography.X509Certificates.X509Store]::new(
+                $storeName,
+                [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+              )
+
+              try {
+                $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                $existingCertificates = $store.Certificates.Find(
+                  [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                  $expectedThumbprint,
+                  $false
+                )
+
+                if ($existingCertificates.Count -eq 0) {
+                  $store.Add($certificatesByStore[$storeName])
+                  $addedStores.Add($storeName)
+                }
+              } finally {
+                $store.Dispose()
+              }
             }
+          } catch {
+            foreach ($addedStoreName in $addedStores) {
+              $certificatePath = Join-Path ('Cert:\CurrentUser\' + $addedStoreName) $expectedThumbprint
+
+              if (Test-Path $certificatePath) {
+                Remove-Item $certificatePath -Force
+              }
+            }
+
+            throw
           }
 
           Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_PFX_PATH=' + $pfxPath)
-          Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_PUBLIC_CERT_PATH=' + $publicCertificatePath)
+          Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_ADDED_STORES=' + ($addedStores -join ','))
 
-          Write-Host ('Current User code-signing certificate prepared: ' + $certificate.Subject)
+          Write-Host ('Code-signing PFX validated: ' + $certificate.Subject)
           Write-Host ('Thumbprint: ' + $certificate.Thumbprint)
+          Write-Host ('Valid until: ' + $notAfter.ToString('O'))
 
       - name: Sign and verify BDMA launcher
         shell: pwsh
+        timeout-minutes: 5
+        env:
+          BDMA_SIGNING_PFX_PASSWORD: ${{ secrets.BDMA_SIGNING_PFX_PASSWORD }}
         run: |
           $launcherPath = Join-Path (Get-Location).Path 'build\dist\BDMA\BDMA.exe'
 
@@ -212,9 +264,19 @@ jobs:
             throw ('SignTool path is unavailable: ' + $env:BDMA_SIGNTOOL_PATH)
           }
 
+          if (-not (Test-Path $env:BDMA_SIGNING_PFX_PATH)) {
+            throw ('Code-signing PFX path is unavailable: ' + $env:BDMA_SIGNING_PFX_PATH)
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_PFX_PASSWORD)) {
+            throw 'Missing GitHub secret: BDMA_SIGNING_PFX_PASSWORD'
+          }
+
+          $expectedThumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
+
           (Get-Item $launcherPath).IsReadOnly = $false
 
-          & $env:BDMA_SIGNTOOL_PATH sign /sha1 $env:BDMA_SIGNING_CERT_THUMBPRINT /s My /fd SHA256 /d BDMA /v $launcherPath
+          & $env:BDMA_SIGNTOOL_PATH sign /f $env:BDMA_SIGNING_PFX_PATH /p $env:BDMA_SIGNING_PFX_PASSWORD /fd SHA256 /d BDMA /v $launcherPath
 
           if ($LASTEXITCODE -ne 0) {
             throw ('BDMA launcher signing failed with exit code ' + $LASTEXITCODE)
@@ -252,6 +314,10 @@ jobs:
 
           if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate) {
             throw 'BDMA launcher does not contain a valid trusted timestamp.'
+          }
+
+          if ($signature.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
+            throw ('BDMA launcher was signed by unexpected certificate: ' + $signature.SignerCertificate.Thumbprint)
           }
 
           Write-Host ('BDMA launcher timestamp verified: ' + $signature.TimeStamperCertificate.Subject)
@@ -334,6 +400,9 @@ jobs:
 
       - name: Sign and verify NSIS installer
         shell: pwsh
+        timeout-minutes: 5
+        env:
+          BDMA_SIGNING_PFX_PASSWORD: ${{ secrets.BDMA_SIGNING_PFX_PASSWORD }}
         run: |
           $installers = @(Get-ChildItem 'build\installer\*.exe' -File)
 
@@ -344,7 +413,17 @@ jobs:
           $installerPath = $installers[0].FullName
           (Get-Item $installerPath).IsReadOnly = $false
 
-          & $env:BDMA_SIGNTOOL_PATH sign /sha1 $env:BDMA_SIGNING_CERT_THUMBPRINT /s My /fd SHA256 /d BDMA /v $installerPath
+          if (-not (Test-Path $env:BDMA_SIGNING_PFX_PATH)) {
+            throw ('Code-signing PFX path is unavailable: ' + $env:BDMA_SIGNING_PFX_PATH)
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_PFX_PASSWORD)) {
+            throw 'Missing GitHub secret: BDMA_SIGNING_PFX_PASSWORD'
+          }
+
+          $expectedThumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
+
+          & $env:BDMA_SIGNTOOL_PATH sign /f $env:BDMA_SIGNING_PFX_PATH /p $env:BDMA_SIGNING_PFX_PASSWORD /fd SHA256 /d BDMA /v $installerPath
 
           if ($LASTEXITCODE -ne 0) {
             throw ('NSIS installer signing failed with exit code ' + $LASTEXITCODE)
@@ -382,6 +461,10 @@ jobs:
 
           if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate) {
             throw 'NSIS installer does not contain a valid trusted timestamp.'
+          }
+
+          if ($signature.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
+            throw ('NSIS installer was signed by unexpected certificate: ' + $signature.SignerCertificate.Thumbprint)
           }
 
           Write-Host ('NSIS installer timestamp verified: ' + $signature.TimeStamperCertificate.Subject)
@@ -527,24 +610,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cleanup Current User code-signing certificate
+      - name: Cleanup code-signing material
         if: always()
         shell: pwsh
         run: |
-          $thumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
+          if (-not [string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_CERT_THUMBPRINT)) {
+            $thumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
+            $addedStores = @(
+              $env:BDMA_SIGNING_ADDED_STORES -split ',' |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
 
-          foreach ($store in 'My', 'Root', 'TrustedPublisher') {
-            $certificatePath = Join-Path ('Cert:\CurrentUser\' + $store) $thumbprint
+            foreach ($store in $addedStores) {
+              $certificatePath = Join-Path ('Cert:\CurrentUser\' + $store) $thumbprint
 
-            if (Test-Path $certificatePath) {
-              Remove-Item $certificatePath -Force
+              if (Test-Path $certificatePath) {
+                Remove-Item $certificatePath -Force
+              }
             }
           }
 
-          foreach ($temporaryFile in $env:BDMA_SIGNING_PFX_PATH, $env:BDMA_SIGNING_PUBLIC_CERT_PATH) {
-            if (-not [string]::IsNullOrWhiteSpace($temporaryFile) -and (Test-Path $temporaryFile)) {
-              Remove-Item $temporaryFile -Force
-            }
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'bdma-code-signing.pfx'
+
+          if (Test-Path $pfxPath) {
+            Remove-Item $pfxPath -Force
           }
 
-          Write-Host 'Current User code-signing certificate cleanup completed.'
+          Write-Host 'Code-signing material cleanup completed.'
