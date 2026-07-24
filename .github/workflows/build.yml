@@ -36,8 +36,35 @@ jobs:
 
       - name: Download JavaFX JMODs
         run: |
-          curl -L "https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_windows-x64_bin-jmods.zip" -o javafx-jmods.zip
-          Expand-Archive -Path javafx-jmods.zip -DestinationPath C:\
+          $javafxUrl = "https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_windows-x64_bin-jmods.zip"
+          $javafxArchive = "javafx-jmods.zip"
+          $maxDownloadAttempts = 4
+          $downloadSucceeded = $false
+
+          for ($attempt = 1; $attempt -le $maxDownloadAttempts; $attempt++) {
+            Remove-Item -LiteralPath $javafxArchive -Force -ErrorAction SilentlyContinue
+            Write-Host "Downloading JavaFX JMODs (attempt $attempt of $maxDownloadAttempts)..."
+
+            curl.exe --fail --location --silent --show-error $javafxUrl -o $javafxArchive
+            $curlExitCode = $LASTEXITCODE
+
+            if ($curlExitCode -eq 0 -and (Test-Path -LiteralPath $javafxArchive)) {
+              $downloadSucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxDownloadAttempts) {
+              $retryDelaySeconds = [int][math]::Pow(2, $attempt)
+              Write-Warning "JavaFX download attempt $attempt failed with exit code $curlExitCode. Retrying in $retryDelaySeconds seconds..."
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $downloadSucceeded) {
+            throw "JavaFX JMOD download failed after $maxDownloadAttempts attempts."
+          }
+
+          Expand-Archive -LiteralPath $javafxArchive -DestinationPath C:\
           Rename-Item "C:\javafx-jmods-21.0.2" "C:\javafx-jmods"
 
       - name: Grant Gradle permission
@@ -54,10 +81,13 @@ jobs:
 
       - name: Prepare package folder
         run: |
-          mkdir build\package
-          copy build\libs\app-*.jar build\package\
-          copy src\main\resources\image\logo.ico build\package\
-
+          $jarPath = Get-ChildItem -LiteralPath build\libs -Filter app-*.jar | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $jarPath) { throw 'Shadow JAR was not found' }
+          New-Item -ItemType Directory -Force -Path build\package | Out-Null
+          Copy-Item -LiteralPath $jarPath -Destination build\package
+          Copy-Item -LiteralPath src\main\resources\image\logo.ico -Destination build\package
+          Copy-Item -LiteralPath vendor\adb -Destination build\package\adb -Recurse
+          Copy-Item -LiteralPath vendor\vlc -Destination build\package\vlc -Recurse
       - name: Build app-image
         env:
           LOGGLY_TOKEN: ${{ secrets.LOGGLY_TOKEN }}
@@ -471,7 +501,7 @@ jobs:
             throw "Unsupported branch: $env:GITHUB_REF_NAME"
           }
 
-      - name: Upload latest installer to Cloudflare R2
+      - name: Upload installer to Cloudflare R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -502,76 +532,160 @@ jobs:
           $endpoint = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
 
           if ($env:GITHUB_REF_NAME -eq "develop") {
-            $localFile = "build\r2\BDMA_dev.exe"
-            $objectKey = "BDMA_dev.exe"
+            $stableObjectKey = "BDMA_dev.exe"
           } elseif ($env:GITHUB_REF_NAME -eq "release") {
-            $localFile = "build\r2\BDMA.exe"
-            $objectKey = "BDMA.exe"
+            $stableObjectKey = "BDMA.exe"
           } else {
             throw "Unsupported branch for R2 upload: $env:GITHUB_REF_NAME"
           }
 
-          if (-not (Test-Path $localFile)) {
-            throw "R2 upload file not found: $localFile"
+          $localFile = Get-ChildItem -LiteralPath "build\installer" -Filter "*.exe" |
+            Select-Object -First 1 -ExpandProperty FullName
+          $versionedObjectKey = "versions/BDMA-${{ env.APP_VERSION }}-Setup.exe"
+
+          if (-not $localFile) {
+            throw "R2 upload file not found in build\installer."
           }
 
-          $localFileLength = (Get-Item $localFile).Length
+          $localFileLength = (Get-Item -LiteralPath $localFile).Length
           $uploadId = "$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-$env:GITHUB_SHA"
-          $maxUploadAttempts = 4
+
+          $maxTransferAttempts = 4
           $uploadSucceeded = $false
 
-          for ($attempt = 1; $attempt -le $maxUploadAttempts; $attempt++) {
-            Write-Host "Uploading $localFile to R2 object key: $objectKey (attempt $attempt of $maxUploadAttempts)"
+          for ($attempt = 1; $attempt -le $maxTransferAttempts; $attempt++) {
+            Write-Host "Uploading versioned installer to R2 object key: $versionedObjectKey (attempt $attempt of $maxTransferAttempts)"
 
-            aws s3 cp $localFile "s3://$env:R2_BUCKET_NAME/$objectKey" `
+            aws s3 cp $localFile "s3://$env:R2_BUCKET_NAME/$versionedObjectKey" `
               --endpoint-url $endpoint `
               --content-type "application/vnd.microsoft.portable-executable" `
-              --cache-control "no-store, max-age=0, must-revalidate" `
+              --cache-control "public, max-age=31536000, immutable" `
               --metadata "github-upload-id=$uploadId" `
               --no-progress
 
             $uploadExitCode = $LASTEXITCODE
-
             if ($uploadExitCode -eq 0) {
               $uploadSucceeded = $true
               break
             }
 
-            if ($attempt -lt $maxUploadAttempts) {
+            if ($attempt -lt $maxTransferAttempts) {
               $retryDelaySeconds = [int][math]::Pow(2, $attempt)
-              Write-Warning "R2 upload attempt $attempt failed with exit code $uploadExitCode. Retrying in $retryDelaySeconds seconds..."
+              Write-Warning "Versioned R2 upload failed with exit code $uploadExitCode. Retrying in $retryDelaySeconds seconds..."
               Start-Sleep -Seconds $retryDelaySeconds
             }
           }
 
           if (-not $uploadSucceeded) {
-            throw "R2 upload failed after $maxUploadAttempts attempts."
+            throw "Versioned R2 upload failed after $maxTransferAttempts attempts: $versionedObjectKey"
           }
-
-          Write-Host "Verifying uploaded object belongs to this workflow run..."
-
-          $headJson = aws s3api head-object `
+          $versionedHeadJson = aws s3api head-object `
             --bucket $env:R2_BUCKET_NAME `
-            --key $objectKey `
+            --key $versionedObjectKey `
             --endpoint-url $endpoint `
             --output json
 
           if ($LASTEXITCODE -ne 0) {
-            throw "R2 upload verification request failed."
+            throw "Versioned R2 upload verification request failed: $versionedObjectKey"
           }
 
-          $head = $headJson | ConvertFrom-Json
-          $remoteUploadId = $head.Metadata.'github-upload-id'
+          $versionedHead = $versionedHeadJson | ConvertFrom-Json
+          $versionedUploadId = $versionedHead.Metadata.'github-upload-id'
 
-          if ([int64]$head.ContentLength -ne $localFileLength) {
-            throw "R2 upload verification failed: remote size $($head.ContentLength) does not match local size $localFileLength."
+          if ([int64]$versionedHead.ContentLength -ne $localFileLength) {
+            throw "Versioned R2 upload verification failed: remote size $($versionedHead.ContentLength) does not match local size $localFileLength."
           }
 
-          if ($remoteUploadId -ne $uploadId) {
-            throw "R2 upload verification failed: remote upload ID '$remoteUploadId' does not match this workflow run."
+          if ($versionedUploadId -ne $uploadId) {
+            throw "Versioned R2 upload verification failed: remote upload ID '$versionedUploadId' does not match this workflow run."
           }
 
-          Write-Host "R2 upload verified successfully ($localFileLength bytes, upload ID $uploadId)."
+          $copySucceeded = $false
+
+          for ($attempt = 1; $attempt -le $maxTransferAttempts; $attempt++) {
+            Write-Host "Copying versioned installer to stable R2 object key: $stableObjectKey (attempt $attempt of $maxTransferAttempts)"
+
+            aws s3api copy-object `
+              --bucket $env:R2_BUCKET_NAME `
+              --copy-source "$env:R2_BUCKET_NAME/$versionedObjectKey" `
+              --key $stableObjectKey `
+              --metadata-directive REPLACE `
+              --content-type "application/vnd.microsoft.portable-executable" `
+              --cache-control "no-store, max-age=0, must-revalidate" `
+              --metadata "github-upload-id=$uploadId" `
+              --endpoint-url $endpoint `
+              --output json | Out-Null
+
+            $copyExitCode = $LASTEXITCODE
+            if ($copyExitCode -eq 0) {
+              $copySucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxTransferAttempts) {
+              $retryDelaySeconds = [int][math]::Pow(2, $attempt)
+              Write-Warning "R2 stable copy failed with exit code $copyExitCode. Retrying in $retryDelaySeconds seconds..."
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $copySucceeded) {
+            throw "R2 stable copy failed after $maxTransferAttempts attempts: $versionedObjectKey to $stableObjectKey"
+          }
+          $stableHeadJson = aws s3api head-object `
+            --bucket $env:R2_BUCKET_NAME `
+            --key $stableObjectKey `
+            --endpoint-url $endpoint `
+            --output json
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Stable R2 object verification request failed: $stableObjectKey"
+          }
+
+          $stableHead = $stableHeadJson | ConvertFrom-Json
+          $stableUploadId = $stableHead.Metadata.'github-upload-id'
+
+          if ([int64]$stableHead.ContentLength -ne $localFileLength) {
+            throw "Stable R2 object verification failed: remote size $($stableHead.ContentLength) does not match local size $localFileLength."
+          }
+
+          if ($stableUploadId -ne $uploadId) {
+            throw "Stable R2 object verification failed: remote upload ID '$stableUploadId' does not match this workflow run."
+          }
+
+          Write-Host "R2 upload and stable copy verified successfully ($localFileLength bytes, upload ID $uploadId)."
+
+          $archiveListJson = aws s3api list-objects-v2 `
+            --bucket $env:R2_BUCKET_NAME `
+            --prefix "versions/BDMA-" `
+            --endpoint-url $endpoint `
+            --output json
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list versioned R2 installers."
+          }
+
+          $archiveList = $archiveListJson | ConvertFrom-Json
+          $archives = @($archiveList.Contents) |
+            Where-Object { $_.Key -match '^versions/BDMA-[^/]+-Setup\.exe$' } |
+            Sort-Object { [DateTimeOffset]$_.LastModified } -Descending
+          $expiredArchives = @($archives | Select-Object -Skip 10)
+
+          foreach ($archive in $expiredArchives) {
+            Write-Host "Deleting expired versioned installer: $($archive.Key)"
+            aws s3api delete-object `
+              --bucket $env:R2_BUCKET_NAME `
+              --key $archive.Key `
+              --endpoint-url $endpoint | Out-Null
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to delete expired versioned installer: $($archive.Key)"
+            }
+          }
+
+          Write-Host "Versioned installer retention complete: kept $($archives.Count - $expiredArchives.Count), deleted $($expiredArchives.Count)."
+      - name: Package source code
+        run: git archive --format=zip --output="build\BDMA-${{ env.APP_VERSION }}-source.zip" HEAD
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
