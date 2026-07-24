@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.ViewPaths;
 import com.app.common.dtos.FileView;
+import com.app.common.events.FileBookmarkToggledEvent;
 import com.app.common.events.LanguageChangedEvent;
 import com.app.common.events.ThemeChangedEvent;
 import com.app.common.helpers.CssLoader;
@@ -55,8 +56,12 @@ public class MediaViewerService {
 
         if (viewerStage == null) {
             initStage(owner);
+            if (viewerStage == null || controller == null) {
+                return;
+            }
 
             viewerStage.setOnShown(e -> {
+                viewerStage.setOnShown(null);
                 controller.setMedia(viewableList, startIndex);
                 controller.setOnLoadFile(this::dispatchLoad);
             });
@@ -97,13 +102,8 @@ public class MediaViewerService {
             viewerStage.setMinWidth(640);
             viewerStage.setMinHeight(480);
 
-            viewerStage.setOnCloseRequest(e -> {
-                if (controller != null) {
-                    controller.cleanup();
-                }
-                viewerStage = null;
-                controller = null;
-            });
+            Stage initializedStage = viewerStage;
+            viewerStage.setOnCloseRequest(e -> releaseViewer(initializedStage));
 
         } catch (Exception e) {
             log.error("Failed to init MediaViewer stage", e);
@@ -149,11 +149,25 @@ public class MediaViewerService {
     }
 
     public void close() {
-        if (viewerStage != null) {
+        Stage stage = viewerStage;
+        if (stage == null) return;
+
+        stage.setOnCloseRequest(null);
+        try {
+            releaseViewer(stage);
+        } finally {
+            stage.close();
+        }
+    }
+
+    private void releaseViewer(Stage stage) {
+        if (stage != viewerStage) return;
+
+        try {
             if (controller != null) {
                 controller.cleanup();
             }
-            viewerStage.close();
+        } finally {
             viewerStage = null;
             controller = null;
         }
@@ -161,15 +175,37 @@ public class MediaViewerService {
 
     @EventListener
     public void onThemeChanged(ThemeChangedEvent event) {
-        if (viewerStage != null && viewerStage.getScene() != null) {
-            Platform.runLater(() -> ThemeManager.apply(viewerStage.getScene()));
+        Stage stage = viewerStage;
+        MediaViewerController activeController = controller;
+        if (stage != null && stage.getScene() != null) {
+            Platform.runLater(() -> {
+                if (stage != viewerStage) {
+                    return;
+                }
+                ThemeManager.apply(stage.getScene());
+                if (activeController == controller) {
+                    activeController.refreshMapTheme(event.getTheme());
+                }
+            });
         }
     }
 
     @EventListener
     public void onLanguageChanged(LanguageChangedEvent event) {
+        MediaViewerController activeController = controller;
+        if (activeController != null) {
+            Platform.runLater(() -> {
+                if (activeController == controller) {
+                    activeController.refreshLocalizedText();
+                }
+            });
+        }
+    }
+
+    @EventListener
+    public void onBookmarkChanged(FileBookmarkToggledEvent event) {
         if (controller != null) {
-            Platform.runLater(() -> controller.refreshLocalizedText());
+            controller.onBookmarkChanged(event);
         }
     }
 }

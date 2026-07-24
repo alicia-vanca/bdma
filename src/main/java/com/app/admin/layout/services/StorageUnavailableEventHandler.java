@@ -19,6 +19,7 @@ import com.app.common.helpers.AlertHelper;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.events.StorageUnavailableEvent;
+import com.app.common.modules.foldermanager.services.DefaultStorageLocationService;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
 import com.app.common.modules.foldermanager.services.StorageHealthMonitor;
 import com.app.common.modules.i18n.I18n;
@@ -67,6 +68,7 @@ public class StorageUnavailableEventHandler {
     private static final String I18N_SETTING_STORAGE_ERROR = "setting.storage.error";
     private static final String I18N_SETTING_STORAGE_LOW_SPACE = "setting.storage.low_space";
     private static final String I18N_SETTING_STORAGE_DRIVE_MISSING = "setting.storage.drive_missing";
+    private static final String I18N_SETTING_STORAGE_REMOVABLE_MESSAGE = "setting.storage.removable.message";
 
     private final Session session;
     private final ApplicationEventPublisher publisher;
@@ -76,6 +78,7 @@ public class StorageUnavailableEventHandler {
     private final AppConfigService appConfigService;
     private final UserSettingService userSettingService;
     private final AppNoticeService appNoticeService;
+    private final DefaultStorageLocationService defaultStorageLocationService;
 
     private boolean syncLowSpaceDialogVisible;
     private boolean backupLowSpaceDialogVisible;
@@ -110,7 +113,8 @@ public class StorageUnavailableEventHandler {
             AdminSettingsDialogService adminSettingsService,
             AppConfigService appConfigService,
             UserSettingService userSettingService,
-            AppNoticeService appNoticeService) {
+            AppNoticeService appNoticeService,
+            DefaultStorageLocationService defaultStorageLocationService) {
         this.session = session;
         this.publisher = publisher;
         this.folderManagerService = folderManagerService;
@@ -119,6 +123,7 @@ public class StorageUnavailableEventHandler {
         this.appConfigService = appConfigService;
         this.userSettingService = userSettingService;
         this.appNoticeService = appNoticeService;
+        this.defaultStorageLocationService = defaultStorageLocationService;
     }
 
     public boolean isStorageBlocked(FolderType target) {
@@ -487,6 +492,9 @@ public class StorageUnavailableEventHandler {
 
     private FolderSelectionResult chooseAndSaveStorageFolder(StorageUnavailableEvent event) {
         FolderType target = event.getTarget();
+        if (target == FolderType.SYNC || target == FolderType.BACKUP) {
+            defaultStorageLocationService.refreshVolumesAsync();
+        }
         DirectoryChooser chooser = new DirectoryChooser();
         chooser.setTitle(I18n.get(I18N_SETTING_STORAGE_CHOOSER_TITLE,
                 target.toLocalizedString()));
@@ -591,6 +599,10 @@ public class StorageUnavailableEventHandler {
         }
 
         // For sync/backup: validate through the managed subfolder.
+        if (defaultStorageLocationService.isOnRemovableVolume(selectedRoot.toPath())) {
+            return I18n.get(I18N_SETTING_STORAGE_REMOVABLE_MESSAGE);
+        }
+
         String folderName = target.getPhysicalFolderName();
         File managedDir = new File(selectedRoot, folderName);
 

@@ -59,7 +59,9 @@ public final class AlertHelper {
     private static final int LOGO_SIZE = 48;
     private static final double SCREEN_SIZE_RATIO = 0.8;
     private static final double DIALOG_MIN_WIDTH = 360;
-    private static final double DIALOG_HORIZONTAL_PADDING = 150;
+    // Allow for the dialog pane's left/right insets without making measured alerts
+    // noticeably wider than their content.
+    private static final double DIALOG_HORIZONTAL_PADDING = 50;
 
     private AlertHelper() {
         throw new UnsupportedOperationException("Utility class");
@@ -201,7 +203,7 @@ public final class AlertHelper {
 
         // Keep alerts under a screen-relative max while still allowing content-driven
         // width.
-        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        Rectangle2D screenBounds = getVisualBounds(owner);
         double maxWidth = screenBounds.getWidth() * SCREEN_SIZE_RATIO;
         alert.getDialogPane().setMaxWidth(maxWidth);
 
@@ -252,11 +254,21 @@ public final class AlertHelper {
         alert.getDialogPane().applyCss();
         alert.getDialogPane().layout();
 
-        double maxWidth = Screen.getPrimary().getVisualBounds().getWidth() * SCREEN_SIZE_RATIO;
+        double maxWidth = getVisualBounds(stage).getWidth() * SCREEN_SIZE_RATIO;
         double measuredContentWidth = contentLabel.prefWidth(-1);
 
         Region headerLabel = (Region) alert.getDialogPane().lookup(".header-panel .label");
         double measuredHeaderWidth = headerLabel == null ? 0 : headerLabel.prefWidth(-1);
+        if (alert.getGraphic() != null) {
+            double graphicWidth = alert.getGraphic().getLayoutBounds().getWidth();
+            if (headerLabel == null) {
+                // With no header, DialogPane places the graphic beside the content.
+                measuredContentWidth += graphicWidth;
+            } else {
+                // With a header, the graphic shares the row with the header label.
+                measuredHeaderWidth += graphicWidth;
+            }
+        }
 
         Region buttonContainer = (Region) alert.getDialogPane().lookup(".button-bar > .container");
         double measuredButtonWidth = buttonContainer == null ? 0 : buttonContainer.prefWidth(-1);
@@ -268,13 +280,20 @@ public final class AlertHelper {
         alert.getDialogPane().setMinWidth(Region.USE_PREF_SIZE);
         alert.getDialogPane().setPrefWidth(targetWidth);
         alert.getDialogPane().setMaxWidth(maxWidth);
-        stage.setMinWidth(Math.min(targetWidth, maxWidth));
-        stage.sizeToScene();
+
+        // sizeToScene() does not reliably shrink an already visible dialog because
+        // its Scene can retain the old width. Resize the frame explicitly while
+        // preserving the native window-border width around the DialogPane.
+        Scene scene = stage.getScene();
+        double frameWidth = scene == null ? 0 : Math.max(stage.getWidth() - scene.getWidth(), 0);
+        double targetStageWidth = Math.min(targetWidth + frameWidth, maxWidth);
+        stage.setMinWidth(targetStageWidth);
+        stage.setWidth(targetStageWidth);
     }
 
     // Limit dialog initial size to 80% of screen dimensions
     private static void applyScreenSizeLimit(Stage stage) {
-        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        Rectangle2D screenBounds = getVisualBounds(stage);
         double maxWidth = screenBounds.getWidth() * SCREEN_SIZE_RATIO;
         double maxHeight = screenBounds.getHeight() * SCREEN_SIZE_RATIO;
 
@@ -284,6 +303,22 @@ public final class AlertHelper {
         if (stage.getHeight() > maxHeight) {
             stage.setHeight(maxHeight);
         }
+    }
+
+    private static Rectangle2D getVisualBounds(Stage stage) {
+        if (stage == null) {
+            return Screen.getPrimary().getVisualBounds();
+        }
+        if (!Double.isFinite(stage.getX()) || !Double.isFinite(stage.getY())) {
+            return Screen.getPrimary().getVisualBounds();
+        }
+
+        double width = Double.isFinite(stage.getWidth()) ? Math.max(stage.getWidth(), 1) : 1;
+        double height = Double.isFinite(stage.getHeight()) ? Math.max(stage.getHeight(), 1) : 1;
+        double centerX = stage.getX() + width / 2;
+        double centerY = stage.getY() + height / 2;
+        List<Screen> screens = Screen.getScreensForRectangle(centerX, centerY, 1, 1);
+        return screens.isEmpty() ? Screen.getPrimary().getVisualBounds() : screens.getFirst().getVisualBounds();
     }
 
     // Create table with two columns for displaying item details

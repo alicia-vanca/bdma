@@ -1,6 +1,5 @@
 package com.app.admin.layout.controllers;
 
-import java.text.MessageFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -15,20 +14,26 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.jetbrains.annotations.NotNull;
+import org.kordamp.ikonli.fontawesome6.FontAwesomeRegular;
+import org.kordamp.ikonli.fontawesome6.FontAwesomeSolid;
+import org.kordamp.ikonli.javafx.FontIcon;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
-import com.app.common.modules.datarestore.events.FileRestoredEvent;
 import com.app.common.definitions.AppConstants;
 import com.app.common.dtos.FileFilter;
 import com.app.common.dtos.FileListFilterState;
 import com.app.common.dtos.FileView;
+import com.app.common.events.FileBookmarkToggledEvent;
 import com.app.common.events.UserAutoCreatedEvent;
+import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.DialogHelper;
+import com.app.common.models.User;
 import com.app.common.modules.databackup.events.FileBackupCompletedEvent;
 import com.app.common.modules.dataexport.services.DataExportService;
+import com.app.common.modules.datarestore.events.FileRestoredEvent;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
@@ -40,6 +45,7 @@ import com.app.common.modules.queuemanager.enums.QueueType;
 import com.app.common.modules.queuemanager.events.QueueProgressChangedEvent;
 import com.app.common.modules.queuemanager.events.QueueStatusChangedEvent;
 import com.app.common.modules.session.Session;
+import com.app.common.services.FileBookmarkService;
 import com.app.common.services.FileService;
 import com.app.common.services.UserService;
 
@@ -49,11 +55,13 @@ import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
-import javafx.geometry.Pos;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
@@ -66,10 +74,11 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -90,9 +99,9 @@ public class FileListController {
     private static final double PROGRESS_BAR_IDLE_OPACITY = 0.62;
     private static final double PROGRESS_BAR_ACTIVE_OPACITY = 1.0;
     private static final String STYLE_IDLE = "idle";
-    private static final String STYLE_SYNCING = "syncing";
-    private static final String STYLE_EXPORTING = "exporting";
+    private static final String STYLE_ACTIVE = "active";
     private static final String STYLE_COMPLETE = "complete";
+    private static final int BOOKMARK_BATCH_CONFIRM_THRESHOLD = 5;
 
     @FXML
     private DatePicker dateFromPicker;
@@ -103,9 +112,14 @@ public class FileListController {
     @FXML
     private ComboBox<TypeOption> typeFilterCombo;
     @FXML
+    private Button btnBookmarkFilter;
+    private boolean bookmarkFilterActive;
+    @FXML
     private TableView<FileView> fileTable;
     @FXML
     private TableColumn<FileView, Boolean> colSelect;
+    @FXML
+    private TableColumn<FileView, Boolean> colBookmark;
     @FXML
     private TableColumn<FileView, String> colName;
     @FXML
@@ -145,15 +159,11 @@ public class FileListController {
     @FXML
     private Button btnOpenQueueDialog;
     @FXML
-    private HBox progressBarHeader;
-    @FXML
-    private Label lblProgressBarTitle;
-    @FXML
-    private Region progressBarSpacer;
-    @FXML
     private Label lblProgressBarPercent;
     @FXML
     private ProgressBar progressBar;
+    @FXML
+    private StackPane progressStatusIcon;
 
     private final FileService fileService;
     private final UserService userService;
@@ -162,7 +172,12 @@ public class FileListController {
     private final FileListFilterState filterState;
     private final DataExportService dataExportService;
     private final MediaViewerService mediaViewerService;
+    private final FileBookmarkService bookmarkService;
 
+    private final Set<Long> bookmarkedFileIds = ConcurrentHashMap.newKeySet();
+    private FontIcon headerBookmarkIcon;
+    private FontIcon bookmarkFilterIcon;
+    private Long bookmarkAnchorFileId;
     private String activeCameraId;
     private boolean initializing = true;
     private List<FileView> filteredFiles = new ArrayList<>();
@@ -175,6 +190,7 @@ public class FileListController {
     private final Map<String, VerificationStatus> fileVerificationCache = new ConcurrentHashMap<>();
     private final Map<String, FileView> cachedFileViews = new ConcurrentHashMap<>();
     private final Map<String, SimpleBooleanProperty> selectionStateByKey = new ConcurrentHashMap<>();
+    private final Map<Long, SimpleBooleanProperty> bookmarkObservableByFileId = new ConcurrentHashMap<>();
     private final CheckBox selectAllCheckBox = new CheckBox();
     private final PauseTransition progressBarCompletionGrace = new PauseTransition(PROGRESS_BAR_COMPLETION_GRACE);
     private final AtomicReference<QueueProgressSummary> latestSyncProgress = new AtomicReference<>();
@@ -182,6 +198,7 @@ public class FileListController {
     private FadeTransition progressBarFade;
     private QueueProgressSummary visibleProgress;
     private boolean visibleProgressComplete;
+    private Boolean progressStatusIconComplete;
     private double progressBarTargetOpacity = Double.NaN;
     private boolean refreshingSelectAllState;
     private boolean applyingPageSelection;
@@ -204,7 +221,8 @@ public class FileListController {
             FolderManagerService folderManagerService,
             FileListFilterState filterState,
             DataExportService dataExportService,
-            MediaViewerService mediaViewerService) {
+            MediaViewerService mediaViewerService,
+            FileBookmarkService bookmarkService) {
         this.fileService = fileService;
         this.userService = userService;
         this.session = session;
@@ -212,6 +230,7 @@ public class FileListController {
         this.filterState = filterState;
         this.dataExportService = dataExportService;
         this.mediaViewerService = mediaViewerService;
+        this.bookmarkService = bookmarkService;
     }
 
     @FXML
@@ -230,6 +249,7 @@ public class FileListController {
             loadUsers();
         }
         loadTypes();
+        setupBookmarkFilterToggle();
         setupPageSizeComboBox();
         setupPageNumberInput();
         restoreFilterState();
@@ -262,6 +282,9 @@ public class FileListController {
                     .findFirst()
                     .ifPresent(typeFilterCombo.getSelectionModel()::select);
         }
+
+        bookmarkFilterActive = f.getBookmarkedOnly() != null && f.getBookmarkedOnly();
+        updateBookmarkFilterButton();
     }
 
     private void setupDatePickers() {
@@ -317,6 +340,11 @@ public class FileListController {
         colSelect.setEditable(true);
         colSelect.setSortable(false);
         fileTable.setEditable(true);
+
+        colBookmark.setCellValueFactory(c -> getBookmarkObservable(c.getValue().fileId()));
+        colBookmark.setCellFactory(column -> createBookmarkCell());
+        colBookmark.setSortable(false);
+        setupBookmarkHeader();
 
         colName.setCellValueFactory(c -> new SimpleStringProperty(formatFileName(c.getValue())));
         colName.setSortable(false);
@@ -378,6 +406,196 @@ public class FileListController {
         };
     }
 
+    private static final String STYLE_BOOKMARKED = "bookmarked";
+    private static final String STYLE_BOOKMARK_ICON = "bookmark-icon";
+
+    private TableCell<FileView, Boolean> createBookmarkCell() {
+        return new TableCell<>() {
+            private final FontIcon icon = new FontIcon(FontAwesomeRegular.BOOKMARK);
+            private final Label label = new Label();
+            private boolean iconBookmarked;
+
+            {
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setStyle("-fx-alignment: CENTER;");
+                icon.getStyleClass().add(STYLE_BOOKMARK_ICON);
+                label.setGraphic(icon);
+                label.setFocusTraversable(false);
+                label.setOnMouseClicked(event -> handleBookmarkCellClick(this, event));
+            }
+
+            @Override
+            protected void updateItem(Boolean bookmarked, boolean empty) {
+                super.updateItem(bookmarked, empty);
+                if (shouldClearBookmarkCell(this, bookmarked, empty)) {
+                    if (getGraphic() != null) setGraphic(null);
+                    return;
+                }
+
+                boolean isBookmarked = Boolean.TRUE.equals(bookmarked);
+                if (isBookmarked != iconBookmarked) {
+                    iconBookmarked = isBookmarked;
+                    updateBookmarkIconStyle(icon, isBookmarked);
+                    icon.setIconCode(isBookmarked ? FontAwesomeSolid.BOOKMARK : FontAwesomeRegular.BOOKMARK);
+                }
+                if (getGraphic() != label) setGraphic(label);
+            }
+        };
+    }
+
+    private void handleBookmarkCellClick(TableCell<FileView, Boolean> cell, MouseEvent event) {
+        if (event.getButton() != MouseButton.PRIMARY || cell.isEmpty()) {
+            return;
+        }
+
+        FileView fileView = getCellFileView(cell);
+        if (fileView == null || fileView.fileId() == null) {
+            return;
+        }
+
+        if (event.isShiftDown() && bookmarkAnchorFileId != null) {
+            handleShiftClickBookmark(fileView);
+            event.consume();
+            return;
+        }
+
+        bookmarkAnchorFileId = fileView.fileId();
+        try {
+            boolean currentlyBookmarked = bookmarkedFileIds.contains(fileView.fileId());
+            bookmarkService.setBookmarked(fileView.fileId(), !currentlyBookmarked);
+        } catch (Exception e) {
+            log.error("Failed to set bookmark for file {}", fileView.fileId(), e);
+        }
+        event.consume();
+    }
+
+    private static boolean shouldClearBookmarkCell(TableCell<FileView, Boolean> cell, Boolean bookmarked, boolean empty) {
+        return empty || bookmarked == null || getCellFileView(cell) == null;
+    }
+
+    private static FileView getCellFileView(TableCell<FileView, Boolean> cell) {
+        return cell.getTableRow() == null ? null : cell.getTableRow().getItem();
+    }
+
+    private static void updateBookmarkIconStyle(FontIcon icon, boolean bookmarked) {
+        if (bookmarked) {
+            icon.getStyleClass().add(STYLE_BOOKMARKED);
+        } else {
+            icon.getStyleClass().remove(STYLE_BOOKMARKED);
+        }
+    }
+
+    private void setupBookmarkHeader() {
+        headerBookmarkIcon = new FontIcon(FontAwesomeRegular.BOOKMARK);
+        headerBookmarkIcon.getStyleClass().add(STYLE_BOOKMARK_ICON);
+        headerBookmarkIcon.setOnMouseClicked(event -> {
+            if (event.getButton() != MouseButton.PRIMARY)
+                return;
+            handleBatchBookmark();
+        });
+        colBookmark.setGraphic(headerBookmarkIcon);
+        updateBookmarkHeaderState();
+    }
+
+    private void updateBookmarkHeaderState() {
+        if (headerBookmarkIcon == null)
+            return;
+        List<FileView> pageItems = fileTable.getItems();
+        boolean allBookmarked = pageItems != null && !pageItems.isEmpty()
+                && pageItems.stream().allMatch(fv -> bookmarkedFileIds.contains(fv.fileId()));
+        if (allBookmarked) {
+            headerBookmarkIcon.setIconCode(FontAwesomeSolid.BOOKMARK);
+            if (!headerBookmarkIcon.getStyleClass().contains(STYLE_BOOKMARKED)) {
+                headerBookmarkIcon.getStyleClass().add(STYLE_BOOKMARKED);
+            }
+        } else {
+            headerBookmarkIcon.setIconCode(FontAwesomeRegular.BOOKMARK);
+            headerBookmarkIcon.getStyleClass().removeAll(STYLE_BOOKMARKED);
+        }
+    }
+
+    private void handleBatchBookmark() {
+        List<FileView> pageItems = fileTable.getItems();
+        if (pageItems == null || pageItems.isEmpty())
+            return;
+
+        List<Long> fileIds = pageItems.stream()
+                .map(FileView::fileId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        if (fileIds.isEmpty())
+            return;
+
+        long bookmarkedCount = fileIds.stream().filter(bookmarkedFileIds::contains).count();
+        long unbookmarkedCount = fileIds.size() - bookmarkedCount;
+        boolean bookmark = unbookmarkedCount > 0;
+
+        if (fileIds.size() > BOOKMARK_BATCH_CONFIRM_THRESHOLD) {
+            String title = I18n.get(bookmark ? "bookmark.batch.confirm.title" : "unbookmark.batch.confirm.title");
+            String msg = I18n.get(bookmark ? "bookmark.batch.confirm.message" : "unbookmark.batch.confirm.message",
+                    fileIds.size());
+            Alert confirm = AlertHelper.createConfirmation(title, null, msg);
+            ButtonType yesButton = new ButtonType(I18n.get("common.yes"), ButtonBar.ButtonData.YES);
+            ButtonType noButton = new ButtonType(I18n.get("common.no"), ButtonBar.ButtonData.NO);
+            AlertHelper.setButtons(confirm, yesButton, noButton);
+            var chosen = confirm.showAndWait();
+            if (chosen.isEmpty() || chosen.get() != yesButton)
+                return;
+        }
+
+        try {
+            if (bookmark) {
+                bookmarkService.bookmarkAll(fileIds);
+            } else {
+                bookmarkService.unbookmarkAll(fileIds);
+            }
+            log.info("Batch bookmark: {} files {}", fileIds.size(), bookmark ? STYLE_BOOKMARKED : "unbookmarked");
+        } catch (Exception e) {
+            log.error("Failed to batch toggle bookmarks", e);
+            AlertHelper.createError(I18n.get("bookmark.batch.fail"), null, e.getMessage()).showAndWait();
+        }
+    }
+
+    private void handleShiftClickBookmark(FileView targetFile) {
+        List<FileView> pageItems = fileTable.getItems();
+        if (pageItems == null || pageItems.isEmpty())
+            return;
+
+        int targetIndex = findPageIndexByFileId(targetFile.fileId());
+        int anchorIndex = bookmarkAnchorFileId == null ? -1
+                : findPageIndexByFileId(bookmarkAnchorFileId);
+        if (targetIndex < 0)
+            return;
+        if (anchorIndex < 0)
+            anchorIndex = targetIndex;
+
+        boolean shouldBookmark = !bookmarkedFileIds.contains(targetFile.fileId());
+        int from = Math.min(anchorIndex, targetIndex);
+        int to = Math.max(anchorIndex, targetIndex);
+
+        List<Long> rangeIds = new ArrayList<>();
+        for (int i = from; i <= to; i++) {
+            FileView fv = pageItems.get(i);
+            if (fv.fileId() != null)
+                rangeIds.add(fv.fileId());
+        }
+        if (rangeIds.isEmpty())
+            return;
+
+        try {
+            if (shouldBookmark) {
+                bookmarkService.bookmarkAll(rangeIds);
+            } else {
+                bookmarkService.unbookmarkAll(rangeIds);
+            }
+        } catch (Exception e) {
+            log.error("Failed to shift-click bookmark range", e);
+        }
+
+        bookmarkAnchorFileId = targetFile.fileId();
+    }
+
     private void handleSelectionClick(FileView fileView, boolean shiftDown) {
         String targetKey = selectionKey(fileView);
         if (shiftDown) {
@@ -426,6 +644,16 @@ public class FileListController {
         List<FileView> pageItems = fileTable.getItems();
         for (int i = 0; i < pageItems.size(); i++) {
             if (Objects.equals(selectionKey(pageItems.get(i)), key)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int findPageIndexByFileId(Long fileId) {
+        List<FileView> pageItems = fileTable.getItems();
+        for (int i = 0; i < pageItems.size(); i++) {
+            if (Objects.equals(pageItems.get(i).fileId(), fileId)) {
                 return i;
             }
         }
@@ -485,6 +713,12 @@ public class FileListController {
             });
             return property;
         });
+    }
+
+    private SimpleBooleanProperty getBookmarkObservable(Long fileId) {
+        if (fileId == null)
+            return new SimpleBooleanProperty(false);
+        return bookmarkObservableByFileId.computeIfAbsent(fileId, k -> new SimpleBooleanProperty(false));
     }
 
     private void onSelectAllChanged() {
@@ -720,16 +954,16 @@ public class FileListController {
     }
 
     private void applyIdleProgress() {
-        lblProgressBarTitle.setText(I18n.get("progress.bar.idle"));
         lblProgressBarPercent.setText("");
         lblProgressBarPercent.setManaged(false);
         lblProgressBarPercent.setVisible(false);
-        progressBarSpacer.setManaged(false);
-        progressBarSpacer.setVisible(false);
-        progressBarHeader.setAlignment(Pos.CENTER);
+        progressStatusIcon.setManaged(false);
+        progressStatusIcon.setVisible(false);
+        progressStatusIcon.getChildren().clear();
+        progressStatusIconComplete = null;
         progressBar.setProgress(0);
 
-        btnOpenQueueDialog.getStyleClass().removeAll(STYLE_IDLE, STYLE_SYNCING, STYLE_EXPORTING, STYLE_COMPLETE);
+        btnOpenQueueDialog.getStyleClass().removeAll(STYLE_IDLE, STYLE_ACTIVE, STYLE_COMPLETE);
         btnOpenQueueDialog.getStyleClass().add(STYLE_IDLE);
         animateProgressBarOpacity(PROGRESS_BAR_IDLE_OPACITY);
     }
@@ -738,36 +972,41 @@ public class FileListController {
         if (!isProgressBarViewReady()) {
             return;
         }
-
-        lblProgressBarTitle.setText(resolveProgressTitle(progress, complete));
         lblProgressBarPercent.setText(progress.progress() + "%");
         lblProgressBarPercent.setManaged(true);
         lblProgressBarPercent.setVisible(true);
-        progressBarSpacer.setManaged(true);
-        progressBarSpacer.setVisible(true);
-        progressBarHeader.setAlignment(Pos.CENTER_LEFT);
+        progressStatusIcon.setManaged(true);
+        progressStatusIcon.setVisible(true);
+        updateProgressStatusIcon(complete);
         progressBar.setProgress(progress.progress() / 100.0);
 
-        btnOpenQueueDialog.getStyleClass().removeAll(STYLE_IDLE, STYLE_SYNCING, STYLE_EXPORTING, STYLE_COMPLETE);
+        btnOpenQueueDialog.getStyleClass().removeAll(STYLE_IDLE, STYLE_ACTIVE, STYLE_COMPLETE);
         if (complete) {
             btnOpenQueueDialog.getStyleClass().add(STYLE_COMPLETE);
         } else {
-            btnOpenQueueDialog.getStyleClass().add(progress.kind() == QueueProgressSummary.Kind.SYNC
-                    ? STYLE_SYNCING
-                    : STYLE_EXPORTING);
+            btnOpenQueueDialog.getStyleClass().add(STYLE_ACTIVE);
         }
         animateProgressBarOpacity(PROGRESS_BAR_ACTIVE_OPACITY);
     }
 
-    private String resolveProgressTitle(QueueProgressSummary progress, boolean complete) {
-        if (progress.kind() == QueueProgressSummary.Kind.SYNC) {
-            return complete
-                    ? MessageFormat.format(I18n.get("progress.bar.sync.complete"), progress.name())
-                    : MessageFormat.format(I18n.get("progress.bar.syncing"), progress.name());
+    private void updateProgressStatusIcon(boolean complete) {
+        if (progressStatusIconComplete != null
+                && progressStatusIconComplete == complete
+                && !progressStatusIcon.getChildren().isEmpty()) {
+            return;
         }
-        return complete
-                ? I18n.get("progress.bar.export.complete")
-                : MessageFormat.format(I18n.get("progress.bar.exporting"), progress.total());
+
+        progressStatusIcon.getStyleClass().removeAll(STYLE_ACTIVE, STYLE_COMPLETE);
+        progressStatusIcon.getStyleClass().add(complete ? STYLE_COMPLETE : STYLE_ACTIVE);
+
+        FontIcon fileIcon = new FontIcon(FontAwesomeRegular.FILE_ALT);
+        fileIcon.getStyleClass().add("progress-status-file-icon");
+
+        FontIcon badgeIcon = new FontIcon(complete ? FontAwesomeSolid.CHECK_CIRCLE : FontAwesomeSolid.COG);
+        badgeIcon.getStyleClass().add("progress-status-badge-icon");
+
+        progressStatusIcon.getChildren().setAll(fileIcon, badgeIcon);
+        progressStatusIconComplete = complete;
     }
 
     /**
@@ -798,11 +1037,9 @@ public class FileListController {
      */
     private boolean isProgressBarViewReady() {
         return btnOpenQueueDialog != null
-                && progressBarHeader != null
-                && lblProgressBarTitle != null
-                && progressBarSpacer != null
                 && lblProgressBarPercent != null
-                && progressBar != null;
+                && progressBar != null
+                && progressStatusIcon != null;
     }
 
     @FXML
@@ -881,8 +1118,11 @@ public class FileListController {
 
                 fileVerificationCache.put(syncedPath, newStatus);
 
-                // Update UI only while this Spring controller has an active FXML view.
-                Platform.runLater(this::refreshFileTableIfReady);
+                // CHECKING and EXISTS render the same file name, so refreshing for a
+                // successful verification only rebuilds every table cell unnecessarily.
+                if (newStatus != VerificationStatus.EXISTS) {
+                    Platform.runLater(this::refreshFileTableIfReady);
+                }
             } catch (Exception e) {
                 log.error("File verification failed: {}", syncedPath, e);
                 fileVerificationCache.put(syncedPath, VerificationStatus.ERROR);
@@ -928,6 +1168,9 @@ public class FileListController {
         dateToPicker.setValue(null);
         userFilterCombo.getSelectionModel().selectFirst();
         typeFilterCombo.getSelectionModel().selectFirst();
+        bookmarkFilterActive = false;
+        updateBookmarkFilterButton();
+        bookmarkAnchorFileId = null;
         activeCameraId = null;
         if (onClearFilter != null) {
             onClearFilter.run();
@@ -944,7 +1187,19 @@ public class FileListController {
         cacheLoadedFiles(files);
         filteredFiles = new ArrayList<>(files);
         currentPageIndex = 0;
+        syncBookmarkState(files);
         setupPagination();
+    }
+
+    private void syncBookmarkState(List<FileView> files) {
+        bookmarkedFileIds.clear();
+        for (FileView fv : files) {
+            boolean bookmarked = fv.bookmarked();
+            if (bookmarked) {
+                bookmarkedFileIds.add(fv.fileId());
+            }
+            getBookmarkObservable(fv.fileId()).set(bookmarked);
+        }
     }
 
     private void cacheLoadedFiles(List<FileView> files) {
@@ -955,7 +1210,7 @@ public class FileListController {
 
     private void setupPageSizeComboBox() {
         cbPageSize.getItems().setAll(AppConstants.PAGE_SIZE_THRESHOLDS);
-        cbPageSize.setValue(AppConstants.DEFAULT_PAGE_SIZE);
+        cbPageSize.setValue(pageSize);
         cbPageSize.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == null || Objects.equals(newValue, pageSize)) {
                 return;
@@ -976,14 +1231,15 @@ public class FileListController {
         updatePagerControls(pageCount);
         updateSelectionSummary();
         updateSelectAllHeaderState();
-        fileTable.refresh();
     }
 
     private void updateTablePage() {
+        bookmarkAnchorFileId = null;
         int from = currentPageIndex * pageSize;
         int to = Math.min(from + pageSize, filteredFiles.size());
         fileTable.setItems(FXCollections.observableArrayList(
                 from < to ? filteredFiles.subList(from, to) : List.of()));
+        updateBookmarkHeaderState();
     }
 
     private void updatePagerControls(int pageCount) {
@@ -1118,6 +1374,10 @@ public class FileListController {
         TypeOption typeOption = typeFilterCombo.getValue();
         if (typeOption != null && typeOption.key() != null) {
             filter.setType(typeOption.key());
+        }
+
+        if (bookmarkFilterActive) {
+            filter.setBookmarkedOnly(true);
         }
 
         return filter;
@@ -1256,6 +1516,37 @@ public class FileListController {
         typeFilterCombo.getSelectionModel().selectFirst();
     }
 
+    private void setupBookmarkFilterToggle() {
+        bookmarkFilterActive = false;
+        bookmarkFilterIcon = new FontIcon(FontAwesomeRegular.BOOKMARK);
+        bookmarkFilterIcon.getStyleClass().add(STYLE_BOOKMARK_ICON);
+        btnBookmarkFilter.setGraphic(bookmarkFilterIcon);
+        Tooltip tooltip = new Tooltip(I18n.get("filter.bookmark.tooltip"));
+        btnBookmarkFilter.setTooltip(tooltip);
+        updateBookmarkFilterButton();
+    }
+
+    @FXML
+    private void onToggleBookmarkFilter() {
+        bookmarkFilterActive = !bookmarkFilterActive;
+        updateBookmarkFilterButton();
+        filterState.get().setBookmarkedOnly(bookmarkFilterActive);
+        refresh(buildFilter());
+    }
+
+    private void updateBookmarkFilterButton() {
+        if (btnBookmarkFilter == null || bookmarkFilterIcon == null)
+            return;
+        if (bookmarkFilterActive) {
+            bookmarkFilterIcon.setIconCode(FontAwesomeSolid.BOOKMARK);
+            bookmarkFilterIcon.getStyleClass().add(STYLE_BOOKMARKED);
+        } else {
+            bookmarkFilterIcon.setIconCode(FontAwesomeRegular.BOOKMARK);
+            bookmarkFilterIcon.getStyleClass().remove(STYLE_BOOKMARKED);
+        }
+        btnBookmarkFilter.setText(I18n.get("filter.bookmark"));
+    }
+
     @EventListener
     public void onUserAutoCreated(UserAutoCreatedEvent event) {
         reloadUserFilter();
@@ -1276,6 +1567,42 @@ public class FileListController {
     @EventListener(FileBackupCompletedEvent.class)
     public void onFileBackupCompleted() {
         Platform.runLater(this::refreshCurrentFilterIfReady);
+    }
+
+    @EventListener
+    public void onBookmarkChanged(FileBookmarkToggledEvent event) {
+        Platform.runLater(() -> applyCommittedBookmarkChange(event));
+    }
+
+    private void applyCommittedBookmarkChange(FileBookmarkToggledEvent event) {
+        User currentUser = session.getUser();
+        if (currentUser == null || !Objects.equals(currentUser.getId(), event.getUserId())) {
+            return;
+        }
+
+        Set<Long> changedIds = new HashSet<>(event.getFileIds());
+
+        if (event.isBookmarked()) {
+            bookmarkedFileIds.addAll(changedIds);
+            changedIds.forEach(id -> getBookmarkObservable(id).set(true));
+        } else {
+            bookmarkedFileIds.removeAll(changedIds);
+            changedIds.forEach(id -> getBookmarkObservable(id).set(false));
+        }
+
+        if (Boolean.TRUE.equals(filterState.get().getBookmarkedOnly())) {
+            if (!event.isBookmarked()) {
+                filteredFiles.removeIf(file -> changedIds.contains(file.fileId()));
+                setupPagination();
+                return;
+            }
+            refreshCurrentFilterIfReady();
+            return;
+        }
+
+        if (isViewReady()) {
+            updateBookmarkHeaderState();
+        }
     }
 
     @EventListener

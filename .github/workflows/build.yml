@@ -15,6 +15,9 @@ env:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      BDMA_SIGNING_CERT_THUMBPRINT: ${{ vars.BDMA_SIGNING_CERT_THUMBPRINT }}
+      BDMA_TIMESTAMP_URL: http://timestamp.digicert.com
 
     steps:
       - name: Checkout code
@@ -76,12 +79,246 @@ jobs:
             --icon build\package\logo.ico `
             --dest build\dist `
             --module-path "$modulePath" `
-            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,java.sql,java.logging,javafx.media" `
+            --add-modules "javafx.base,javafx.graphics,javafx.controls,javafx.fxml,javafx.web,java.sql,java.logging,java.net.http,jdk.httpserver" `
             --java-options "-DLOGGLY_TOKEN=$env:LOGGLY_TOKEN -DBODYCAM_CRYPTO_PASSWORD=$env:BODYCAM_CRYPTO_PASSWORD -DPATCH_MASTER_KEY=$env:PATCH_MASTER_KEY -DTOTP_SECRET=$env:TOTP_SECRET -DAPP_UPDATE_GITHUB_TOKEN=$env:APP_UPDATE_GITHUB_TOKEN" `
             --jlink-options "--strip-debug --compress=2 --no-header-files --no-man-pages --bind-services"
 
+      - name: Locate SignTool
+        shell: pwsh
+        run: |
+          $signTool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter signtool.exe -Recurse |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $signTool) {
+            throw 'SignTool was not found. Install the Windows SDK on the runner.'
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNTOOL_PATH=' + $signTool.FullName)
+          Write-Host 'SignTool found.'
+
+      - name: Prepare code-signing certificate
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          BDMA_SIGNING_PFX_BASE64: ${{ secrets.BDMA_SIGNING_PFX_BASE64 }}
+          BDMA_SIGNING_PFX_PASSWORD: ${{ secrets.BDMA_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_PFX_BASE64)) {
+            throw 'Missing GitHub secret: BDMA_SIGNING_PFX_BASE64'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_PFX_PASSWORD)) {
+            throw 'Missing GitHub secret: BDMA_SIGNING_PFX_PASSWORD'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_CERT_THUMBPRINT)) {
+            throw 'Missing GitHub variable: BDMA_SIGNING_CERT_THUMBPRINT'
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'bdma-code-signing.pfx'
+
+          try {
+            $pfxBytes = [Convert]::FromBase64String($env:BDMA_SIGNING_PFX_BASE64)
+          } catch {
+            throw 'BDMA_SIGNING_PFX_BASE64 is not valid Base64.'
+          }
+
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+
+          Write-Host 'Loading PFX into memory without importing its private key into Windows...'
+          $keyStorageFlags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+          $importedCertificates = [Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+
+          try {
+            $importedCertificates.Import($pfxBytes, $env:BDMA_SIGNING_PFX_PASSWORD, $keyStorageFlags)
+          } catch {
+            throw ('Unable to load code-signing PFX: ' + $_.Exception.Message)
+          }
+
+          Write-Host 'PFX loaded in memory.'
+
+          $expectedThumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
+          $certificate = $importedCertificates |
+            Where-Object { $_.Thumbprint -eq $expectedThumbprint } |
+            Select-Object -First 1
+
+          if (-not $certificate) {
+            throw ('The PFX does not contain the expected certificate: ' + $expectedThumbprint)
+          }
+
+          if (-not $certificate.HasPrivateKey) {
+            throw 'The imported code-signing certificate does not contain a private key.'
+          }
+
+          $rawEnhancedKeyUsageExtension = $certificate.Extensions |
+            Where-Object { $_.Oid.Value -eq '2.5.29.37' } |
+            Select-Object -First 1
+
+          if (-not $rawEnhancedKeyUsageExtension) {
+            throw 'The imported certificate does not contain an Enhanced Key Usage extension.'
+          }
+
+          $enhancedKeyUsageExtension = [Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new()
+          $enhancedKeyUsageExtension.CopyFrom($rawEnhancedKeyUsageExtension)
+          $enhancedKeyUsageOids = @(
+            $enhancedKeyUsageExtension.EnhancedKeyUsages |
+              ForEach-Object { $_.Value }
+          )
+
+          if ($enhancedKeyUsageOids -notcontains '1.3.6.1.5.5.7.3.3') {
+            throw 'The imported certificate is not valid for Code Signing.'
+          }
+
+          $utcNow = [DateTime]::UtcNow
+          $notBefore = $certificate.NotBefore.ToUniversalTime()
+          $notAfter = $certificate.NotAfter.ToUniversalTime()
+
+          if ($notBefore -gt $utcNow) {
+            throw ('The code-signing certificate is not valid before ' + $notBefore.ToString('O'))
+          }
+
+          if ($notAfter -le $utcNow) {
+            throw ('The code-signing certificate expired at ' + $notAfter.ToString('O'))
+          }
+
+          if ($notAfter -le $utcNow.AddDays(30)) {
+            Write-Warning ('The code-signing certificate expires soon: ' + $notAfter.ToString('O'))
+          }
+
+          $isSelfSigned = [Convert]::ToBase64String($certificate.SubjectName.RawData) -eq
+            [Convert]::ToBase64String($certificate.IssuerName.RawData)
+
+          if ($env:GITHUB_REF_NAME -eq 'release' -and $isSelfSigned) {
+            Write-Warning 'Release uses a self-signed certificate. External Windows devices will not trust this publisher automatically.'
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_PFX_PATH=' + $pfxPath)
+          Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_CERT_SELF_SIGNED=' + $isSelfSigned.ToString().ToLowerInvariant())
+
+          Write-Host ('Code-signing PFX validated: ' + $certificate.Subject)
+          Write-Host ('Thumbprint: ' + $certificate.Thumbprint)
+          Write-Host ('Valid until: ' + $notAfter.ToString('O'))
+          Write-Host ('Self-signed: ' + $isSelfSigned)
+
+      - name: Sign and verify BDMA launcher
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          BDMA_SIGNING_PFX_PASSWORD: ${{ secrets.BDMA_SIGNING_PFX_PASSWORD }}
+        run: |
+          $launcherPath = Join-Path (Get-Location).Path 'build\dist\BDMA\BDMA.exe'
+
+          if (-not (Test-Path $launcherPath)) {
+            throw ('BDMA launcher not found: ' + $launcherPath)
+          }
+
+          if (-not (Test-Path $env:BDMA_SIGNTOOL_PATH)) {
+            throw ('SignTool path is unavailable: ' + $env:BDMA_SIGNTOOL_PATH)
+          }
+
+          if (-not (Test-Path $env:BDMA_SIGNING_PFX_PATH)) {
+            throw ('Code-signing PFX path is unavailable: ' + $env:BDMA_SIGNING_PFX_PATH)
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_PFX_PASSWORD)) {
+            throw 'Missing GitHub secret: BDMA_SIGNING_PFX_PASSWORD'
+          }
+
+          $expectedThumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
+
+          (Get-Item $launcherPath).IsReadOnly = $false
+
+          & $env:BDMA_SIGNTOOL_PATH sign /f $env:BDMA_SIGNING_PFX_PATH /p $env:BDMA_SIGNING_PFX_PASSWORD /fd SHA256 /d BDMA /v $launcherPath
+
+          if ($LASTEXITCODE -ne 0) {
+            throw ('BDMA launcher signing failed with exit code ' + $LASTEXITCODE)
+          }
+
+          $maxTimestampAttempts = 4
+          $timestampSucceeded = $false
+
+          for ($attempt = 1; $attempt -le $maxTimestampAttempts; $attempt++) {
+            & $env:BDMA_SIGNTOOL_PATH timestamp /tr $env:BDMA_TIMESTAMP_URL /td SHA256 /v $launcherPath
+
+            if ($LASTEXITCODE -eq 0) {
+              $timestampSucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxTimestampAttempts) {
+              $retryDelaySeconds = [int](5 * [math]::Pow(2, $attempt - 1))
+              Write-Warning ('Launcher timestamp attempt failed. Retrying in ' + $retryDelaySeconds + ' seconds.')
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $timestampSucceeded) {
+            throw ('BDMA launcher timestamping failed after ' + $maxTimestampAttempts + ' attempts.')
+          }
+
+          $isSelfSigned = $env:BDMA_SIGNING_CERT_SELF_SIGNED -eq 'true'
+
+          if (-not $isSelfSigned) {
+            & $env:BDMA_SIGNTOOL_PATH verify /pa /all /tw /v $launcherPath
+
+            if ($LASTEXITCODE -ne 0) {
+              throw ('BDMA launcher signature verification failed with exit code ' + $LASTEXITCODE)
+            }
+          }
+
+          $signature = Get-AuthenticodeSignature $launcherPath
+          $signatureStatus = $signature.Status.ToString()
+          $hasExpectedSelfSignedStatus = $signatureStatus -in @('Valid', 'NotTrusted', 'UnknownError')
+
+          if ($isSelfSigned) {
+            if (-not $hasExpectedSelfSignedStatus) {
+              throw ('BDMA launcher self-signed signature verification failed: ' + $signature.StatusMessage)
+            }
+          } elseif ($signatureStatus -ne 'Valid') {
+            throw ('BDMA launcher signature is not trusted: ' + $signature.StatusMessage)
+          }
+
+          if (-not $signature.TimeStamperCertificate) {
+            throw 'BDMA launcher does not contain a trusted timestamp.'
+          }
+
+          if ($signature.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
+            throw ('BDMA launcher was signed by unexpected certificate: ' + $signature.SignerCertificate.Thumbprint)
+          }
+
+          Write-Host ('BDMA launcher timestamp verified: ' + $signature.TimeStamperCertificate.Subject)
+
       - name: Install NSIS
-        run: choco install nsis -y
+        run: |
+          $nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
+          $maxInstallAttempts = 4
+          $installSucceeded = $false
+
+          for ($attempt = 1; $attempt -le $maxInstallAttempts; $attempt++) {
+            Write-Host "Installing NSIS (attempt $attempt of $maxInstallAttempts)..."
+
+            choco install nsis -y --no-progress
+            $chocoExitCode = $LASTEXITCODE
+
+            if ($chocoExitCode -eq 0 -and (Test-Path $nsisPath)) {
+              $installSucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxInstallAttempts) {
+              $retryDelaySeconds = [int](5 * [math]::Pow(2, $attempt))
+              Write-Warning "NSIS installation attempt $attempt failed with exit code $chocoExitCode. Retrying in $retryDelaySeconds seconds..."
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $installSucceeded) {
+            throw "NSIS installation failed after $maxInstallAttempts attempts. Expected executable not found: $nsisPath"
+          }
+
+          Write-Host "NSIS installation verified: $nsisPath"
 
       - name: Build NSIS installer
         run: |
@@ -129,6 +366,91 @@ jobs:
             "/DAPP_DATA_DIR=$appDataDir" `
             src\main\resources\installer\installer.nsi
 
+      - name: Sign and verify NSIS installer
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          BDMA_SIGNING_PFX_PASSWORD: ${{ secrets.BDMA_SIGNING_PFX_PASSWORD }}
+        run: |
+          $installers = @(Get-ChildItem 'build\installer\*.exe' -File)
+
+          if ($installers.Count -ne 1) {
+            throw ('Expected exactly one NSIS installer, found ' + $installers.Count)
+          }
+
+          $installerPath = $installers[0].FullName
+          (Get-Item $installerPath).IsReadOnly = $false
+
+          if (-not (Test-Path $env:BDMA_SIGNING_PFX_PATH)) {
+            throw ('Code-signing PFX path is unavailable: ' + $env:BDMA_SIGNING_PFX_PATH)
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_PFX_PASSWORD)) {
+            throw 'Missing GitHub secret: BDMA_SIGNING_PFX_PASSWORD'
+          }
+
+          $expectedThumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
+
+          & $env:BDMA_SIGNTOOL_PATH sign /f $env:BDMA_SIGNING_PFX_PATH /p $env:BDMA_SIGNING_PFX_PASSWORD /fd SHA256 /d BDMA /v $installerPath
+
+          if ($LASTEXITCODE -ne 0) {
+            throw ('NSIS installer signing failed with exit code ' + $LASTEXITCODE)
+          }
+
+          $maxTimestampAttempts = 4
+          $timestampSucceeded = $false
+
+          for ($attempt = 1; $attempt -le $maxTimestampAttempts; $attempt++) {
+            & $env:BDMA_SIGNTOOL_PATH timestamp /tr $env:BDMA_TIMESTAMP_URL /td SHA256 /v $installerPath
+
+            if ($LASTEXITCODE -eq 0) {
+              $timestampSucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxTimestampAttempts) {
+              $retryDelaySeconds = [int](5 * [math]::Pow(2, $attempt - 1))
+              Write-Warning ('Installer timestamp attempt failed. Retrying in ' + $retryDelaySeconds + ' seconds.')
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $timestampSucceeded) {
+            throw ('NSIS installer timestamping failed after ' + $maxTimestampAttempts + ' attempts.')
+          }
+
+          $isSelfSigned = $env:BDMA_SIGNING_CERT_SELF_SIGNED -eq 'true'
+
+          if (-not $isSelfSigned) {
+            & $env:BDMA_SIGNTOOL_PATH verify /pa /all /tw /v $installerPath
+
+            if ($LASTEXITCODE -ne 0) {
+              throw ('NSIS installer signature verification failed with exit code ' + $LASTEXITCODE)
+            }
+          }
+
+          $signature = Get-AuthenticodeSignature $installerPath
+          $signatureStatus = $signature.Status.ToString()
+          $hasExpectedSelfSignedStatus = $signatureStatus -in @('Valid', 'NotTrusted', 'UnknownError')
+
+          if ($isSelfSigned) {
+            if (-not $hasExpectedSelfSignedStatus) {
+              throw ('NSIS installer self-signed signature verification failed: ' + $signature.StatusMessage)
+            }
+          } elseif ($signatureStatus -ne 'Valid') {
+            throw ('NSIS installer signature is not trusted: ' + $signature.StatusMessage)
+          }
+
+          if (-not $signature.TimeStamperCertificate) {
+            throw 'NSIS installer does not contain a trusted timestamp.'
+          }
+
+          if ($signature.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
+            throw ('NSIS installer was signed by unexpected certificate: ' + $signature.SignerCertificate.Thumbprint)
+          }
+
+          Write-Host ('NSIS installer timestamp verified: ' + $signature.TimeStamperCertificate.Subject)
+
       - name: Prepare fixed R2 installer name
         run: |
           New-Item -ItemType Directory -Force -Path build\r2 | Out-Null
@@ -154,6 +476,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
+          AWS_RETRY_MODE: standard
+          AWS_MAX_ATTEMPTS: "5"
           AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
           AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -191,20 +515,63 @@ jobs:
             throw "R2 upload file not found: $localFile"
           }
 
-          Write-Host "Uploading $localFile to R2 object key: $objectKey"
+          $localFileLength = (Get-Item $localFile).Length
+          $uploadId = "$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-$env:GITHUB_SHA"
+          $maxUploadAttempts = 4
+          $uploadSucceeded = $false
 
-          aws s3 cp $localFile "s3://$env:R2_BUCKET_NAME/$objectKey" `
-            --endpoint-url $endpoint `
-            --content-type "application/vnd.microsoft.portable-executable" `
-            --cache-control "no-store, max-age=0, must-revalidate" `
-            --no-progress
+          for ($attempt = 1; $attempt -le $maxUploadAttempts; $attempt++) {
+            Write-Host "Uploading $localFile to R2 object key: $objectKey (attempt $attempt of $maxUploadAttempts)"
 
-          Write-Host "Verifying uploaded object..."
+            aws s3 cp $localFile "s3://$env:R2_BUCKET_NAME/$objectKey" `
+              --endpoint-url $endpoint `
+              --content-type "application/vnd.microsoft.portable-executable" `
+              --cache-control "no-store, max-age=0, must-revalidate" `
+              --metadata "github-upload-id=$uploadId" `
+              --no-progress
 
-          aws s3api head-object `
+            $uploadExitCode = $LASTEXITCODE
+
+            if ($uploadExitCode -eq 0) {
+              $uploadSucceeded = $true
+              break
+            }
+
+            if ($attempt -lt $maxUploadAttempts) {
+              $retryDelaySeconds = [int][math]::Pow(2, $attempt)
+              Write-Warning "R2 upload attempt $attempt failed with exit code $uploadExitCode. Retrying in $retryDelaySeconds seconds..."
+              Start-Sleep -Seconds $retryDelaySeconds
+            }
+          }
+
+          if (-not $uploadSucceeded) {
+            throw "R2 upload failed after $maxUploadAttempts attempts."
+          }
+
+          Write-Host "Verifying uploaded object belongs to this workflow run..."
+
+          $headJson = aws s3api head-object `
             --bucket $env:R2_BUCKET_NAME `
             --key $objectKey `
-            --endpoint-url $endpoint
+            --endpoint-url $endpoint `
+            --output json
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "R2 upload verification request failed."
+          }
+
+          $head = $headJson | ConvertFrom-Json
+          $remoteUploadId = $head.Metadata.'github-upload-id'
+
+          if ([int64]$head.ContentLength -ne $localFileLength) {
+            throw "R2 upload verification failed: remote size $($head.ContentLength) does not match local size $localFileLength."
+          }
+
+          if ($remoteUploadId -ne $uploadId) {
+            throw "R2 upload verification failed: remote upload ID '$remoteUploadId' does not match this workflow run."
+          }
+
+          Write-Host "R2 upload verified successfully ($localFileLength bytes, upload ID $uploadId)."
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -224,3 +591,15 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup code-signing material
+        if: always()
+        shell: pwsh
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'bdma-code-signing.pfx'
+
+          if (Test-Path $pfxPath) {
+            Remove-Item $pfxPath -Force
+          }
+
+          Write-Host 'Code-signing material cleanup completed.'

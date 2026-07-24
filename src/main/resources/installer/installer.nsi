@@ -53,8 +53,11 @@ Var UserChoice
 Var IsInstalled
 Var ExistingInstallDir
 Var AutoUpdate
+Var AutoOpen
 Var DelayedCleanupNeeded
 Var CleanupLauncherPath
+Var PowerShellExe
+Var InstallerPid
 
 ; ── Action selection page only shown when already installed ─────
 Page custom ShowActionDialog ShowActionDialogLeave
@@ -64,16 +67,27 @@ Page custom ShowActionDialog ShowActionDialogLeave
 !define MUI_FINISHPAGE_RUN_TEXT "Open BDMA"
 !define MUI_FINISHPAGE_TITLE "BDMA Setup Complete"
 !define MUI_FINISHPAGE_TEXT "BDMA has been installed successfully."
+!define MUI_PAGE_CUSTOMFUNCTION_PRE FinishPagePre
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
 
 ; ── Check if already installed ──────────────────────────────────
 Function .onInit
+  ; Prefer 64-bit PowerShell when available.
+  StrCpy $PowerShellExe "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
+  IfFileExists "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" 0 powershellReady
+  StrCpy $PowerShellExe "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+
+  powershellReady:
+  System::Call 'kernel32::GetCurrentProcessId() i .r0'
+  StrCpy $InstallerPid $0
+
   ; Default action is install/update.
   StrCpy $UserChoice ${ACTION_INSTALL_UPDATE}
   StrCpy $IsInstalled "0"
   StrCpy $ExistingInstallDir ""
   StrCpy $AutoUpdate "0"
+  StrCpy $AutoOpen "0"
   StrCpy $DelayedCleanupNeeded "0"
   StrCpy $CleanupLauncherPath ""
 
@@ -82,6 +96,12 @@ Function .onInit
   ${GetOptions} $0 "/BDMA_AUTO_UPDATE" $1
   ${IfNot} ${Errors}
     StrCpy $AutoUpdate "1"
+  ${EndIf}
+
+  ; Launch BDMA immediately after a successful install and skip the finish page.
+  ${GetOptions} $0 "/BDMA_AUTO_OPEN" $1
+  ${IfNot} ${Errors}
+    StrCpy $AutoOpen "1"
   ${EndIf}
 
   ; Keep the install path and the installed flag separate.
@@ -103,6 +123,13 @@ Function .onInit
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BDMA"
     StrCpy $ExistingInstallDir ""
     StrCpy $IsInstalled "0"
+FunctionEnd
+
+; ── Skip the finish page when command-line auto-open was requested ──────────
+Function FinishPagePre
+  ${If} $AutoOpen == "1"
+    Abort
+  ${EndIf}
 FunctionEnd
 
 ; ── Override instfiles page header based on action ──────────────
@@ -174,13 +201,40 @@ Function ShowActionDialogLeave
   done:
 FunctionEnd
 
+; ── Check whether another BDMA process is running ───────────────
+; Returns the PowerShell exit code and comma-separated process IDs on the NSIS
+; stack. Exit code 0 means running; any other code means not running.
+Function CheckAppRunning
+  ; The setup executable may also be named BDMA.exe. Exclude only this NSIS
+  ; process and treat every other BDMA process as an app instance.
+  System::Call 'kernel32::SetEnvironmentVariable(t, t)i("BDMA_INSTALLER_PID", "$InstallerPid").r0'
+  nsExec::ExecToStack '"$PowerShellExe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$installerPid = [int]$$env:BDMA_INSTALLER_PID; $$running = @(Get-Process -Name BDMA -ErrorAction SilentlyContinue | Where-Object { $$_.Id -ne $$installerPid }); if ($$running.Count -eq 0) { exit 1 }; [Console]::Out.Write(($$running.Id -join $\',$\')); exit 0"'
+FunctionEnd
+
 ; ── Ensure app is closed before setup changes ───────────────────
 Function EnsureAppClosed
-  nsExec::ExecToStack '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "if (Get-Process -Name BDMA -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"'
+  Call CheckAppRunning
   Pop $0 ; exit code
   Pop $1 ; output
 
   ${If} $0 == 0
+    DetailPrint "Detected running BDMA process ID(s): $1"
+
+    ; Silent setup must remain unattended: close BDMA without prompting.
+    IfSilent kill
+
+    ; BDMA's native launcher can remain briefly after the JVM exits. Recheck
+    ; after a grace period so a process already shutting down causes no prompt.
+    Sleep 1000
+    Call CheckAppRunning
+    Pop $0 ; exit code
+    Pop $1 ; output
+
+    ${If} $0 != 0
+      DetailPrint "BDMA finished closing; no forced shutdown is needed."
+      Return
+    ${EndIf}
+
     MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION \
       "BDMA must be closed before setup can continue.$\r$\n$\r$\nSelect OK to close BDMA and continue, or Cancel to abort setup." \
       IDOK kill IDCANCEL cancel
@@ -190,47 +244,45 @@ Function EnsureAppClosed
 
     kill:
       DetailPrint "Closing BDMA..."
-      nsExec::ExecToStack '$SYSDIR\taskkill.exe /F /T /IM BDMA.exe'
+      ; Refresh the PID list in case the app changed while the prompt was open.
+      Call CheckAppRunning
       Pop $0
       Pop $1
-      Sleep 1500
 
-      ; Run only after user confirmed closing BDMA.
-      ; /T may already kill child adb.exe, but this catches leftovers.
-      Call KillBundledAdb
+      ${If} $0 == 0
+        ; Force-kill each matched app PID and its process tree.
+        nsExec::ExecToStack '"$PowerShellExe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$taskkill = Join-Path $$env:SystemRoot System32\taskkill.exe; @($1) | ForEach-Object { & $$taskkill /F /T /PID $$_ | Out-Null }"'
+        Pop $0
+        Pop $1
+      ${EndIf}
+
+      Sleep 1500
   ${EndIf}
 FunctionEnd
 
 ; ── Stop BDMA-owned ADB processes left behind by forced app termination ─────
 Function KillBundledAdb
   ; Kill only adb.exe processes owned by BDMA.
-  ; Covers:
-  ;   - $INSTDIR\...\adb.exe
-  ;   - ${APP_DATA_DIR}\...\adb.exe
-  ; Avoids killing Android Studio / platform-tools ADB.
+  ; Covers the current installed runtime and the legacy AppData extraction path.
+  ; Exact executable matching avoids killing Android Studio / platform-tools ADB.
 
   StrCpy $0 "$TEMP\bdma-kill-adb.ps1"
 
   FileOpen $1 $0 w
 
   FileWrite $1 "param([string]$$Mode)$\r$\n"
-  FileWrite $1 "$$roots = @()$\r$\n"
   FileWrite $1 "$$installDir = '$INSTDIR'$\r$\n"
-  FileWrite $1 "$$appDataRoot = '${APP_DATA_DIR}'$\r$\n"
-
-  FileWrite $1 "if (Test-Path -LiteralPath $$installDir) {$\r$\n"
-  FileWrite $1 "  $$roots += (Resolve-Path -LiteralPath $$installDir).Path.TrimEnd('\') + '\'$\r$\n"
-  FileWrite $1 "}$\r$\n"
-
-  FileWrite $1 "if (Test-Path -LiteralPath $$appDataRoot) {$\r$\n"
-  FileWrite $1 "  $$roots += (Resolve-Path -LiteralPath $$appDataRoot).Path.TrimEnd('\') + '\'$\r$\n"
-  FileWrite $1 "}$\r$\n"
+  FileWrite $1 "$$candidatePaths = @($\r$\n"
+  FileWrite $1 "  [IO.Path]::GetFullPath((Join-Path $$installDir 'app\adb\adb.exe')),$\r$\n"
+  FileWrite $1 "  [IO.Path]::GetFullPath((Join-Path $$env:LOCALAPPDATA 'bdma\tmp\adb\adb.exe'))$\r$\n"
+  FileWrite $1 ")$\r$\n"
 
   FileWrite $1 "function Get-BdmaAdbProcesses {$\r$\n"
-  FileWrite $1 "  if ($$roots.Count -eq 0) { return @() }$\r$\n"
   FileWrite $1 "  @(Get-Process adb -ErrorAction SilentlyContinue | Where-Object {$\r$\n"
   FileWrite $1 "    $$processPath = $$_.Path$\r$\n"
-  FileWrite $1 "    $$processPath -and ($$roots | Where-Object { $$processPath.StartsWith($$_, [System.StringComparison]::OrdinalIgnoreCase) })$\r$\n"
+  FileWrite $1 "    $$processPath -and ($$candidatePaths | Where-Object {$\r$\n"
+  FileWrite $1 "      [string]::Equals([IO.Path]::GetFullPath($$processPath), $$_, [System.StringComparison]::OrdinalIgnoreCase)$\r$\n"
+  FileWrite $1 "    })$\r$\n"
   FileWrite $1 "  })$\r$\n"
   FileWrite $1 "}$\r$\n"
 
@@ -257,7 +309,7 @@ Function KillBundledAdb
   FileClose $1
 
   ; First pass: check only.
-  nsExec::ExecToStack '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$0" check'
+  nsExec::ExecToStack '"$PowerShellExe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$0" check'
   Pop $0 ; exit code
   Pop $1 ; output
 
@@ -271,15 +323,19 @@ Function KillBundledAdb
   DetailPrint "Stopping BDMA-owned ADB processes..."
 
   ; Second pass: kill.
-  nsExec::ExecToStack '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$TEMP\bdma-kill-adb.ps1" kill'
+  nsExec::ExecToStack '"$PowerShellExe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$TEMP\bdma-kill-adb.ps1" kill'
   Pop $0 ; exit code
   Pop $1 ; output
 
   Sleep 1500
+  Delete "$TEMP\bdma-kill-adb.ps1"
 FunctionEnd
 
 Function PrepareForSetupChanges
   Call EnsureAppClosed
+  ; ADB can outlive BDMA, so stop BDMA-owned ADB even when BDMA was already closed.
+  Call KillBundledAdb
+  RMDir /r "${APP_DATA_DIR}\tmp\adb"
 FunctionEnd
 
 ; ── Main section ────────────────────────────────────────────────
@@ -305,8 +361,16 @@ Section "Main" SecMain
   ; ── Install / Update ────────────────────────────────────────
   Call PrepareForSetupChanges
 
+  ; Preserve jpackage's required layout: BDMA.exe expects its configuration and
+  ; application JAR under app\, beside the runtime\ directory.
   SetOutPath "$INSTDIR"
-  File /r "${INSTALLER_SOURCE_DIR}\*.*"
+  File "${INSTALLER_SOURCE_DIR}\BDMA.exe"
+
+  SetOutPath "$INSTDIR\app"
+  File /r "${INSTALLER_SOURCE_DIR}\app\*.*"
+
+  SetOutPath "$INSTDIR\runtime"
+  File /r "${INSTALLER_SOURCE_DIR}\runtime\*.*"
 
   ${If} $EXEPATH != "$INSTDIR\BDMA-Setup.exe"
     CopyFiles "$EXEPATH" "$INSTDIR\BDMA-Setup.exe"
@@ -335,15 +399,22 @@ Section "Main" SecMain
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BDMA" \
     "EstimatedSize" $0
 
+  ; Create shortcuts with the install root as their working directory. $OUTDIR
+  ; still points to runtime after copying the jpackage image.
+  SetOutPath "$INSTDIR"
   CreateShortcut "$DESKTOP\BDMA.lnk" "$INSTDIR\BDMA.exe"
   CreateDirectory "$SMPROGRAMS\BDMA"
   CreateShortcut "$SMPROGRAMS\BDMA\BDMA.lnk" "$INSTDIR\BDMA.exe"
-  CreateShortcut "$SMPROGRAMS\BDMA\Uninstall.lnk" "$INSTDIR\BDMA-Setup.exe"
+  CreateShortcut "$SMPROGRAMS\BDMA\Gỡ cài đặt.lnk" "$INSTDIR\BDMA-Setup.exe"
 
   ; Disable AutoPlay to prevent Windows popup when body camera connected
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun" 0xFF
-SectionEnd
 
+  ${If} $AutoOpen == "1"
+    DetailPrint "Opening BDMA..."
+    Exec '"$INSTDIR\BDMA.exe"'
+  ${EndIf}
+SectionEnd
 
 ; ── Finish uninstall after normal cleanup has completed ─────────
 Function FinishUninstall
@@ -356,6 +427,7 @@ Function FinishUninstall
   ; Launch delayed cleanup only after user closes the success dialog.
   ; This is important when the uninstaller is running from $INSTDIR\BDMA-Setup.exe.
   ${If} $DelayedCleanupNeeded == "1"
+    SetOutPath "$TEMP"
     ExecShell "open" "$SYSDIR\wscript.exe" '"$CleanupLauncherPath"' SW_HIDE
   ${EndIf}
 
@@ -407,6 +479,10 @@ Function DoUninstall
   SetDetailsView show
   SetDetailsPrint both
 
+  ; Do not keep the current working directory inside $INSTDIR.
+  ; This matters when uninstall is launched from $INSTDIR\BDMA-Setup.exe.
+  SetOutPath "$TEMP"
+
   DetailPrint "Removing BDMA installation files: $INSTDIR"
 
   RMDir /r "$INSTDIR\app"
@@ -432,26 +508,76 @@ Function DoUninstall
   installDirStillExists:
     DetailPrint "Install directory still exists, scheduling delayed cleanup: $INSTDIR"
 
+    ; Keep the delayed cleanup process outside the directory it needs to delete.
+    SetOutPath "$TEMP"
+
+    ; Capture current installer PID so the external cleanup script can wait until
+    ; this NSIS process exits. This is the key fix for uninstall-from-$INSTDIR.
+    System::Call 'kernel32::GetCurrentProcessId() i .r3'
+
     StrCpy $0 "$TEMP\bdma-cleanup.ps1"
     StrCpy $2 "$TEMP\bdma-cleanup.vbs"
 
     FileOpen $1 $0 w
+    FileWrite $1 "param([int]$$ParentPid)$\r$\n"
+    FileWrite $1 "$$ErrorActionPreference = 'Continue'$\r$\n"
     FileWrite $1 "$$installDir = '$INSTDIR'$\r$\n"
     FileWrite $1 "$$launcherPath = '$2'$\r$\n"
-    FileWrite $1 "for ($$attempt = 1; $$attempt -le 30; $$attempt++) {$\r$\n"
-    FileWrite $1 "  Start-Sleep -Milliseconds 500$\r$\n"
-    FileWrite $1 "  Remove-Item -LiteralPath $$installDir -Recurse -Force -ErrorAction SilentlyContinue$\r$\n"
-    FileWrite $1 "  if (-not (Test-Path -LiteralPath $$installDir)) { break }$\r$\n"
+    FileWrite $1 "$$logPath = Join-Path $$env:TEMP 'bdma-cleanup.log'$\r$\n"
+    FileWrite $1 "function Log([string]$$message) {$\r$\n"
+    FileWrite $1 "  Add-Content -LiteralPath $$logPath -Value ($$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') + ' ' + $$message) -ErrorAction SilentlyContinue$\r$\n"
     FileWrite $1 "}$\r$\n"
+    FileWrite $1 "try { Set-Location -LiteralPath $$env:TEMP } catch {}$\r$\n"
+    FileWrite $1 "Log ('Cleanup started. ParentPid=' + $$ParentPid + ' InstallDir=' + $$installDir)$\r$\n"
+
+    ; Wait until the installer process exits. Until then, $INSTDIR\BDMA-Setup.exe
+    ; can still be locked because it is the currently running executable.
+    FileWrite $1 "if ($$ParentPid -gt 0) {$\r$\n"
+    FileWrite $1 "  for ($$i = 1; $$i -le 120; $$i++) {$\r$\n"
+    FileWrite $1 "    $$parent = Get-Process -Id $$ParentPid -ErrorAction SilentlyContinue$\r$\n"
+    FileWrite $1 "    if (-not $$parent) { break }$\r$\n"
+    FileWrite $1 "    Start-Sleep -Milliseconds 500$\r$\n"
+    FileWrite $1 "  }$\r$\n"
+    FileWrite $1 "}$\r$\n"
+
+    ; Give Windows a little extra time to release the EXE handle.
+    FileWrite $1 "Start-Sleep -Milliseconds 800$\r$\n"
+
+    ; Safety guard: only delete the expected BDMA install directory.
+    FileWrite $1 "if ([string]::IsNullOrWhiteSpace($$installDir)) { Log 'Refusing cleanup: empty installDir'; exit 2 }$\r$\n"
+    FileWrite $1 "if ((Split-Path -Leaf $$installDir) -ne 'BDMA') { Log ('Refusing cleanup: unexpected installDir=' + $$installDir); exit 3 }$\r$\n"
+
+    ; Retry deletion after the installer has exited.
+    FileWrite $1 "for ($$attempt = 1; $$attempt -le 60; $$attempt++) {$\r$\n"
+    FileWrite $1 "  try {$\r$\n"
+    FileWrite $1 "    if (Test-Path -LiteralPath $$installDir) {$\r$\n"
+    FileWrite $1 "      Log ('Delete attempt ' + $$attempt)$\r$\n"
+    FileWrite $1 "      Remove-Item -LiteralPath $$installDir -Recurse -Force -ErrorAction Stop$\r$\n"
+    FileWrite $1 "    }$\r$\n"
+    FileWrite $1 "    if (-not (Test-Path -LiteralPath $$installDir)) {$\r$\n"
+    FileWrite $1 "      Log 'Install directory removed.'$\r$\n"
+    FileWrite $1 "      break$\r$\n"
+    FileWrite $1 "    }$\r$\n"
+    FileWrite $1 "  } catch {$\r$\n"
+    FileWrite $1 "    Log ('Delete attempt ' + $$attempt + ' failed: ' + $$_.Exception.Message)$\r$\n"
+    FileWrite $1 "  }$\r$\n"
+    FileWrite $1 "  Start-Sleep -Milliseconds 500$\r$\n"
+    FileWrite $1 "}$\r$\n"
+
+    ; Cleanup temp launcher/script.
     FileWrite $1 "Remove-Item -LiteralPath $$launcherPath -Force -ErrorAction SilentlyContinue$\r$\n"
     FileWrite $1 "Remove-Item -LiteralPath $$PSCommandPath -Force -ErrorAction SilentlyContinue$\r$\n"
     FileClose $1
 
     FileOpen $1 $2 w
     FileWrite $1 "q = Chr(34)$\r$\n"
-    FileWrite $1 "ps = $\"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe$\"$\r$\n"
+    FileWrite $1 "Set sh = CreateObject($\"WScript.Shell$\")$\r$\n"
+    FileWrite $1 "sh.CurrentDirectory = $\"$TEMP$\"$\r$\n"
+    FileWrite $1 "ps = $\"$PowerShellExe$\"$\r$\n"
     FileWrite $1 "script = $\"$0$\"$\r$\n"
-    FileWrite $1 "CreateObject($\"WScript.Shell$\").Run q & ps & q & $\" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $\" & q & script & q, 0, False$\r$\n"
+    FileWrite $1 "parentPid = $\"$3$\"$\r$\n"
+    FileWrite $1 "cmd = q & ps & q & $\" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $\" & q & script & q & $\" -ParentPid $\" & parentPid$\r$\n"
+    FileWrite $1 "sh.Run cmd, 0, False$\r$\n"
     FileClose $1
 
     StrCpy $DelayedCleanupNeeded "1"

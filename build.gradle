@@ -23,7 +23,7 @@ repositories {
 
 javafx {
     version = '21'
-    modules = ['javafx.controls', 'javafx.fxml', 'javafx.media']
+    modules = ['javafx.controls', 'javafx.fxml', 'javafx.web']
 }
 
 dependencies {
@@ -69,6 +69,7 @@ dependencies {
 
     implementation 'org.kordamp.ikonli:ikonli-javafx:12.4.0'
     implementation 'org.kordamp.ikonli:ikonli-fontawesome6-pack:12.4.0'
+    implementation 'uk.co.caprica:vlcj-javafx:1.2.1'
 }
 
 application {
@@ -91,6 +92,8 @@ shadowJar {
     archiveBaseName.set('app')
     archiveVersion.set((System.getenv("APP_VERSION") ?: "1.0").replace("v", ""))
     archiveClassifier.set("")
+    exclude 'adb/**'
+    exclude 'vlc/**'
 
     manifest {
         attributes(

@@ -58,6 +58,10 @@
     -fx-padding: 10 0;
     -fx-spacing: 6;
 }
+.settings-child-row {
+  -fx-padding: 4 0 0 24;
+}
+
 
 .settings-sep {
     -fx-padding: 0;

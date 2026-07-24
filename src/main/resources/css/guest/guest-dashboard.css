@@ -112,10 +112,6 @@
     -fx-padding: 0 8 0 8;
 }
 
-.device-cell-row {
-    -fx-padding: 6 4;
-}
-
 .device-cell-name {
     -fx-font-weight: bold;
     -fx-font-size: 13px;

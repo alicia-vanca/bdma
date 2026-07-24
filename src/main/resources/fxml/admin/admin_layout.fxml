@@ -8,10 +8,8 @@
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
-<?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.geometry.Insets?>
-<?import javafx.scene.control.Tooltip?>
 <StackPane fx:id="root" xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.app.admin.layout.controllers.AdminLayoutController" styleClass="root">
     <BorderPane minWidth="800">
@@ -79,30 +77,40 @@
                 <HBox alignment="CENTER_LEFT" spacing="10" HBox.hgrow="ALWAYS" styleClass="status-storage-row"
                       prefWidth="350" minWidth="300">
                     <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS" minWidth="120">
-                        <Label fx:id="lblDataStorageTitle" styleClass="storage-title" minWidth="-1"/>
-                        <StackPane HBox.hgrow="ALWAYS" maxWidth="160" minWidth="40">
+                        <Label fx:id="lblDataStorageTitle" styleClass="storage-title"/>
+                        <StackPane HBox.hgrow="ALWAYS" styleClass="storage-progress-wrap">
                             <ProgressBar fx:id="pbDataStorage" progress="0" styleClass="storage-progress"
                                          maxWidth="1.7976931348623157E308"/>
                             <Label fx:id="lblDataStoragePercent" styleClass="storage-percent" mouseTransparent="true"/>
                         </StackPane>
-                        <Label fx:id="lblDataStorageUsage" styleClass="storage-detail" minWidth="-1"/>
+                        <Label fx:id="lblDataStorageUsage" styleClass="storage-detail"/>
                     </HBox>
                     <Separator orientation="VERTICAL" styleClass="storage-separator"/>
                     <HBox alignment="CENTER_LEFT" spacing="6" HBox.hgrow="ALWAYS" minWidth="120">
-                        <Label fx:id="lblBackupStorageTitle" styleClass="storage-title" minWidth="-1"/>
-                        <StackPane HBox.hgrow="ALWAYS" maxWidth="160" minWidth="40">
+                        <Label fx:id="lblBackupStorageTitle" styleClass="storage-title"/>
+                        <StackPane HBox.hgrow="ALWAYS" styleClass="storage-progress-wrap">
                             <ProgressBar fx:id="pbBackupStorage" progress="0" styleClass="storage-progress"
                                          maxWidth="1.7976931348623157E308"/>
                             <Label fx:id="lblBackupStoragePercent" styleClass="storage-percent"
                                    mouseTransparent="true"/>
                         </StackPane>
-                        <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail" minWidth="-1"/>
+                        <Label fx:id="lblBackupStorageUsage" styleClass="storage-detail"/>
                     </HBox>
                 </HBox>
-                <HBox fx:id="warningStrip" alignment="CENTER_LEFT" spacing="8"
-                      styleClass="status-warning-strip" HBox.hgrow="ALWAYS" prefWidth="450">
-                    <Label fx:id="lblCombinedWarning" wrapText="false" minWidth="0"
-                           styleClass="status-warning-label" HBox.hgrow="ALWAYS" maxWidth="1.7976931348623157E308"/>
+                <Separator orientation="VERTICAL" styleClass="storage-separator"/>
+                <HBox fx:id="warningStrip" alignment="CENTER_RIGHT" spacing="18"
+                      styleClass="status-warning-strip">
+                    <Label fx:id="lblCombinedWarning"
+                           styleClass="status-warning-label">
+                        <graphic>
+                            <StackPane styleClass="status-warning-anchor-icon">
+                                <Region styleClass="status-warning-anchor-icon-triangle"/>
+                                <Region styleClass="status-warning-anchor-icon-bar"/>
+                                <Region styleClass="status-warning-anchor-icon-dot"/>
+                            </StackPane>
+                        </graphic>
+                    </Label>
+                    <Label fx:id="lblAppVersion" styleClass="status-version-label"/>
                 </HBox>
             </HBox>
         </bottom>

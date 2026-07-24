@@ -40,6 +40,7 @@ import com.app.common.modules.databaserecovery.services.DatabaseRecoveryService;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
+import com.app.common.modules.datasync.services.RemoteMediaCleanupService;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
@@ -90,6 +91,7 @@ public class DataSyncWorker implements Runnable {
 
     private final DeviceSyncQueue queue;
     private final DataSyncService dataSyncService;
+    private final RemoteMediaCleanupService remoteMediaCleanupService;
     private final UserService userService;
     private final FolderManagerService folderManagerService;
     private final AdbClient adbClient;
@@ -108,6 +110,8 @@ public class DataSyncWorker implements Runnable {
     private final Map<String, String> driveLetterCache = new ConcurrentHashMap<>();
     private final Set<String> disconnectedDevices = ConcurrentHashMap.newKeySet();
     private volatile boolean shutdownRequested = false;
+    private volatile boolean forcedShutdownRequested;
+    private volatile boolean processingDevice;
     private volatile boolean saveRecoveryDeferred = false;
     private volatile boolean saveRecoveryRestored = false;
     private final Object recoveryLock = new Object();
@@ -132,7 +136,7 @@ public class DataSyncWorker implements Runnable {
     }
 
     private record SyncPreparation(SyncFileCollection fileCollection, Set<String> syncedPaths,
-            LookupCache lookupCache, List<SyncFile> filesToBeProcessed) {
+            LookupCache lookupCache, List<SyncFile> filesToBeProcessed, List<String> mediaRoots) {
     }
 
     private record SyncFileCollection(List<SyncFile> allSyncFiles, List<SyncFile> unsyncedFiles,
@@ -230,6 +234,7 @@ public class DataSyncWorker implements Runnable {
 
     public DataSyncWorker(DeviceSyncQueue queue,
             DataSyncService dataSyncService,
+            RemoteMediaCleanupService remoteMediaCleanupService,
             UserService userService,
             FolderManagerService folderManagerService,
             AdbClient adbClient,
@@ -246,6 +251,7 @@ public class DataSyncWorker implements Runnable {
             Session session) {
         this.queue = queue;
         this.dataSyncService = dataSyncService;
+        this.remoteMediaCleanupService = remoteMediaCleanupService;
         this.userService = userService;
         this.folderManagerService = folderManagerService;
         this.adbClient = adbClient;
@@ -268,7 +274,12 @@ public class DataSyncWorker implements Runnable {
         while (!shutdownRequested && !Thread.currentThread().isInterrupted()) {
             try {
                 DeviceSyncQueue.Entry entry = queue.take();
-                processDevice(entry);
+                processingDevice = true;
+                try {
+                    processDevice(entry);
+                } finally {
+                    processingDevice = false;
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -276,7 +287,9 @@ public class DataSyncWorker implements Runnable {
                 log.error("SyncWorker error", e);
             }
         }
-        log.info("Sync worker stopped gracefully");
+        if (!forcedShutdownRequested) {
+            log.info("Sync worker stopped gracefully");
+        }
     }
 
     /**
@@ -286,11 +299,16 @@ public class DataSyncWorker implements Runnable {
         shutdownRequested = true;
     }
 
+    public void requestForcedShutdown() {
+        forcedShutdownRequested = true;
+        shutdownRequested = true;
+    }
+
     /**
-     * Returns true when the worker is only waiting for new queue entries.
+     * Returns true when no device lifecycle, including AFTER_SYNC cleanup, is running.
      */
     public boolean isIdleForShutdown() {
-        return !queue.isActive();
+        return !processingDevice;
     }
 
     /**
@@ -298,6 +316,7 @@ public class DataSyncWorker implements Runnable {
      */
     public void resetShutdownFlag() {
         shutdownRequested = false;
+        forcedShutdownRequested = false;
     }
 
     // -------------------------------------------------------------------------
@@ -325,15 +344,20 @@ public class DataSyncWorker implements Runnable {
             }
         }
 
+        List<String> mediaRoots = new ArrayList<>();
         List<String> remoteFilePaths = new ArrayList<>(findFiles(hardwareId, INTERNAL_ROOT));
+        mediaRoots.add(INTERNAL_ROOT);
 
         String ext = getExternalStorage(hardwareId);
         if (ext != null) {
-            remoteFilePaths.addAll(findFiles(hardwareId, ext + EXTERNAL_SUFFIX));
+            String externalRoot = ext + EXTERNAL_SUFFIX;
+            remoteFilePaths.addAll(findFiles(hardwareId, externalRoot));
+            mediaRoots.add(externalRoot);
         } else {
             List<String> massStorageFiles = findFilesFromMassStorage(hardwareId);
             if (!massStorageFiles.isEmpty()) {
                 remoteFilePaths.addAll(massStorageFiles);
+                mediaRoots.add(MassStorageService.MASS_STORAGE_PREFIX);
             }
         }
 
@@ -345,7 +369,8 @@ public class DataSyncWorker implements Runnable {
         List<SyncFile> filesToBeProcessed = autoDelete ? fileCollection.allSyncFiles()
                 : fileCollection.unsyncedFiles();
 
-        return new SyncPreparation(fileCollection, relativeSyncedPaths, lookupCache, filesToBeProcessed);
+        return new SyncPreparation(fileCollection, relativeSyncedPaths, lookupCache, filesToBeProcessed,
+                mediaRoots);
     }
 
     private String getExternalStorage(String hardwareId) {
@@ -369,7 +394,6 @@ public class DataSyncWorker implements Runnable {
         return massStorageService.findFiles(driveLetter, FileType.ALL_VALUES);
     }
 
-    // Parse remote file paths into SyncFile objects and categorize by sync status
     private SyncFileCollection collectSyncFiles(SyncContext syncContext,
             List<String> remoteFilePaths,
             Set<String> syncedPaths,
@@ -377,9 +401,22 @@ public class DataSyncWorker implements Runnable {
 
         List<SyncFile> allSyncFiles = new ArrayList<>();
         List<SyncFile> unsyncedFiles = new ArrayList<>();
+        Map<String, String> fileStates = new HashMap<>();
         int alreadySyncedCount = 0;
 
         for (String path : remoteFilePaths) {
+            String fileStem = removeExtension(path);
+            if (hasExtensionIgnoreCase(path, AppConstants.REMOTE_MD5_EXTENSION)) {
+                // A null value marks a media file already seen for this stem.
+                if (!fileStates.containsKey(fileStem)) {
+                    fileStates.put(fileStem, path);
+                }
+                continue;
+            }
+
+            // Mark this stem as having media, replacing any sidecar seen first.
+            fileStates.put(fileStem, null);
+
             SyncFile syncFile = buildSyncFile(path, syncContext, lookupCache);
             if (syncFile != null) {
                 allSyncFiles.add(syncFile);
@@ -395,7 +432,26 @@ public class DataSyncWorker implements Runnable {
             }
         }
 
+        String hardwareId = syncContext.hardwareId();
+        String driveLetter = driveLetterCache.get(hardwareId);
+        for (String orphanPath : fileStates.values()) {
+            if (orphanPath != null) {
+                deleteOrphanSidecar(hardwareId, driveLetter, orphanPath);
+            }
+        }
+
         return new SyncFileCollection(allSyncFiles, unsyncedFiles, alreadySyncedCount);
+    }
+
+    // Delete an orphan .md5 sidecar file (no corresponding media file).
+    private void deleteOrphanSidecar(String hardwareId, String driveLetter, String path) {
+        if (path.startsWith(MassStorageService.MASS_STORAGE_PREFIX)) {
+            if (driveLetter != null) {
+                massStorageService.deleteFile(driveLetter, path);
+            }
+        } else {
+            adbClient.deleteRemoteFile(hardwareId, path);
+        }
     }
 
     // Build SyncFile from remote path, validating user permissions and database
@@ -468,6 +524,18 @@ public class DataSyncWorker implements Runnable {
                 + remoteFileName.substring(extensionIndex);
     }
 
+    private static String removeExtension(String path) {
+        int lastSeparator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        int lastDot = path.lastIndexOf('.');
+        return lastDot > lastSeparator + 1 ? path.substring(0, lastDot) : path;
+    }
+
+    private static boolean hasExtensionIgnoreCase(String path, String extension) {
+        int extensionStart = path.length() - extension.length();
+        return extensionStart >= 0
+                && path.regionMatches(true, extensionStart, extension, 0, extension.length());
+    }
+
     // Extract folder type from remote path (third-to-last path component)
     private String extractType(String remotePath) {
         String[] parts = remotePath.split("/");
@@ -515,6 +583,14 @@ public class DataSyncWorker implements Runnable {
 
             if (shouldRetryFailures && !failedList.isEmpty()) {
                 retryFailed(syncContext, preparedSyncFiles, failedList, counters);
+            }
+
+            // Clean up empty date-folders if both parent and child settings are enabled
+            if (syncContext.autoDelete() && syncContext.deleteEmptyDateFolders()
+                    && !isDeviceDead(hardwareId)) {
+                String driveLetter = driveLetterCache.get(hardwareId);
+                remoteMediaCleanupService.cleanupEmptyDateFolders(hardwareId,
+                        preparedSyncFiles.mediaRoots(), driveLetter);
             }
 
             long elapsedMs = System.currentTimeMillis() - startedAt;
@@ -721,7 +797,8 @@ public class DataSyncWorker implements Runnable {
             publisher.publishEvent(new FileSyncCompletedEvent(hardwareId, nonDriverLetterSyncedPath));
 
             if (syncContext.autoDelete()) {
-                deleteRemoteFile(hardwareId, file.remotePath());
+                remoteMediaCleanupService.deleteRemoteFile(hardwareId, file.remotePath(),
+                        driveLetterCache.get(hardwareId));
             }
             return FileProcessingResult.success();
         }
@@ -1183,6 +1260,7 @@ public class DataSyncWorker implements Runnable {
         return new SyncContext(
                 latestSyncDir,
                 currentContext.autoDelete(),
+                currentContext.deleteEmptyDateFolders(),
                 currentContext.deviceName(),
                 hardwareId,
                 currentContext.cameraId());
@@ -1340,7 +1418,8 @@ public class DataSyncWorker implements Runnable {
         }
 
         if (syncContext.autoDelete()) {
-            deleteRemoteFile(syncContext.hardwareId(), file.remotePath());
+            remoteMediaCleanupService.deleteRemoteFile(syncContext.hardwareId(), file.remotePath(),
+                    driveLetterCache.get(syncContext.hardwareId()));
         }
 
         return true;
@@ -1521,14 +1600,6 @@ public class DataSyncWorker implements Runnable {
         String message = I18n.get("device.sync.error.failed", fileName) + "\n" +
                 I18n.get("device.sync.error.reason", I18n.get(reasonKey));
         appNoticeService.showError(message);
-    }
-
-    private void deleteRemoteFile(String hardwareId, String remotePath) {
-        if (remotePath.startsWith(MassStorageService.MASS_STORAGE_PREFIX)) {
-            log.debug("[{}] Skipping delete for mass storage file: {}", hardwareId, remotePath);
-            return;
-        }
-        adbClient.deleteRemoteFile(hardwareId, remotePath);
     }
 
     // -------------------------------------------------------------------------

@@ -46,6 +46,8 @@
                         <VBox spacing="8" styleClass="settings-split-right" GridPane.columnIndex="1"
                               GridPane.valignment="CENTER">
                             <Button fx:id="btnInfo" maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
+                            <Button fx:id="btnDefaultSettings" onAction="#onResetDefaultSettings"
+                                    maxWidth="1.7976931348623157E308" styleClass="settings-action-btn"/>
                         </VBox>
                     </GridPane>
                     <Separator styleClass="settings-sep"/>
@@ -93,7 +95,14 @@
                             <CheckBox fx:id="chkAutoDelete" onAction="#onToggleAutoDelete"/>
                             <Label fx:id="lblAutoDeleteTitle" onMouseClicked="#onClickAutoDelete"/>
                         </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="8" styleClass="settings-child-row">
+                            <CheckBox fx:id="chkDeleteEmptyDateFolders"
+                                      onAction="#onToggleDeleteEmptyDateFolders"/>
+                            <Label fx:id="lblDeleteEmptyDateFoldersTitle"
+                                   onMouseClicked="#onClickDeleteEmptyDateFolders"/>
+                        </HBox>
                         <Label fx:id="lblAutoDeleteDescription" wrapText="true" styleClass="settings-note"/>
+
                     </VBox>
                     <Separator styleClass="settings-sep"/>
                     <VBox spacing="4" styleClass="settings-card">
@@ -110,6 +119,7 @@
                                     styleClass="settings-action-btn"/>
                         </HBox>
                     </VBox>
+
                 </VBox>
             </content>
         </ScrollPane>

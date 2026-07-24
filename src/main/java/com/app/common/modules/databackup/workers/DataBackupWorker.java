@@ -1,6 +1,7 @@
 package com.app.common.modules.databackup.workers;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.app.common.utils.FileUtil;
 import org.slf4j.Logger;
@@ -44,9 +45,10 @@ public class DataBackupWorker implements Runnable {
     private final ApplicationEventPublisher publisher;
     private final DeviceMiniStatus deviceMiniStatus;
     private final QueueManagerService queueManagerService;
-    private volatile boolean backupRecoveryDeferred;
-    private volatile StorageIssueReason deferredReason;
+    private final AtomicReference<RecoveryState> recoveryState = new AtomicReference<>(
+            new RecoveryState(RecoveryStatus.RESTORED, null));
     private volatile boolean shutdownRequested;
+    private volatile boolean forcedShutdownRequested;
     private final Object recoveryLock = new Object();
 
     public DataBackupWorker(DataBackupQueue dataBackupQueue,
@@ -75,21 +77,19 @@ public class DataBackupWorker implements Runnable {
                 // Wait until no sync is active before processing backup
                 waitForSyncToComplete();
 
-                if (shutdownRequested) {
-                    log.info("BackupWorker stopped gracefully");
-                    break;
-                }
-
-                if (shouldSkipDueToDeferred(nonDriveLetterSyncedPath)) {
-                    String deferredMessage = getDeferredMessage();
-                    queueManagerService.markBackupFileDeferred(nonDriveLetterSyncedPath, deferredMessage);
-                } else {
-                    processBackup(nonDriveLetterSyncedPath);
+                if (!shutdownRequested) {
+                    RecoveryState currentRecoveryState = recoveryState.get();
+                    if (currentRecoveryState.status() == RecoveryStatus.DEFERRED) {
+                        log.debug("Backup is deferred. Skip current cycle: {}", nonDriveLetterSyncedPath);
+                        String deferredMessage = getDeferredMessage(currentRecoveryState.reason());
+                        queueManagerService.markBackupFileDeferred(nonDriveLetterSyncedPath, deferredMessage);
+                    } else {
+                        processBackup(nonDriveLetterSyncedPath);
+                    }
                 }
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.warn("BackupWorker interrupted");
 
             } catch (Exception e) {
                 log.error("Backup failed: {}", nonDriveLetterSyncedPath, e);
@@ -100,30 +100,18 @@ public class DataBackupWorker implements Runnable {
                 }
             }
         }
-
-    }
-
-    /**
-     * Check if backup should be skipped due to deferred recovery.
-     */
-    private boolean shouldSkipDueToDeferred(String nonDriveLetterSyncedPath) {
-        if (backupRecoveryDeferred) {
-            if (log.isDebugEnabled()) {
-                log.debug("Backup is deferred. Skip current cycle: {}",
-                        nonDriveLetterSyncedPath);
-            }
-            return true;
+        if (!forcedShutdownRequested) {
+            log.info("Backup worker stopped gracefully");
         }
-        return false;
     }
 
     /**
      * Get deferred message based on the reason.
      */
-    private String getDeferredMessage() {
-        if (deferredReason == StorageIssueReason.LOW_SPACE) {
+    private String getDeferredMessage(StorageIssueReason reason) {
+        if (reason == StorageIssueReason.LOW_SPACE) {
             return MSG_STORAGE_FULL;
-        } else if (deferredReason == StorageIssueReason.DRIVE_UNAVAILABLE) {
+        } else if (reason == StorageIssueReason.DRIVE_UNAVAILABLE) {
             return MSG_STORAGE_UNAVAILABLE;
         }
         return MSG_STORAGE_UNAVAILABLE;
@@ -156,10 +144,14 @@ public class DataBackupWorker implements Runnable {
         if (!folderManager.isBackupDirAccessible()) {
             log.debug("DataBackupWorker.checkBackupDirAccessible firing StorageUnavailableEvent: target={} reason={}",
                     FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE);
+            beginBackupDirRecovery(StorageIssueReason.DRIVE_UNAVAILABLE);
             publisher.publishEvent(
                     new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.DRIVE_UNAVAILABLE));
-            waitForBackupDirRecovery(StorageIssueReason.DRIVE_UNAVAILABLE);
-            if (backupRecoveryDeferred) {
+            waitForBackupDirRecovery();
+            if (shutdownRequested || Thread.currentThread().isInterrupted()) {
+                return false;
+            }
+            if (recoveryState.get().status() == RecoveryStatus.DEFERRED) {
                 log.warn("BackupDir drive unavailable, skipping this cycle: {}", nonDriveLetterSyncedPath);
                 queueManagerService.markBackupFileDeferred(nonDriveLetterSyncedPath,
                         MSG_STORAGE_UNAVAILABLE);
@@ -179,10 +171,14 @@ public class DataBackupWorker implements Runnable {
                 log.debug(
                         "DataBackupWorker.checkSufficientSpace firing StorageUnavailableEvent: target={} reason={} requiredBytes={}",
                         FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize);
+                beginBackupDirRecovery(StorageIssueReason.LOW_SPACE);
                 publisher.publishEvent(
                         new StorageUnavailableEvent(FolderType.BACKUP, StorageIssueReason.LOW_SPACE, sourceSize));
-                waitForBackupDirRecovery(StorageIssueReason.LOW_SPACE);
-                if (backupRecoveryDeferred) {
+                waitForBackupDirRecovery();
+                if (shutdownRequested || Thread.currentThread().isInterrupted()) {
+                    return false;
+                }
+                if (recoveryState.get().status() == RecoveryStatus.DEFERRED) {
                     log.warn("BackupDir low space, skipping this cycle: {}", nonDriveLetterSyncedPath);
                     queueManagerService.markBackupFileDeferred(nonDriveLetterSyncedPath,
                             MSG_STORAGE_FULL);
@@ -240,8 +236,7 @@ public class DataBackupWorker implements Runnable {
     public void onStorageRecoveryDeferred(StorageRecoveryDeferredEvent event) {
         if (event != null && event.getTarget() == FolderType.BACKUP) {
             synchronized (recoveryLock) {
-                backupRecoveryDeferred = true;
-                deferredReason = event.getReason();
+                recoveryState.set(new RecoveryState(RecoveryStatus.DEFERRED, event.getReason()));
                 recoveryLock.notifyAll();
             }
             if (log.isDebugEnabled()) {
@@ -255,8 +250,7 @@ public class DataBackupWorker implements Runnable {
     public void onStorageRestored(StorageRestoredEvent event) {
         if (event != null && event.getTarget() == FolderType.BACKUP) {
             synchronized (recoveryLock) {
-                backupRecoveryDeferred = false;
-                deferredReason = null;
+                recoveryState.set(new RecoveryState(RecoveryStatus.RESTORED, null));
                 recoveryLock.notifyAll();
             }
             dataBackupService.recoverPendingBackups();
@@ -268,29 +262,28 @@ public class DataBackupWorker implements Runnable {
      * running out of space.
      * Blocks until StorageRestoredEvent or StorageRecoveryDeferredEvent is fired.
      */
-    private void waitForBackupDirRecovery(StorageIssueReason reason) {
-        deferredReason = reason;
+    private void beginBackupDirRecovery(StorageIssueReason reason) {
         synchronized (recoveryLock) {
-            backupRecoveryDeferred = false;
+            recoveryState.set(new RecoveryState(RecoveryStatus.WAITING, reason));
+        }
+    }
 
-            while (!backupRecoveryDeferred && !shutdownRequested && !Thread.currentThread().isInterrupted()) {
+    private void waitForBackupDirRecovery() {
+        synchronized (recoveryLock) {
+            while (recoveryState.get().status() == RecoveryStatus.WAITING
+                    && !shutdownRequested
+                    && !Thread.currentThread().isInterrupted()) {
                 try {
                     recoveryLock.wait();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    break;
-                }
-
-                // Event fired, check which one
-                if (!backupRecoveryDeferred) {
-                    if (log.isInfoEnabled()) {
-                        log.info("Backup directory recovered, resuming backup worker");
-                    }
-                    return;
                 }
             }
 
-            if (backupRecoveryDeferred) {
+            RecoveryStatus recoveryStatus = recoveryState.get().status();
+            if (recoveryStatus == RecoveryStatus.RESTORED) {
+                log.info("Backup directory recovered, resuming backup worker");
+            } else if (recoveryStatus == RecoveryStatus.DEFERRED) {
                 log.info("Backup recovery deferred by user, resuming backup worker in deferred state");
             }
         }
@@ -319,8 +312,21 @@ public class DataBackupWorker implements Runnable {
      * Request graceful shutdown. Worker will finish current file then stop.
      */
     public void requestShutdown() {
-        log.info("Shutdown requested, stopping backup worker");
+        log.info("Stopping backup worker");
         shutdownRequested = true;
+        notifyRecoveryWaiters();
+    }
+
+    public void requestForcedShutdown() {
+        forcedShutdownRequested = true;
+        shutdownRequested = true;
+        notifyRecoveryWaiters();
+    }
+
+    private void notifyRecoveryWaiters() {
+        synchronized (recoveryLock) {
+            recoveryLock.notifyAll();
+        }
     }
 
     /**
@@ -335,5 +341,15 @@ public class DataBackupWorker implements Runnable {
      */
     public void resetShutdownFlag() {
         shutdownRequested = false;
+        forcedShutdownRequested = false;
+    }
+
+    private enum RecoveryStatus {
+        WAITING,
+        RESTORED,
+        DEFERRED
+    }
+
+    private record RecoveryState(RecoveryStatus status, StorageIssueReason reason) {
     }
 }
