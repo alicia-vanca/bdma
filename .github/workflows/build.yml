@@ -194,59 +194,13 @@ jobs:
             throw 'Release signing requires a publicly trusted, non-self-signed certificate.'
           }
 
-          $certificatesByStore = @{}
-
-          if ($env:GITHUB_REF_NAME -ne 'release' -and $isSelfSigned) {
-            Write-Host 'Adding temporary trust for development self-signed certificate.'
-            $publicCertificateBytes = $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-            $publicCertificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($publicCertificateBytes)
-            $certificatesByStore.Root = $publicCertificate
-            $certificatesByStore.TrustedPublisher = $publicCertificate
-          }
-
-          $addedStores = [Collections.Generic.List[string]]::new()
-
-          try {
-            foreach ($storeName in $certificatesByStore.Keys) {
-              $store = [Security.Cryptography.X509Certificates.X509Store]::new(
-                $storeName,
-                [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-              )
-
-              try {
-                $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-                $existingCertificates = $store.Certificates.Find(
-                  [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-                  $expectedThumbprint,
-                  $false
-                )
-
-                if ($existingCertificates.Count -eq 0) {
-                  $store.Add($certificatesByStore[$storeName])
-                  $addedStores.Add($storeName)
-                }
-              } finally {
-                $store.Dispose()
-              }
-            }
-          } catch {
-            foreach ($addedStoreName in $addedStores) {
-              $certificatePath = Join-Path ('Cert:\CurrentUser\' + $addedStoreName) $expectedThumbprint
-
-              if (Test-Path $certificatePath) {
-                Remove-Item $certificatePath -Force
-              }
-            }
-
-            throw
-          }
-
           Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_PFX_PATH=' + $pfxPath)
-          Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_ADDED_STORES=' + ($addedStores -join ','))
+          Add-Content -Path $env:GITHUB_ENV -Value ('BDMA_SIGNING_CERT_SELF_SIGNED=' + $isSelfSigned.ToString().ToLowerInvariant())
 
           Write-Host ('Code-signing PFX validated: ' + $certificate.Subject)
           Write-Host ('Thumbprint: ' + $certificate.Thumbprint)
           Write-Host ('Valid until: ' + $notAfter.ToString('O'))
+          Write-Host ('Self-signed: ' + $isSelfSigned)
 
       - name: Sign and verify BDMA launcher
         shell: pwsh
@@ -304,16 +258,31 @@ jobs:
             throw ('BDMA launcher timestamping failed after ' + $maxTimestampAttempts + ' attempts.')
           }
 
-          & $env:BDMA_SIGNTOOL_PATH verify /pa /all /tw /v $launcherPath
+          $isSelfSigned = $env:BDMA_SIGNING_CERT_SELF_SIGNED -eq 'true'
 
-          if ($LASTEXITCODE -ne 0) {
-            throw ('BDMA launcher signature verification failed with exit code ' + $LASTEXITCODE)
+          if (-not $isSelfSigned) {
+            & $env:BDMA_SIGNTOOL_PATH verify /pa /all /tw /v $launcherPath
+
+            if ($LASTEXITCODE -ne 0) {
+              throw ('BDMA launcher signature verification failed with exit code ' + $LASTEXITCODE)
+            }
           }
 
           $signature = Get-AuthenticodeSignature $launcherPath
+          $signatureStatus = $signature.Status.ToString()
+          $hasExpectedUntrustedRoot = $signatureStatus -eq 'NotTrusted' -or
+            ($signatureStatus -eq 'UnknownError' -and $signature.StatusMessage -match '0x800B0109')
 
-          if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate) {
-            throw 'BDMA launcher does not contain a valid trusted timestamp.'
+          if ($isSelfSigned) {
+            if ($signatureStatus -ne 'Valid' -and -not $hasExpectedUntrustedRoot) {
+              throw ('BDMA launcher self-signed signature verification failed: ' + $signature.StatusMessage)
+            }
+          } elseif ($signatureStatus -ne 'Valid') {
+            throw ('BDMA launcher signature is not trusted: ' + $signature.StatusMessage)
+          }
+
+          if (-not $signature.TimeStamperCertificate) {
+            throw 'BDMA launcher does not contain a trusted timestamp.'
           }
 
           if ($signature.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
@@ -451,16 +420,31 @@ jobs:
             throw ('NSIS installer timestamping failed after ' + $maxTimestampAttempts + ' attempts.')
           }
 
-          & $env:BDMA_SIGNTOOL_PATH verify /pa /all /tw /v $installerPath
+          $isSelfSigned = $env:BDMA_SIGNING_CERT_SELF_SIGNED -eq 'true'
 
-          if ($LASTEXITCODE -ne 0) {
-            throw ('NSIS installer signature verification failed with exit code ' + $LASTEXITCODE)
+          if (-not $isSelfSigned) {
+            & $env:BDMA_SIGNTOOL_PATH verify /pa /all /tw /v $installerPath
+
+            if ($LASTEXITCODE -ne 0) {
+              throw ('NSIS installer signature verification failed with exit code ' + $LASTEXITCODE)
+            }
           }
 
           $signature = Get-AuthenticodeSignature $installerPath
+          $signatureStatus = $signature.Status.ToString()
+          $hasExpectedUntrustedRoot = $signatureStatus -eq 'NotTrusted' -or
+            ($signatureStatus -eq 'UnknownError' -and $signature.StatusMessage -match '0x800B0109')
 
-          if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate) {
-            throw 'NSIS installer does not contain a valid trusted timestamp.'
+          if ($isSelfSigned) {
+            if ($signatureStatus -ne 'Valid' -and -not $hasExpectedUntrustedRoot) {
+              throw ('NSIS installer self-signed signature verification failed: ' + $signature.StatusMessage)
+            }
+          } elseif ($signatureStatus -ne 'Valid') {
+            throw ('NSIS installer signature is not trusted: ' + $signature.StatusMessage)
+          }
+
+          if (-not $signature.TimeStamperCertificate) {
+            throw 'NSIS installer does not contain a trusted timestamp.'
           }
 
           if ($signature.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
@@ -614,22 +598,6 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          if (-not [string]::IsNullOrWhiteSpace($env:BDMA_SIGNING_CERT_THUMBPRINT)) {
-            $thumbprint = $env:BDMA_SIGNING_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
-            $addedStores = @(
-              $env:BDMA_SIGNING_ADDED_STORES -split ',' |
-                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-            )
-
-            foreach ($store in $addedStores) {
-              $certificatePath = Join-Path ('Cert:\CurrentUser\' + $store) $thumbprint
-
-              if (Test-Path $certificatePath) {
-                Remove-Item $certificatePath -Force
-              }
-            }
-          }
-
           $pfxPath = Join-Path $env:RUNNER_TEMP 'bdma-code-signing.pfx'
 
           if (Test-Path $pfxPath) {
