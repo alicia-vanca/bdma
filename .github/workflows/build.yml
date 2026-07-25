@@ -649,7 +649,7 @@ jobs:
           $archives = @($archiveList.Contents) |
             Where-Object { $_.Key -match '^versions/BDMA-[^/]+-Setup\.exe$' } |
             Sort-Object { [DateTimeOffset]$_.LastModified } -Descending
-          $expiredArchives = @($archives | Select-Object -Skip 10)
+          $expiredArchives = @($archives | Select-Object -Skip 2)
 
           foreach ($archive in $expiredArchives) {
             Write-Host "Deleting expired versioned installer: $($archive.Key)"
