@@ -4,8 +4,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import com.app.common.definitions.enums.DeviceStatus;
@@ -15,7 +15,7 @@ import com.app.common.modules.device.dtos.DeviceSummary;
 import com.app.common.services.MassStorageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
@@ -29,13 +29,13 @@ public class DeviceSpecMonitor {
     private final MassStorageService massStorageService;
     private final DeviceDriveLetterResolver deviceDriveLetterResolver;
     private final DeviceListState deviceListState;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+    private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "device-specification-monitor");
         thread.setDaemon(true);
         return thread;
     });
 
-    public DeviceSpecMonitor(AdbClient adbClient,
+    public DeviceSpecMonitor(@Lazy AdbClient adbClient,
             MassStorageService massStorageService,
             DeviceDriveLetterResolver deviceDriveLetterResolver,
             DeviceListState deviceListState) {
@@ -43,9 +43,17 @@ public class DeviceSpecMonitor {
         this.massStorageService = massStorageService;
         this.deviceDriveLetterResolver = deviceDriveLetterResolver;
         this.deviceListState = deviceListState;
+        executor.scheduleAtFixedRate(this::refreshSpecificationSafely, 0, 60, TimeUnit.SECONDS);
     }
 
-    @Scheduled(fixedRate = 60, timeUnit = TimeUnit.SECONDS)
+    private void refreshSpecificationSafely() {
+        try {
+            refreshSpecification();
+        } catch (RuntimeException e) {
+            log.warn("Scheduled device specification refresh failed", e);
+        }
+    }
+
     public void refreshSpecification() {
         List<DeviceSummary> connectedDevices = deviceListState.snapshotDeviceItems()
                 .stream()

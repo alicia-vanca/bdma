@@ -1,6 +1,7 @@
 package com.app.common.helpers;
 
 import java.net.URISyntaxException;
+import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -46,7 +47,8 @@ public final class NativeRuntimePathResolver {
                     .getLocation()
                     .toURI());
             return Files.isDirectory(codeLocation) ? codeLocation : codeLocation.getParent();
-        } catch (NullPointerException | SecurityException | URISyntaxException e) {
+        } catch (NullPointerException | SecurityException | URISyntaxException
+                | IllegalArgumentException | FileSystemNotFoundException e) {
             return null;
         }
     }

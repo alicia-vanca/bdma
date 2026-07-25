@@ -43,6 +43,9 @@ public class AppConfigService {
         repository.saveValue(key, value);
     }
 
+    public boolean saveConfigValueIfMissingOrBlank(String key, String value) {
+        return repository.saveValueIfMissingOrBlank(key, value);
+    }
     /**
      * Saves a config value by folder type to the app_config table.
      */

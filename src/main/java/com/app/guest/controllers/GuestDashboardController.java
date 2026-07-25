@@ -65,7 +65,6 @@ public class GuestDashboardController extends BaseLayoutController {
 
     @FXML
     public void initialize() {
-        deviceListState.loadSavedDevicesIfNeeded();
         deviceListState.getDeviceFxItems().addListener((ListChangeListener<? super DeviceSummary>) change -> refresh());
         refresh();
     }

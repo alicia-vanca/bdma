@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
@@ -25,6 +26,7 @@ import com.app.common.repositories.FileRepository;
  * migrated.
  */
 @Service
+@Lazy
 public class SyncedEncryptedFileTransitionService {
 
     private static final Logger log = LoggerFactory.getLogger(SyncedEncryptedFileTransitionService.class);
@@ -45,7 +47,8 @@ public class SyncedEncryptedFileTransitionService {
 
     /**
      * Converts legacy synced _enc files to normal paths during startup transition.
-     * Failures leave original files and database records unchanged.
+     * Database metadata changes before obsolete encrypted files are deleted so an
+     * interrupted transition keeps the normal file tracked.
      */
     public void migrate() {
         if (!running.compareAndSet(false, true)) {
@@ -62,6 +65,10 @@ public class SyncedEncryptedFileTransitionService {
 
             log.info("Synced encrypted transition: found {} record(s).", encryptedRecords.size());
             for (FileRecord fileRecord : encryptedRecords) {
+                if (Thread.currentThread().isInterrupted()) {
+                    log.info("Synced encrypted transition interrupted.");
+                    return;
+                }
                 migrateRecord(fileRecord);
             }
         } finally {
@@ -81,14 +88,22 @@ public class SyncedEncryptedFileTransitionService {
         }
 
         try {
+            PathResolutionResult existingNormal = folderManagerService
+                    .findAbsolutePathFromNonDriveLetterPath(normalSyncedPath, fileRecord.getFileSize());
+            if (existingNormal.isFound() && Files.isRegularFile(existingNormal.getPath())) {
+                finishRecoveredTransition(fileRecord, encryptedSyncedPath, normalSyncedPath, existingNormal.getPath());
+                return;
+            }
+
             Path encryptedPath = resolveExistingPath(encryptedSyncedPath, fileRecord.getFileSize());
             Path normalPath = resolveNormalPath(encryptedPath, normalSyncedPath);
 
-            if (normalFileAlreadyExists(normalSyncedPath, fileRecord.getFileSize(), normalPath)) {
-                deleteLocalFiles(encryptedPath, fileRecord.getBackedUpPath());
-                fileRepository.deleteById(fileRecord.getId());
-                log.info("Deleted obsolete synced encrypted record because normal file exists: {}",
-                        encryptedSyncedPath);
+            if (Files.isRegularFile(normalPath)) {
+                finishRecoveredTransition(fileRecord, encryptedSyncedPath, normalSyncedPath, normalPath);
+                return;
+            }
+
+            if (Thread.currentThread().isInterrupted()) {
                 return;
             }
 
@@ -110,6 +125,20 @@ public class SyncedEncryptedFileTransitionService {
         }
     }
 
+    private void finishRecoveredTransition(FileRecord fileRecord, String encryptedSyncedPath,
+            String normalSyncedPath, Path normalPath) throws IOException {
+        fileRepository.transitionEncryptedSyncedFile(
+                fileRecord.getId(),
+                normalName(fileRecord.getName()),
+                normalSyncedPath,
+                Files.size(normalPath));
+        PathResolutionResult encryptedResult = folderManagerService
+                .findAbsolutePathFromNonDriveLetterPath(encryptedSyncedPath, fileRecord.getFileSize());
+        deleteLocalFiles(encryptedResult.getPath(), fileRecord.getBackedUpPath(), fileRecord.getFileSize());
+        log.info("Recovered synced encrypted transition from existing normal file: {} -> {}",
+                encryptedSyncedPath, normalSyncedPath);
+    }
+
     private Path resolveExistingPath(String nonDriveLetterPath, long expectedSize) throws IOException {
         PathResolutionResult result = folderManagerService.findAbsolutePathFromNonDriveLetterPath(nonDriveLetterPath,
                 expectedSize);
@@ -125,13 +154,6 @@ public class SyncedEncryptedFileTransitionService {
             throw new IOException("Encrypted path has no root: " + encryptedPath);
         }
         return root.resolve(normalSyncedPath);
-    }
-
-    private boolean normalFileAlreadyExists(String normalSyncedPath, long expectedSize, Path normalPath) {
-        if (Files.exists(normalPath)) {
-            return true;
-        }
-        return folderManagerService.findAbsolutePathFromNonDriveLetterPath(normalSyncedPath, expectedSize).isFound();
     }
 
     private void decryptAndMove(Path encryptedPath, Path normalPath) throws IOException {
@@ -151,7 +173,10 @@ public class SyncedEncryptedFileTransitionService {
     }
 
     private void deleteLocalFiles(Path encryptedPath, String backedUpPath) {
-        long encryptedSize = fileSize(encryptedPath);
+        deleteLocalFiles(encryptedPath, backedUpPath, fileSize(encryptedPath));
+    }
+
+    private void deleteLocalFiles(Path encryptedPath, String backedUpPath, long encryptedSize) {
         deleteIfExists(encryptedPath);
         if (backedUpPath == null || backedUpPath.isBlank()) {
             return;

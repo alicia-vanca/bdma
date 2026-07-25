@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.enums.ServiceRulePhase;
@@ -13,6 +14,7 @@ import com.app.common.models.ServiceRuleSet;
 import com.app.common.repositories.ServiceRuleRepository;
 
 @Service
+@Lazy
 public class DeviceServiceRuleService {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceServiceRuleService.class);

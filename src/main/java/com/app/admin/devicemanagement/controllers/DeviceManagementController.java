@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import com.app.admin.devicemanagement.dtos.DeviceManagementRow;
@@ -42,6 +43,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 @Component
+@Lazy
 public class DeviceManagementController {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceManagementController.class);

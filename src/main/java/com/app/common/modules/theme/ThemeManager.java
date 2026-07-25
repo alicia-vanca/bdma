@@ -9,6 +9,8 @@ import java.util.Objects;
 
 public class ThemeManager {
 
+    private static volatile String currentTheme = AppConstants.THEME_LIGHT;
+
     private ThemeManager() {
     }
 
@@ -31,19 +33,23 @@ public class ThemeManager {
         if (appConfigService == null) {
             return;
         }
-        String current = appConfigService.getConfigValue(AppConstants.KEY_THEME);
-        if (!theme.equals(current)) {
+        if (!theme.equals(currentTheme)) {
             appConfigService.saveConfigValue(AppConstants.KEY_THEME, theme);
+            currentTheme = theme;
         }
     }
 
-    public static String getTheme() {
+    public static void loadSavedTheme() {
         AppConfigService appConfigService = resolveConfigService();
         if (appConfigService == null) {
-            return AppConstants.THEME_LIGHT;
+            return;
         }
         String theme = appConfigService.getConfigValue(AppConstants.KEY_THEME);
-        return (theme == null || theme.isBlank()) ? AppConstants.THEME_LIGHT : theme;
+        currentTheme = (theme == null || theme.isBlank()) ? AppConstants.THEME_LIGHT : theme;
+    }
+
+    public static String getTheme() {
+        return currentTheme;
     }
 
     public static String cssPathForTheme(String theme) {

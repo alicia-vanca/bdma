@@ -44,7 +44,6 @@ public class FolderSecurityService {
     private static final Logger log = LoggerFactory.getLogger(FolderSecurityService.class);
     private static final WindowsCommandService WINDOWS_COMMAND_SERVICE = new WindowsCommandService();
 
-    private static final String CMD_ATTRIB = "attrib";
     private static final String CMD_ICACLS = "icacls";
     private static final String PROPERTY_USER_NAME = "user.name";
     private static final String WINDOWS_AUTHENTICATED_USERS_SID = "*S-1-5-11";
@@ -144,7 +143,6 @@ public class FolderSecurityService {
     private static void lockSinglePathRaw(Path path) throws IOException {
         try {
             grantSharedFolderAccess(path);
-            hideSinglePath(path);
             runRequiredCommand(path, "Lock folder",
                     CMD_ICACLS,
                     path.toString(),
@@ -153,22 +151,6 @@ public class FolderSecurityService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Lock interrupted for: " + path, e);
-        }
-    }
-
-    /**
-     * Hide a single path from normal Explorer views without changing ACLs.
-     * <p>
-     * @param path the path to hide
-     * @throws IOException if the hide operation fails
-     */
-    public static void hideSinglePath(Path path) throws IOException {
-        try {
-            runOptionalCommand(path, "Apply hidden attributes",
-                    CMD_ATTRIB, "+h", "+s", path.toString());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Hide interrupted for: " + path, e);
         }
     }
 
@@ -202,8 +184,6 @@ public class FolderSecurityService {
                     path.toString(),
                     ICACLS_REMOVE_DENY,
                     WINDOWS_EVERYONE_SID);
-            runOptionalCommand(path, "Remove hidden attributes",
-                    CMD_ATTRIB, "-h", "-s", path.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Unlock interrupted for: " + path, e);

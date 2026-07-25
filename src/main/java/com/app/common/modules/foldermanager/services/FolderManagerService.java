@@ -74,12 +74,24 @@ public class FolderManagerService {
     }
 
     public void init(FolderType target) {
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
         initializeDefaultStoragePaths(target);
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
         if (target == null || target == FolderType.SYNC) {
             initSyncDir(appConfigService.getConfigValue(AppConstants.KEY_SYNC_DIR));
         }
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
         if (target == null || target == FolderType.BACKUP) {
             initBackupDir(appConfigService.getConfigValue(AppConstants.KEY_BACKUP_DIR));
+        }
+        if (Thread.currentThread().isInterrupted()) {
+            return;
         }
         clearTemp();
     }
@@ -99,8 +111,9 @@ public class FolderManagerService {
             if (overwriteExisting || syncDirPath == null || syncDirPath.isBlank()) {
                 operatingSystemRoot = defaultStorageLocationService.getOperatingSystemRoot();
                 syncDirPath = defaultParentPath(operatingSystemRoot, DEFAULT_SYNC_PARENT_FOLDER);
-                appConfigService.saveConfigValue(AppConstants.KEY_SYNC_DIR, syncDirPath);
-                log.info("Initialized default sync folder: {}", syncDirPath);
+                if (saveDefaultStoragePath(AppConstants.KEY_SYNC_DIR, syncDirPath, overwriteExisting)) {
+                    log.info("Initialized default sync folder: {}", syncDirPath);
+                }
             }
         }
         if (target == null || target == FolderType.BACKUP) {
@@ -112,10 +125,19 @@ public class FolderManagerService {
                 Path backupRoot = defaultStorageLocationService.findBackupRoot(operatingSystemRoot)
                         .orElse(operatingSystemRoot);
                 backupDirPath = defaultParentPath(backupRoot, DEFAULT_BACKUP_PARENT_FOLDER);
-                appConfigService.saveConfigValue(AppConstants.KEY_BACKUP_DIR, backupDirPath);
-                log.info("Initialized default backup folder: {}", backupDirPath);
+                if (saveDefaultStoragePath(AppConstants.KEY_BACKUP_DIR, backupDirPath, overwriteExisting)) {
+                    log.info("Initialized default backup folder: {}", backupDirPath);
+                }
             }
         }
+    }
+
+    private boolean saveDefaultStoragePath(String key, String path, boolean overwriteExisting) {
+        if (overwriteExisting) {
+            appConfigService.saveConfigValue(key, path);
+            return true;
+        }
+        return appConfigService.saveConfigValueIfMissingOrBlank(key, path);
     }
 
     private String defaultParentPath(Path driveRoot, String parentFolder) {
@@ -374,12 +396,15 @@ public class FolderManagerService {
     }
 
     private void deleteDirectory(File dir) {
-        if (!dir.exists())
+        if (Thread.currentThread().isInterrupted() || !dir.exists())
             return;
 
         File[] files = dir.listFiles();
         if (files != null) {
             for (File f : files) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
                 if (f.isDirectory()) {
                     deleteDirectory(f);
                 } else {

@@ -2,6 +2,7 @@ package com.app.common.configs;
 
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.exceptions.AppException;
+import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.sqlite.SQLiteDataSource;
@@ -9,8 +10,14 @@ import org.sqlite.mc.SQLiteMCWxAES256Config;
 
 import javax.sql.DataSource;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 public class SQLiteConfig {
+
+    @Bean
+    public FlywayMigrationStrategy flywayMigrationStrategy() {
+        return flyway -> {
+        };
+    }
 
     @Bean
     public DataSource dataSource() {

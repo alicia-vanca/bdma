@@ -14,6 +14,7 @@ import javafx.scene.control.ButtonType;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -37,7 +38,7 @@ public class AppUpdateController {
     @Setter
     private Runnable onCheckEnd;
 
-    public AppUpdateController(AppUpdateService appUpdateService,
+    public AppUpdateController(@Lazy AppUpdateService appUpdateService,
             AppNoticeService appNoticeService,
             WindowsCommandService windowsCommandService) {
         this.appUpdateService = appUpdateService;

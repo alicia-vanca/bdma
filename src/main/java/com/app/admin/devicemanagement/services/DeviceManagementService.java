@@ -11,6 +11,7 @@ import java.util.stream.Stream;
 import com.app.common.models.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +28,7 @@ import com.app.common.repositories.ValidatedDeviceRepository;
 import com.app.common.modules.device.services.DeviceListState;
 
 @Service
+@Lazy
 public class DeviceManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceManagementService.class);
@@ -59,7 +61,6 @@ public class DeviceManagementService {
      * @return saved and transient devices sorted by display name
      */
     public List<DeviceManagementRow> findAllForAdmin() {
-        deviceListState.loadSavedDevicesIfNeeded();
         List<DeviceSummary> deviceListSnapshot = deviceListState.snapshotDeviceItems();
 
         Map<String, DeviceSummary> summariesByCameraId = deviceListSnapshot.stream()

@@ -31,6 +31,13 @@ public class AppConfigRepository {
         jdbcTemplate.update(sql, key, value);
     }
 
+    public boolean saveValueIfMissingOrBlank(String key, String value) {
+        String sql = "INSERT INTO app_config (key, value) VALUES (?, ?) "
+                + "ON CONFLICT(key) DO UPDATE SET value = excluded.value "
+                + "WHERE app_config.value IS NULL OR TRIM(app_config.value) = ''";
+        return jdbcTemplate.update(sql, key, value) > 0;
+    }
+
     public Map<String, String> findAll() {
         String sql = "SELECT key, value FROM app_config";
         return jdbcTemplate.query(sql, rs -> {
