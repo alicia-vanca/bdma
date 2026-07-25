@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -104,7 +105,7 @@ public class RestoreService {
     public RestoreService(FolderManagerService folderManager,
             FileService fileService,
             UserService userService,
-            DeviceValidationService deviceValidationService,
+            @Lazy DeviceValidationService deviceValidationService,
             DriveResolverService driveResolverService,
             RestoreFailureRepository restoreFailureRepository,
             ApplicationEventPublisher eventPublisher,

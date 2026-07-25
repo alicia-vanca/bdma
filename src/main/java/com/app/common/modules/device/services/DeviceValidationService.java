@@ -12,6 +12,7 @@ import com.app.common.modules.device.dtos.DeviceSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
@@ -24,6 +25,7 @@ import com.app.common.repositories.ModelWhitelistRepository;
 import com.app.common.repositories.ValidatedDeviceRepository;
 
 @Service
+@Lazy
 public class DeviceValidationService {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceValidationService.class);
@@ -42,7 +44,7 @@ public class DeviceValidationService {
 
     public DeviceValidationService(AdbClient adbClient,
             ModelWhitelistRepository whitelistRepository,
-            ValidatedDeviceRepository validatedDeviceRepository,
+            @Lazy ValidatedDeviceRepository validatedDeviceRepository,
             DeviceSpecMonitor deviceSpecMonitor,
             @Value("${device.validation.config-cson-path}") String configCsonPath,
             @Value("${device.validation.required-device-data-folder}") String requiredDeviceDataFolder) {

@@ -147,7 +147,6 @@ public class DashboardController extends BaseLayoutController {
                 root.widthProperty().multiply(0.2));
         updateCellFactory();
         deviceListView.setItems(new FilteredList<>(deviceListState.getDeviceFxItems(), DeviceSummary::isActive));
-        deviceListState.loadSavedDevicesIfNeeded();
         deviceListView.refresh();
         loadFileList();
         restoreSelectionFromActiveFilter();

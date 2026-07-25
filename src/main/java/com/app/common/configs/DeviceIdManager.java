@@ -64,20 +64,20 @@ public class DeviceIdManager {
      * Returns null if not found.
      */
     private String readWindowsMachineGuid() {
-        String machineGuid = normalizeIdentifier(readCommandOutput(
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "Get-ItemPropertyValue -Path 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography' -Name 'MachineGuid'"));
-        if (machineGuid != null) {
-            return machineGuid;
-        }
-        return extractWindowsRegValue(readCommandOutput(
+        String machineGuid = extractWindowsRegValue(readCommandOutput(
                 "reg",
                 "query",
                 "HKLM\\SOFTWARE\\Microsoft\\Cryptography",
                 "/v",
                 "MachineGuid"));
+        if (machineGuid != null) {
+            return machineGuid;
+        }
+        return normalizeIdentifier(readCommandOutput(
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-ItemPropertyValue -Path 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography' -Name 'MachineGuid'"));
     }
 
     /**

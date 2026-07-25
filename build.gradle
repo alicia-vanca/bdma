@@ -55,6 +55,7 @@ dependencies {
     // ✅ Lombok
     compileOnly 'org.projectlombok:lombok:1.18.32'
     annotationProcessor 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.springframework:spring-context-indexer'
 
     // 🔐 Password hash
     implementation 'org.springframework.security:spring-security-crypto'

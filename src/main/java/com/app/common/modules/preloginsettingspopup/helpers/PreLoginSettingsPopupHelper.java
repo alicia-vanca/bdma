@@ -56,8 +56,6 @@ public class PreLoginSettingsPopupHelper {
     }
 
     public void initialize() {
-        settingsPopup = createSettingsPopup();
-
         PopupState state = state();
         if (!state.reopenAfterReload) {
             return;

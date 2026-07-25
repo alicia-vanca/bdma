@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.app.common.models.FileRecord;
 import com.app.common.modules.device.services.DeviceListState;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
@@ -21,7 +22,7 @@ public class DataSyncService {
     private final DataBackupService dataBackupService;
     private final DeviceListState deviceListState;
 
-    public DataSyncService(ValidatedDeviceRepository validatedDeviceRepository,
+    public DataSyncService(@Lazy ValidatedDeviceRepository validatedDeviceRepository,
             FileRepository fileRepo,
             DataBackupService dataBackupService,
             DeviceListState deviceListState) {

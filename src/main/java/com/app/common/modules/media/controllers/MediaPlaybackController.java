@@ -16,6 +16,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.app.common.dtos.FileView;
+import com.app.common.definitions.ViewPaths;
+import com.app.common.helpers.CssLoader;
 import com.app.common.helpers.NativeRuntimePathResolver;
 import com.sun.jna.NativeLibrary;
 
@@ -673,7 +675,7 @@ final class MediaPlaybackController {
                 && targetMillis < Math.max(0, totalMillis - END_TOLERANCE_MILLIS);
         playbackEnded = false;
         currentMillis = targetMillis;
-        if (seekingAwayFromEnd) {
+        if (wasAtEnd) {
             pendingSeekAfterStartMillis = targetMillis;
             startPlayback(activePlayer);
         } else {
@@ -822,6 +824,7 @@ final class MediaPlaybackController {
             return;
         }
         label.getStylesheets().setAll(slider.getScene().getStylesheets());
+        CssLoader.applyModule(label, ViewPaths.MEDIA_VIEWER);
         label.setText(text);
         label.applyCss();
         label.autosize();

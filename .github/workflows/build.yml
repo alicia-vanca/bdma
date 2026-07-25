@@ -481,26 +481,6 @@ jobs:
 
           Write-Host ('NSIS installer timestamp verified: ' + $signature.TimeStamperCertificate.Subject)
 
-      - name: Prepare fixed R2 installer name
-        run: |
-          New-Item -ItemType Directory -Force -Path build\r2 | Out-Null
-
-          $installer = Get-ChildItem build\installer\*.exe | Select-Object -First 1
-
-          if (-not $installer) {
-            throw "No installer .exe found in build\installer"
-          }
-
-          if ($env:GITHUB_REF_NAME -eq "develop") {
-            Copy-Item $installer.FullName build\r2\BDMA_dev.exe -Force
-            Write-Host "Prepared development installer: build\r2\BDMA_dev.exe"
-          } elseif ($env:GITHUB_REF_NAME -eq "release") {
-            Copy-Item $installer.FullName build\r2\BDMA.exe -Force
-            Write-Host "Prepared production installer: build\r2\BDMA.exe"
-          } else {
-            throw "Unsupported branch: $env:GITHUB_REF_NAME"
-          }
-
       - name: Upload installer to Cloudflare R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -684,14 +664,15 @@ jobs:
           }
 
           Write-Host "Versioned installer retention complete: kept $($archives.Count - $expiredArchives.Count), deleted $($expiredArchives.Count)."
+
       - name: Package source code
         run: git archive --format=zip --output="build\BDMA-${{ env.APP_VERSION }}-source.zip" HEAD
 
-      - name: Upload artifact
+      - name: Upload source artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BDMA-${{ env.APP_VERSION }}
-          path: build/installer/*.exe
+          name: BDMA-${{ env.APP_VERSION }}-source
+          path: build/BDMA-${{ env.APP_VERSION }}-source.zip
           retention-days: 7
 
       - name: Upload Release Asset
