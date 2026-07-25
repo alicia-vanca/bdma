@@ -7,6 +7,7 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -16,6 +17,7 @@ import org.springframework.jdbc.support.KeyHolder;
 import com.app.common.models.ValidatedDevice;
 
 @Repository
+@Lazy
 public class ValidatedDeviceRepository {
 
     private final JdbcTemplate jdbcTemplate;

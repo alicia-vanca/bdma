@@ -17,6 +17,7 @@ import com.app.common.modules.session.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -237,12 +238,12 @@ public class DataSyncWorker implements Runnable {
             RemoteMediaCleanupService remoteMediaCleanupService,
             UserService userService,
             FolderManagerService folderManagerService,
-            AdbClient adbClient,
+            @Lazy AdbClient adbClient,
             DeviceMiniStatus progressTracker,
             ApplicationEventPublisher publisher,
             AppNoticeService appNoticeService,
             DeviceDriveLetterResolver deviceDriveLetterResolver,
-            DeviceTracker deviceTracker,
+            @Lazy DeviceTracker deviceTracker,
             DeviceSpecMonitor deviceSpecMonitor,
             MassStorageService massStorageService,
             QueueManagerService queueManagerService,

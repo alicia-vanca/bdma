@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
@@ -30,7 +31,7 @@ public class RemoteMediaCleanupService {
     private final AdbClient adbClient;
     private final MassStorageService massStorageService;
 
-    public RemoteMediaCleanupService(AdbClient adbClient, MassStorageService massStorageService) {
+    public RemoteMediaCleanupService(@Lazy AdbClient adbClient, MassStorageService massStorageService) {
         this.adbClient = adbClient;
         this.massStorageService = massStorageService;
     }

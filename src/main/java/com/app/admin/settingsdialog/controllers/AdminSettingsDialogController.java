@@ -5,8 +5,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
@@ -71,8 +69,6 @@ public class AdminSettingsDialogController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSettingsDialogController.class);
     
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-
     private static final String CSS_CLASS_STATUS_SUCCESS = "status-success";
     private static final String CSS_CLASS_STATUS_ERROR = "status-error";
     private static final String I18N_SETTING_STORAGE_PROGRESS = "setting.storage.progress";
@@ -912,42 +908,49 @@ public class AdminSettingsDialogController {
             return;
         }
 
+        panel.requestFocus();
         btnDefaultSettings.setDisable(true);
 
-        executor.execute(() -> {
-            boolean success = adminSettingsService.resetToDefaults(session.getCurrentUserId(), scope);
-
-            Platform.runLater(() -> {
-                btnDefaultSettings.setDisable(false);
-                if (success) {
-                    loadAdminSettings();
-
-                    I18n.setLocale(Locale.forLanguageTag(AppConstants.LANG_VI));
-                    ThemeManager.setTheme(AppConstants.THEME_LIGHT);
-                    ThemeManager.apply(MainApp.getScene());
-                    eventPublisher.publishEvent(new ThemeChangedEvent(this, AppConstants.THEME_LIGHT));
-
-                    refreshLocalizedText();
-                    setupActionButtons();
-
-                    setActiveLanguageButton();
-                    setActiveThemeButton();
-
-                    adminLayoutController.refreshStorageStatus();
-
-                    if (onLanguageChangedAction != null) {
-                        onLanguageChangedAction.run();
-                    } else {
-                        MainApp.showAdmin();
+        adminSettingsService.resetToDefaultsAsync(session.getCurrentUserId(), scope)
+                .whenComplete((success, failure) -> Platform.runLater(() -> {
+                    boolean restoreResetFocus = panel.isFocused();
+                    btnDefaultSettings.setDisable(false);
+                    if (restoreResetFocus) {
+                        btnDefaultSettings.requestFocus();
                     }
+                    if (failure != null) {
+                        noticeRenderer.showError(I18n.get("setting.defaults.error"));
+                        log.error("Failed to reset settings to defaults: scope={}, userId={}",
+                                scope, session.getCurrentUserId(), failure);
+                    } else if (Boolean.TRUE.equals(success)) {
+                        loadAdminSettings();
 
-                    noticeRenderer.showSuccess(I18n.get("setting.defaults.success"));
-                    log.info("Settings reset to defaults: scope={}, userId={}", scope, session.getCurrentUserId());
-                } else {
-                    noticeRenderer.showError(I18n.get("setting.defaults.error"));
-                    log.error("Failed to reset settings to defaults: scope={}, userId={}", scope, session.getCurrentUserId());
-                }
-            });
-        });
+                        I18n.setLocale(Locale.forLanguageTag(AppConstants.LANG_VI));
+                        ThemeManager.setTheme(AppConstants.THEME_LIGHT);
+                        ThemeManager.apply(MainApp.getScene());
+                        eventPublisher.publishEvent(new ThemeChangedEvent(this, AppConstants.THEME_LIGHT));
+
+                        refreshLocalizedText();
+                        setupActionButtons();
+
+                        setActiveLanguageButton();
+                        setActiveThemeButton();
+
+                        adminLayoutController.refreshStorageStatus();
+
+                        if (onLanguageChangedAction != null) {
+                            onLanguageChangedAction.run();
+                        } else {
+                            MainApp.showAdmin();
+                        }
+
+                        noticeRenderer.showSuccess(I18n.get("setting.defaults.success"));
+                        log.info("Settings reset to defaults: scope={}, userId={}", scope, session.getCurrentUserId());
+                    } else {
+                        noticeRenderer.showError(I18n.get("setting.defaults.error"));
+                        log.error("Failed to reset settings to defaults: scope={}, userId={}", scope,
+                                session.getCurrentUserId());
+                    }
+                }));
     }
 }

@@ -23,6 +23,7 @@ import com.app.guest.controllers.GuestDashboardController;
 import com.app.guest.services.NavigationIntentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import com.app.MainApp;
@@ -210,19 +211,19 @@ public class AdminLayoutController extends BaseLayoutController {
     public AdminLayoutController(ViewLoader viewLoader,
             AppUpdateController appUpdateController,
             Session session,
-            DeviceValidationService deviceValidationService,
+            @Lazy DeviceValidationService deviceValidationService,
             AppNoticeService appNoticeService,
-            DeviceSyncQueue deviceSyncQueue,
-            DeviceTracker deviceTracker,
-            FolderManagerService folderManagerService,
-            RestoreService restoreService,
-            AdminSettingsDialogService adminSettingsService,
-            StorageUnavailableEventHandler storageUnavailableEventHandler,
-            MediaViewerService mediaViewerService,
-            DevOtpGuardService devOtpGuardService,
+            @Lazy DeviceSyncQueue deviceSyncQueue,
+            @Lazy DeviceTracker deviceTracker,
+            @Lazy FolderManagerService folderManagerService,
+            @Lazy RestoreService restoreService,
+            @Lazy AdminSettingsDialogService adminSettingsService,
+            @Lazy StorageUnavailableEventHandler storageUnavailableEventHandler,
+            @Lazy MediaViewerService mediaViewerService,
+            @Lazy DevOtpGuardService devOtpGuardService,
             NavigationIntentService navigationIntentService,
             DeviceListState deviceListState,
-            DeviceManagementService deviceManagementService) {
+            @Lazy DeviceManagementService deviceManagementService) {
         super(viewLoader);
         this.appUpdateController = appUpdateController;
         this.session = session;
@@ -267,7 +268,6 @@ public class AdminLayoutController extends BaseLayoutController {
 
         if (session.isGuest()) {
             currentDashboardController = null;
-            appUpdateController.checkOnStartup();
         } else {
             guestDashboardController = null;
         }
@@ -302,9 +302,6 @@ public class AdminLayoutController extends BaseLayoutController {
         setIconNte();
         setNavIcons();
         openDefaultTab();
-        if (!session.isDev()) {
-            refreshStorageStatus();
-        }
         updateAuthButtons();
     }
 

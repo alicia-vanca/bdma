@@ -47,7 +47,7 @@ public abstract class BaseLayoutController {
         var result = viewLoader.loadView(fxml);
         if (result != null) {
             currentModuleFxml = fxml;
-            CssLoader.applyModule(MainApp.getScene(), fxml);
+            CssLoader.applyModule(result.node(), fxml);
             return result.node();
         }
         return null;
@@ -59,7 +59,7 @@ public abstract class BaseLayoutController {
         ViewLoader.LoadResult<Object> result = viewLoader.loadView(fxml);
         if (result != null) {
             currentModuleFxml = fxml;
-            CssLoader.applyModule(MainApp.getScene(), fxml);
+            CssLoader.applyModule(result.node(), fxml);
 
             Object controller = result.controller();
             if (!controllerType.isInstance(controller)) {
@@ -70,6 +70,7 @@ public abstract class BaseLayoutController {
         }
         return null;
     }
+
 
     // ── Menu ────────────────────────────────────────────────────────────────
 

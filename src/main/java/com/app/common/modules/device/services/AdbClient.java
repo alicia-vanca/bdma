@@ -25,6 +25,7 @@ import com.app.common.models.ServiceRule;
 import com.app.common.services.DeviceServiceRuleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.app.common.exceptions.AppException;
@@ -32,6 +33,7 @@ import com.app.common.exceptions.DeviceDisconnectedException;
 import jakarta.annotation.PreDestroy;
 
 @Service
+@Lazy
 public class AdbClient {
 
     // -------------------------------------------------------------------------

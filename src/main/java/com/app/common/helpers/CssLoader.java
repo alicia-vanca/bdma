@@ -2,13 +2,13 @@ package com.app.common.helpers;
 
 import com.app.MainApp;
 import com.app.common.modules.theme.ThemeManager;
+import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
 
 public class CssLoader {
 
@@ -35,36 +35,16 @@ public class CssLoader {
         addIfAbsent(scene, "/css/auth/login.css");
     }
 
-    public static void applyModule(Scene scene, String fxml) {
+    public static void applyModule(Node node, String fxml) {
+        if (!(node instanceof Parent parent)) {
+            return;
+        }
+
         String moduleCss = resolveCssPath(fxml);
         if (moduleCss == null)
             return;
 
-        String baseExt = toExternalForm("/css/base.css");
-        String adminExt = toExternalForm("/css/admin.css");
-        String themeExt = toExternalForm(ThemeManager.cssPathForTheme(ThemeManager.getTheme()));
-        String moduleExt = toExternalForm(moduleCss);
-
-        // Clear all module CSS before applying the current module stylesheet.
-        scene.getStylesheets()
-                .removeIf(s -> s.contains("/css/admin/")
-                        || s.contains("/css/common/")
-                        || s.contains("/css/dev/")
-                        || s.contains("/css/user/"));
-
-        // Rebuild in stable order: base → theme → admin → module.
-        List<String> ordered = new ArrayList<>();
-        if (baseExt != null)
-            ordered.add(baseExt);
-        if (themeExt != null)
-            ordered.add(themeExt);
-        if (adminExt != null)
-            ordered.add(adminExt);
-        if (moduleExt != null)
-            ordered.add(moduleExt);
-
-        // Set lại toàn bộ theo thứ tự đúng
-        scene.getStylesheets().setAll(ordered);
+        addIfAbsent(parent, moduleCss);
     }
 
     public static void applyDialog(Scene scene, String fxml) {
@@ -88,6 +68,20 @@ public class CssLoader {
         }
     }
 
+    private static void addIfAbsent(Parent parent, String path) {
+        if (path == null)
+            return;
+        URL url = MainApp.class.getResource(path);
+        if (url == null) {
+            log.warn("[CssLoader] CSS not found: {}", path);
+            return;
+        }
+        String ext = url.toExternalForm();
+        if (!parent.getStylesheets().contains(ext)) {
+            parent.getStylesheets().add(ext);
+        }
+    }
+
     static String resolveCssPath(String fxml) {
         if (fxml == null)
             return null;
@@ -96,8 +90,4 @@ public class CssLoader {
                 .replace(".fxml", ".css");
     }
 
-    private static String toExternalForm(String path) {
-        URL url = MainApp.class.getResource(path);
-        return url != null ? url.toExternalForm() : null;
-    }
 }

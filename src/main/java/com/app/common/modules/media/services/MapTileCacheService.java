@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppDataPaths;
@@ -36,6 +37,7 @@ import com.sun.net.httpserver.HttpServer;
 import jakarta.annotation.PreDestroy;
 
 @Service
+@Lazy
 public class MapTileCacheService {
 
     private static final Logger log = LoggerFactory.getLogger(MapTileCacheService.class);

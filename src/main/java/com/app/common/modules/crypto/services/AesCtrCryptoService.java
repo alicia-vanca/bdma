@@ -2,6 +2,7 @@ package com.app.common.modules.crypto.services;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,7 +44,14 @@ public class AesCtrCryptoService {
             Cipher cipher = createDecryptCipher(key, iv);
             try (InputStream input = new CipherInputStream(Files.newInputStream(inputFile), cipher);
                     OutputStream output = Files.newOutputStream(outputFile)) {
-                input.transferTo(output);
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = input.read(buffer)) != -1) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        throw new InterruptedIOException("AES-CTR file decryption interrupted: " + inputFile);
+                    }
+                    output.write(buffer, 0, bytesRead);
+                }
             }
         } catch (IOException | InvalidAlgorithmParameterException | InvalidKeyException | NoSuchAlgorithmException
                 | NoSuchPaddingException e) {

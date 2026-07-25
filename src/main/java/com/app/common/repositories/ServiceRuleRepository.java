@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -18,6 +19,7 @@ import com.app.common.models.ServiceRule;
 import com.app.common.models.ServiceRuleSet;
 
 @Repository
+@Lazy
 public class ServiceRuleRepository {
 
     private static final Logger log = LoggerFactory.getLogger(ServiceRuleRepository.class);

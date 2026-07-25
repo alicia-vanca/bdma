@@ -16,11 +16,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.annotation.PreDestroy;
 
 /**
  * Manages all admin-level application settings: storage folders,
@@ -31,6 +40,8 @@ public class AdminSettingsDialogService {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSettingsDialogService.class);
     private static final Path REG_EXE_PATH = Path.of("C:", "Windows", "System32", "reg.exe");
+    private static final long RESET_SHUTDOWN_GRACE_SECONDS = 5;
+    private static final long REG_COMMAND_TIMEOUT_SECONDS = 10;
 
     private final AppConfigService appConfigService;
     private final FolderManagerService folderManagerService;
@@ -39,6 +50,15 @@ public class AdminSettingsDialogService {
     private final Session session;
     private final DeviceSyncQueue deviceSyncQueue;
     private final DataBackupQueue dataBackupQueue;
+    private final TransactionTemplate transactionTemplate;
+    private final ExecutorService resetExecutor = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "settings-reset");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private volatile CompletableFuture<Boolean> resetTask = CompletableFuture.completedFuture(true);
+    private Long resetUserId;
+    private Role resetScope;
 
     public AdminSettingsDialogService(AppConfigService appConfigService,
             FolderManagerService folderManagerService,
@@ -46,7 +66,8 @@ public class AdminSettingsDialogService {
             UserSettingService userSettingService,
             Session session,
             DeviceSyncQueue deviceSyncQueue,
-            DataBackupQueue dataBackupQueue) {
+            DataBackupQueue dataBackupQueue,
+            TransactionTemplate transactionTemplate) {
         this.appConfigService = appConfigService;
         this.folderManagerService = folderManagerService;
         this.restoreService = restoreService;
@@ -54,6 +75,7 @@ public class AdminSettingsDialogService {
         this.session = session;
         this.deviceSyncQueue = deviceSyncQueue;
         this.dataBackupQueue = dataBackupQueue;
+        this.transactionTemplate = transactionTemplate;
     }
 
     // ── Storage ───────────────────────────────────────────────────────────────
@@ -220,7 +242,13 @@ public class AdminSettingsDialogService {
                     AppConstants.STARTUP_REG_VALUE)
                     .redirectErrorStream(true)
                     .start();
-            return proc.waitFor() == 0;
+            if (!proc.waitFor(REG_COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                proc.destroyForcibly();
+                proc.waitFor(1, TimeUnit.SECONDS);
+                log.warn("Startup registry query timed out after {}s", REG_COMMAND_TIMEOUT_SECONDS);
+                return false;
+            }
+            return proc.exitValue() == 0;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Interrupted while querying startup registry entry", e);
@@ -234,6 +262,7 @@ public class AdminSettingsDialogService {
     // Execute registry add/delete and return a user-facing diagnostic message when
     // the command cannot be applied.
     private RegistryCommandResult applyRegistryEntry(boolean enable) {
+        Process process = null;
         try {
             ProcessBuilder pb;
             if (enable) {
@@ -258,16 +287,30 @@ public class AdminSettingsDialogService {
                         "/v", AppConstants.STARTUP_REG_VALUE,
                         "/f");
             }
-            Process process = pb.redirectErrorStream(true).start();
-            int exitCode = process.waitFor();
+            process = pb.redirectErrorStream(true).start();
+            if (!process.waitFor(REG_COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+                log.warn("Startup registry command timed out after {}s", REG_COMMAND_TIMEOUT_SECONDS);
+                return new RegistryCommandResult(false,
+                        "Command timed out after " + REG_COMMAND_TIMEOUT_SECONDS + " seconds");
+            }
+            int exitCode = process.exitValue();
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             if (exitCode != 0) {
+                if (!enable && isMissingRegistryEntry(exitCode, output)) {
+                    log.debug("Startup registry entry already absent");
+                    return RegistryCommandResult.ok();
+                }
                 log.warn("Startup registry command exited with code {}. Output: {}", exitCode, output);
                 return new RegistryCommandResult(false,
                         "Command exited with code " + exitCode + (output.isBlank() ? "" : ". " + output));
             }
             return RegistryCommandResult.ok();
         } catch (InterruptedException e) {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
             Thread.currentThread().interrupt();
             log.warn("Interrupted while applying startup registry entry", e);
             return new RegistryCommandResult(false, "Interrupted while applying startup registry entry");
@@ -275,6 +318,12 @@ public class AdminSettingsDialogService {
             log.error("Failed to apply startup registry entry", e);
             return new RegistryCommandResult(false, e.getMessage() == null ? "Unknown error" : e.getMessage());
         }
+    }
+
+    private boolean isMissingRegistryEntry(int exitCode, String output) {
+        return exitCode == 1
+                && output.toLowerCase(Locale.ROOT)
+                        .contains("unable to find the specified registry key or value");
     }
 
     private record RegistryCommandResult(boolean success, String message) {
@@ -319,6 +368,7 @@ public class AdminSettingsDialogService {
                 && !fileName.equalsIgnoreCase("javaw.exe");
     }
 
+
     public RestoreService.BackupSyncResult restore() {
         return restoreService.restore();
     }
@@ -347,34 +397,8 @@ public class AdminSettingsDialogService {
     public boolean resetToDefaults(Long userId, Role scope) {
         try {
             log.info("Resetting settings to defaults: scope={}, userId={}", scope, userId);
-
-            if (scope == Role.ADMIN || scope == Role.DEV
-                    || scope == Role.USER) {
-                userSettingService.saveLanguage(userId, Language.VI);
-                userSettingService.saveTheme(userId, Theme.LIGHT);
-            }
-
-            if (scope == Role.ADMIN || scope == Role.USER) {
-                String downloadsPath = Path.of(System.getProperty("user.home"), "Downloads").toString();
-                userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_EXPORT_DIR, downloadsPath);
-                userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_LAST_EXPORT_DIR, downloadsPath);
-                userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_ASK_EVERY_TIME_EXPORT, "false");
-            }
-
-            if (scope == Role.ADMIN || scope == Role.DEV) {
-                appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, "false");
-                appConfigService.saveConfigValue(AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC, "false");
-
-                folderManagerService.resetDefaultStoragePaths();
-
-                setStartWithWindows(false);
-            }
-
+            transactionTemplate.executeWithoutResult(status -> resetPersistedDefaults(userId, scope));
             log.info("Settings reset completed successfully: scope={}", scope);
-            return true;
-
-        } catch (IllegalStateException e) {
-            log.warn("Could not disable startup entry (may already be absent): {}", e.getMessage());
             return true;
         } catch (Exception e) {
             log.error("Failed to reset settings: scope={}, userId={}", scope, userId, e);
@@ -382,4 +406,84 @@ public class AdminSettingsDialogService {
         }
     }
 
+    private void resetPersistedDefaults(Long userId, Role scope) {
+        if (scope == Role.ADMIN || scope == Role.DEV || scope == Role.USER) {
+            userSettingService.saveLanguage(userId, Language.VI);
+            userSettingService.saveTheme(userId, Theme.LIGHT);
+        }
+
+        if (scope == Role.ADMIN || scope == Role.USER) {
+            String downloadsPath = Path.of(System.getProperty("user.home"), "Downloads").toString();
+            userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_EXPORT_DIR, downloadsPath);
+            userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_LAST_EXPORT_DIR, downloadsPath);
+            userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_ASK_EVERY_TIME_EXPORT, "false");
+        }
+
+        if (scope == Role.ADMIN || scope == Role.DEV) {
+            appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, "false");
+            appConfigService.saveConfigValue(AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC, "false");
+            folderManagerService.resetDefaultStoragePaths();
+            setStartWithWindows(false);
+        }
+    }
+
+    public synchronized CompletableFuture<Boolean> resetToDefaultsAsync(Long userId, Role scope) {
+        if (!resetTask.isDone()) {
+            if (Objects.equals(resetUserId, userId) && resetScope == scope) {
+                log.info("Settings reset already running; joining current task");
+                return resetTask;
+            }
+            log.warn("Rejecting settings reset while another user or scope is running");
+            return CompletableFuture.completedFuture(false);
+        }
+
+        resetUserId = userId;
+        resetScope = scope;
+        resetTask = CompletableFuture.supplyAsync(
+                () -> resetToDefaults(userId, scope),
+                resetExecutor);
+        return resetTask;
+    }
+
+    public boolean stopResetTask() {
+        CompletableFuture<Boolean> task;
+        synchronized (this) {
+            if (resetExecutor.isShutdown()) {
+                return true;
+            }
+            task = resetTask;
+            resetExecutor.shutdown();
+        }
+        boolean waitingForReset = !task.isDone();
+        if (waitingForReset) {
+            log.info("Waiting up to {}s for settings reset task before shutdown",
+                    RESET_SHUTDOWN_GRACE_SECONDS);
+        }
+
+        try {
+            if (resetExecutor.awaitTermination(RESET_SHUTDOWN_GRACE_SECONDS, TimeUnit.SECONDS)) {
+                if (waitingForReset) {
+                    log.info("Settings reset task completed before shutdown");
+                }
+                return true;
+            }
+
+            // ponytail: partial reset is accepted after 5 s; make reset operations transactional and
+            // interruption-aware before allowing Spring/DB teardown after forced cancellation.
+            log.warn("Settings reset task exceeded {}s shutdown grace; interrupting and continuing shutdown",
+                    RESET_SHUTDOWN_GRACE_SECONDS);
+            resetExecutor.shutdownNow();
+            return true;
+        } catch (InterruptedException e) {
+            resetExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while waiting for settings reset task; forcing stop and continuing shutdown");
+            return true;
+        }
+    }
+
+    @PreDestroy
+    public void shutdownResetExecutor() {
+        stopResetTask();
+    }
 }

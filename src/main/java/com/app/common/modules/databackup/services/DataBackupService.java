@@ -1,14 +1,18 @@
 package com.app.common.modules.databackup.services;
 
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+
+import jakarta.annotation.PreDestroy;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FolderType;
@@ -27,8 +31,10 @@ public class DataBackupService {
     private final ApplicationEventPublisher publisher;
     private final Session session;
     private final AtomicBoolean recoveryInProgress = new AtomicBoolean(false);
+    private final ScheduledExecutorService recoveryScheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().daemon().name("backup-recovery-scheduler").factory());
 
-    public DataBackupService(FileRepository fileRepo,
+    public DataBackupService(@Lazy FileRepository fileRepo,
             DataBackupQueue dataBackupQueue,
             ApplicationEventPublisher publisher,
             Session session) {
@@ -36,6 +42,7 @@ public class DataBackupService {
         this.dataBackupQueue = dataBackupQueue;
         this.publisher = publisher;
         this.session = session;
+        recoveryScheduler.scheduleWithFixedDelay(this::scheduledRecoverySafely, 0, 1, TimeUnit.HOURS);
     }
 
     /**
@@ -53,7 +60,14 @@ public class DataBackupService {
         fileRepo.updateStatusAndBackupPath(syncedPath, backedUpPath, AppConstants.FILE_STATUS_BACKEDUP);
     }
 
-    @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.HOURS)
+    private void scheduledRecoverySafely() {
+        try {
+            scheduledRecovery();
+        } catch (RuntimeException e) {
+            log.warn("Scheduled backup recovery trigger failed", e);
+        }
+    }
+
     public void scheduledRecovery() {
         // Periodically fire StorageRestoredEvent so the worker retries deferred files
         // even if no real drive event occurred (e.g. drive was re-plugged silently).
@@ -90,5 +104,10 @@ public class DataBackupService {
         } finally {
             recoveryInProgress.set(false);
         }
+    }
+
+    @PreDestroy
+    public void shutdownRecoveryScheduler() {
+        recoveryScheduler.shutdownNow();
     }
 }

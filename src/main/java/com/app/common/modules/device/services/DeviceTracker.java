@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import com.app.common.definitions.enums.DeviceEventType;
@@ -27,6 +28,7 @@ import com.app.common.modules.device.dtos.DeviceValidationResult;
 import com.app.common.modules.device.events.DeviceEvent;
 
 @Component
+@Lazy
 public class DeviceTracker implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceTracker.class);
@@ -178,12 +180,12 @@ public class DeviceTracker implements Runnable {
     private void track() {
         Process p = null;
         try {
+            // Seed each login session before starting the watcher so one ADB command
+            // starts a missing daemon instead of racing two startup commands.
+            handle(getDevices());
+
             p = adbClient.startAdbProcess("track-devices");
             activeProcess.set(p);
-
-            // Seed each login session from the current adb snapshot so already-
-            // Connected devices are re-added immediately after login.
-            handle(getDevices());
 
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(p.getInputStream()))) {

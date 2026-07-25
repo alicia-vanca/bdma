@@ -6,23 +6,31 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
+import com.app.admin.layout.controllers.AdminLayoutController;
+import com.app.admin.settingsdialog.services.AdminSettingsDialogService;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.helpers.CssLoader;
 import com.app.common.helpers.NavigationHelper;
 import com.app.common.helpers.SpringContextHolder;
 import com.app.common.helpers.ViewLoader;
+import com.app.common.modules.appupdate.controllers.AppUpdateController;
+import com.app.common.modules.crypto.SyncedEncryptedFileTransitionStartup;
 import com.app.common.modules.databaserecovery.services.DatabaseRecoveryService;
 import com.app.common.modules.datarestore.services.RestoreService;
 import com.app.common.modules.datasync.DataSyncRunner;
 import com.app.common.modules.externalmediadecrypt.services.ExternalMediaDecryptService;
 import com.app.common.modules.queuemanager.services.QueueManagerService;
+import com.app.common.modules.session.Session;
 import com.app.guest.services.AppStartupService;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.exception.FlywayValidateException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -64,11 +72,17 @@ public class MainApp extends Application {
     private static boolean singleInstanceOwner;
 
     private ConfigurableApplicationContext springContext;
-    private FolderManagerService folderManagerService;
-    private RestoreService restoreService;
-    private QueueManagerService queueManagerService;
-    private ExternalMediaDecryptService stateService;
+    private volatile FolderManagerService folderManagerService;
+    private volatile RestoreService restoreService;
+    private volatile QueueManagerService queueManagerService;
+    private volatile ExternalMediaDecryptService stateService;
+    private volatile CompletableFuture<Void> databaseMigration = CompletableFuture.completedFuture(null);
+    private volatile boolean databaseMigrationFailed;
+    private volatile Thread postUiInitializer;
+    private volatile AppStartupService appStartupService;
+    private volatile SyncedEncryptedFileTransitionStartup encryptedTransitionStartup;
     private RuntimeException startupFailure;
+    private volatile boolean stopping;
 
     @Getter
     private static Stage primaryStage;
@@ -79,6 +93,7 @@ public class MainApp extends Application {
     private static void setPrimaryStage(Stage stage) {
         primaryStage = stage;
     }
+
 
     private static void setScene(Scene s) {
         scene = s;
@@ -103,9 +118,11 @@ public class MainApp extends Application {
         }
 
         prepareDatabaseBeforeSpringStartup();
-
         AppRuntimeInitializer.initialize();
 
+        if (System.getProperty("debug") == null && !"true".equalsIgnoreCase(System.getenv("DEBUG"))) {
+            System.setProperty("debug", "false");
+        }
         SpringApplication application = new SpringApplication(SpringBootApp.class);
         application.setLogStartupInfo(false);
         application.setDefaultProperties(loadBundledApplicationProperties());
@@ -116,15 +133,21 @@ public class MainApp extends Application {
             log.error("Application startup failed", e);
             return;
         }
+        SpringContextHolder.setContext(springContext);
         LogglyQueuedAppender.setSpringReady(true);
 
         GlobalExceptionHandler handler = springContext.getBean(GlobalExceptionHandler.class);
         Thread.setDefaultUncaughtExceptionHandler(handler);
 
-        folderManagerService = springContext.getBean(FolderManagerService.class);
-        restoreService = springContext.getBean(RestoreService.class);
-        queueManagerService = springContext.getBean(QueueManagerService.class);
-        stateService = springContext.getBean(ExternalMediaDecryptService.class);
+        databaseMigration = CompletableFuture.runAsync(() -> {
+            try {
+                springContext.getBean(Flyway.class).migrate();
+            } catch (RuntimeException failure) {
+                databaseMigrationFailed = true;
+                throw failure;
+            }
+        }, task -> Thread.ofPlatform().daemon().name("database-migration").start(task));
+
     }
 
     /**
@@ -151,7 +174,11 @@ public class MainApp extends Application {
         setPrimaryStage(stage);
         configureCloseHandler();
         StageUtil.applyAppIcon(primaryStage);
+        if (!awaitDatabaseMigration()) {
+            return;
+        }
         I18n.loadSavedLocale();
+        ThemeManager.loadSavedTheme();
 
         setScene(new Scene(new StackPane()));
         getPrimaryStage().setScene(getScene());
@@ -164,20 +191,140 @@ public class MainApp extends Application {
             return;
         }
 
-        AppStartupService startupService = springContext.getBean(AppStartupService.class);
-        startupService.initialize();
-
-        // Start a fresh device-tracking session
-        DataSyncRunner dataSyncRunner = SpringContextHolder.getBean(DataSyncRunner.class);
-        dataSyncRunner.startDeviceTracker();
         showAdmin();
-        Platform.runLater(() -> {
-            if (primaryStage.isShowing()) {
-                long startupDurationMillis = (System.nanoTime() - APPLICATION_START_NANOS) / 1_000_000;
-                log.info("========== APPLICATION INITIALIZATION FINISHED - UI SHOWN (startup time: {} ms) ==========",
-                        startupDurationMillis);
+        scheduleAfterFirstLayout();
+    }
+
+    private void scheduleAfterFirstLayout() {
+        Scene currentScene = getScene();
+        currentScene.addPostLayoutPulseListener(new Runnable() {
+            @Override
+            public void run() {
+                currentScene.removePostLayoutPulseListener(this);
+                Platform.runLater(MainApp.this::afterUiShown);
             }
         });
+        Platform.requestNextPulse();
+    }
+
+    private void afterUiShown() {
+        if (stopping || !primaryStage.isShowing()) {
+            return;
+        }
+
+        long startupDurationMillis = (System.nanoTime() - APPLICATION_START_NANOS) / 1_000_000;
+        log.info("========== APPLICATION INITIALIZATION FINISHED - UI SHOWN (startup time: {} ms) ==========",
+                startupDurationMillis);
+
+
+        runPostUiStep("update check", () -> {
+            if (springContext.getBean(Session.class).isGuest()) {
+                springContext.getBean(AppUpdateController.class).checkOnStartup();
+            }
+        });
+
+        Thread initializer = Thread.ofPlatform()
+                .daemon()
+                .name("post-ui-initializer")
+                .unstarted(() -> {
+                    try {
+                        initializeAfterUi();
+                    } finally {
+                        postUiInitializer = null;
+                    }
+                });
+        postUiInitializer = initializer;
+        initializer.start();
+    }
+
+    private boolean awaitDatabaseMigration() {
+        try {
+            databaseMigration.join();
+            return true;
+        } catch (CompletionException e) {
+            databaseMigrationFailed = true;
+            RuntimeException failure = e.getCause() instanceof RuntimeException runtimeException
+                    ? runtimeException
+                    : new RuntimeException("Deferred database migration failed", e.getCause());
+            startupFailure = failure;
+            log.error("Deferred database migration failed", failure);
+            Platform.runLater(() -> handleStartupFailure(failure));
+            return false;
+        }
+    }
+
+    private void initializeAfterUi() {
+        if (postUiInitializationCancelled()) {
+            return;
+        }
+
+        runPostUiStep("synced encrypted transition", () -> {
+            SyncedEncryptedFileTransitionStartup transitionStartup = springContext
+                    .getBean(SyncedEncryptedFileTransitionStartup.class);
+            encryptedTransitionStartup = transitionStartup;
+            transitionStartup.startAfterUi();
+        });
+        if (postUiInitializationCancelled()) {
+            return;
+        }
+
+        try {
+            AppStartupService startupService = springContext.getBean(AppStartupService.class);
+            appStartupService = startupService;
+            folderManagerService = springContext.getBean(FolderManagerService.class);
+            restoreService = springContext.getBean(RestoreService.class);
+            queueManagerService = springContext.getBean(QueueManagerService.class);
+            stateService = springContext.getBean(ExternalMediaDecryptService.class);
+            startupService.initialize();
+        } catch (RuntimeException failure) {
+            if (!postUiInitializationCancelled()) {
+                failPostUiInitialization(failure);
+            }
+            return;
+        }
+
+        if (postUiInitializationCancelled()) {
+            return;
+        }
+        runPostUiStep("storage status refresh", () -> {
+            if (!springContext.getBean(Session.class).isDev()) {
+                springContext.getBean(AdminLayoutController.class).refreshStorageStatus();
+            }
+        });
+
+        if (postUiInitializationCancelled()) {
+            return;
+        }
+        try {
+            springContext.getBean(DataSyncRunner.class).startDeviceTracker();
+        } catch (RuntimeException failure) {
+            if (!postUiInitializationCancelled()) {
+                failPostUiInitialization(failure);
+            }
+        }
+    }
+
+    private boolean postUiInitializationCancelled() {
+        ConfigurableApplicationContext context = springContext;
+        return stopping || Thread.currentThread().isInterrupted() || context == null || !context.isActive();
+    }
+
+    private void failPostUiInitialization(RuntimeException failure) {
+        startupFailure = failure;
+        log.error("Post-UI application initialization failed", failure);
+        Platform.runLater(() -> {
+            if (!stopping) {
+                handleStartupFailure(failure);
+            }
+        });
+    }
+
+    private void runPostUiStep(String step, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException e) {
+            log.error("Post-UI initialization step failed: {}", step, e);
+        }
     }
 
     /**
@@ -218,18 +365,22 @@ public class MainApp extends Application {
 
     @Override
     public void stop() {
+        stopping = true;
         log.info("========== APPLICATION SHUTDOWN REQUESTED ==========");
         releaseSingleInstanceLock();
+        boolean startupTasksStopped = stopStartupTasks();
 
-        if (springContext != null) {
+        if (startupTasksStopped && springContext != null) {
             springContext.close();
         }
 
-        if (folderManagerService != null)
+        if (startupTasksStopped && folderManagerService != null)
             folderManagerService.shutdown();
 
-        if (startupFailure != null && isFlywayValidationFailure(startupFailure)) {
-            log.warn("Skipping database backup because startup failed Flyway validation");
+        if (!startupTasksStopped) {
+            log.error("Skipping Spring shutdown and database backup because startup tasks did not stop");
+        } else if (databaseMigrationFailed) {
+            log.warn("Skipping database backup because database migration failed");
         } else {
             try {
                 new DatabaseRecoveryService().backupSourceToBackup();
@@ -244,6 +395,46 @@ public class MainApp extends Application {
         // Stop all non-daemon threads that may be keeping the JVM running in
         // background after the JavaFX application has been stopped.
         System.exit(0);
+    }
+
+    private boolean stopStartupTasks() {
+        boolean stopped = stopPostUiInitializer();
+        SyncedEncryptedFileTransitionStartup transitionStartup = encryptedTransitionStartup;
+        if (transitionStartup != null) {
+            stopped = transitionStartup.stopAndWait() && stopped;
+        }
+        AppStartupService startupService = appStartupService;
+        if (startupService != null) {
+            stopped = startupService.stopDeviceListLoader() && stopped;
+        }
+        ConfigurableApplicationContext context = springContext;
+        if (context != null && context.isActive()
+                && context.getBeanFactory().containsSingleton("adminSettingsDialogService")) {
+            AdminSettingsDialogService settingsService = context.getBeanFactory()
+                    .getBean("adminSettingsDialogService", AdminSettingsDialogService.class);
+            stopped = settingsService.stopResetTask() && stopped;
+        }
+        return stopped;
+    }
+
+    private boolean stopPostUiInitializer() {
+        Thread initializer = postUiInitializer;
+        if (initializer == null) {
+            return true;
+        }
+
+        initializer.interrupt();
+        try {
+            // ponytail: 2 s shutdown ceiling; move startup work into cancellable tasks if steps can block longer.
+            initializer.join(2_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        boolean stopped = !initializer.isAlive();
+        if (!stopped) {
+            log.error("Post-UI initializer did not stop within 2000 ms");
+        }
+        return stopped;
     }
 
     /**
@@ -407,16 +598,20 @@ public class MainApp extends Application {
             if (forceClosing) {
                 return;
             }
-            if (springContext == null
-                    || queueManagerService == null
-                    || stateService == null
-                    || restoreService == null) {
+            if (springContext == null) {
                 return;
             }
-            boolean syncRunning = queueManagerService.hasRunningSyncTask();
-            boolean exportRunning = queueManagerService.hasRunningExportTask();
-            boolean decryptRunning = stateService.isRunning();
-            boolean restoreRunning = restoreService.isRunning();
+            QueueManagerService currentQueueManager = resolveInitializedBean(
+                    queueManagerService, QueueManagerService.class);
+            ExternalMediaDecryptService currentStateService = resolveInitializedBean(
+                    stateService, ExternalMediaDecryptService.class);
+            RestoreService currentRestoreService = resolveInitializedBean(
+                    restoreService, RestoreService.class);
+            boolean syncRunning = currentQueueManager != null && currentQueueManager.hasRunningSyncTask();
+            boolean exportRunning = currentQueueManager != null && currentQueueManager.hasRunningExportTask();
+            boolean decryptRunning = currentStateService != null && currentStateService.isRunning();
+            boolean restoreRunning = currentRestoreService != null && currentRestoreService.isRunning();
+
 
             if (!syncRunning && !exportRunning && !restoreRunning && !decryptRunning) {
                 return;
@@ -447,6 +642,28 @@ public class MainApp extends Application {
                     "app.close.restoreRunning.header",
                     "app.close.restoreRunning.message");
         });
+    }
+
+    private <T> T resolveInitializedBean(T currentBean, Class<T> beanType) {
+        if (currentBean != null) {
+            return currentBean;
+        }
+
+        ConfigurableApplicationContext context = springContext;
+        if (context == null || !context.isActive()) {
+            return null;
+        }
+
+        try {
+            for (String beanName : context.getBeanFactory().getBeanNamesForType(beanType, false, false)) {
+                if (context.getBeanFactory().containsSingleton(beanName)) {
+                    return context.getBean(beanName, beanType);
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Failed to resolve initialized bean while closing: {}", beanType.getSimpleName(), e);
+        }
+        return null;
     }
 
     private void continueCloseRequest() {

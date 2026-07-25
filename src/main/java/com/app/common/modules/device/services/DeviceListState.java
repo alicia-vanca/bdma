@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.app.common.modules.device.dtos.DeviceSpec;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -57,7 +58,7 @@ public class DeviceListState {
 
     private boolean deviceStateInitialized;
 
-    public DeviceListState(ValidatedDeviceRepository validatedDeviceRepository,
+    public DeviceListState(@Lazy ValidatedDeviceRepository validatedDeviceRepository,
             DeviceMiniStatus deviceMiniStatus) {
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.deviceMiniStatus = deviceMiniStatus;
@@ -73,10 +74,17 @@ public class DeviceListState {
             if (deviceStateInitialized) {
                 return;
             }
+        }
 
-            List<DeviceSummary> savedSummaries = validatedDeviceRepository.findAll().stream()
-                    .map(this::toSavedSummary)
-                    .toList();
+        List<DeviceSummary> savedSummaries = validatedDeviceRepository.findAll().stream()
+                .map(this::toSavedSummary)
+                .toList();
+
+        synchronized (stateLock) {
+            if (deviceStateInitialized) {
+                return;
+            }
+
             Set<String> savedCameraIds = savedSummaries.stream()
                     .map(DeviceSummary::getCameraId)
                     .collect(Collectors.toSet());
