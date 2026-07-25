@@ -665,14 +665,26 @@ jobs:
 
           Write-Host "Versioned installer retention complete: kept $($archives.Count - $expiredArchives.Count), deleted $($expiredArchives.Count)."
 
-      - name: Package source code
-        run: git archive --format=zip --output="build\BDMA-${{ env.APP_VERSION }}-source.zip" HEAD
+      - name: Prepare source artifact
+        run: |
+          $sourceDirectory = "build/source/BDMA-${{ env.APP_VERSION }}-source/"
+          New-Item -ItemType Directory -Force -Path $sourceDirectory | Out-Null
+
+          git checkout-index --all --force --prefix="$sourceDirectory"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to export tracked source files."
+          }
+
+          if (-not (Get-ChildItem -LiteralPath $sourceDirectory -Force | Select-Object -First 1)) {
+            throw "Source artifact directory is empty."
+          }
 
       - name: Upload source artifact
         uses: actions/upload-artifact@v4
         with:
           name: BDMA-${{ env.APP_VERSION }}-source
-          path: build/BDMA-${{ env.APP_VERSION }}-source.zip
+          path: build/source/BDMA-${{ env.APP_VERSION }}-source/
+          include-hidden-files: true
           retention-days: 7
 
       - name: Upload Release Asset
