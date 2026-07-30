@@ -53,6 +53,7 @@ import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.foldermanager.events.StorageRecoveryCompletedEvent;
 import com.app.common.modules.foldermanager.events.StorageRestoredEvent;
 import com.app.common.modules.foldermanager.services.FolderManagerService;
+import com.app.common.modules.foldermanager.services.StorageHealthMonitor;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.modules.media.services.MediaViewerService;
 import com.app.common.modules.session.Session;
@@ -116,6 +117,7 @@ public class AdminLayoutController extends BaseLayoutController {
     private final DeviceSyncQueue deviceSyncQueue;
     private final DeviceTracker deviceTracker;
     private final FolderManagerService folderManagerService;
+    private final StorageHealthMonitor storageHealthMonitor;
     private final RestoreService restoreService;
     private final AdminSettingsDialogService adminSettingsService;
     private final StorageUnavailableEventHandler storageUnavailableEventHandler;
@@ -216,6 +218,7 @@ public class AdminLayoutController extends BaseLayoutController {
             @Lazy DeviceSyncQueue deviceSyncQueue,
             @Lazy DeviceTracker deviceTracker,
             @Lazy FolderManagerService folderManagerService,
+            @Lazy StorageHealthMonitor storageHealthMonitor,
             @Lazy RestoreService restoreService,
             @Lazy AdminSettingsDialogService adminSettingsService,
             @Lazy StorageUnavailableEventHandler storageUnavailableEventHandler,
@@ -232,6 +235,7 @@ public class AdminLayoutController extends BaseLayoutController {
         this.deviceSyncQueue = deviceSyncQueue;
         this.deviceTracker = deviceTracker;
         this.folderManagerService = folderManagerService;
+        this.storageHealthMonitor = storageHealthMonitor;
         this.restoreService = restoreService;
         this.adminSettingsService = adminSettingsService;
         this.storageUnavailableEventHandler = storageUnavailableEventHandler;
@@ -302,7 +306,19 @@ public class AdminLayoutController extends BaseLayoutController {
         setIconNte();
         setNavIcons();
         openDefaultTab();
+        refreshStorageAfterLayoutLoad();
         updateAuthButtons();
+    }
+
+    private void refreshStorageAfterLayoutLoad() {
+        if (session.isDev()) {
+            return;
+        }
+
+        refreshStorageStatus();
+        if (!session.isGuest()) {
+            Platform.runLater(() -> storageHealthMonitor.checkNow(null));
+        }
     }
 
     private void updateAuthButtons() {

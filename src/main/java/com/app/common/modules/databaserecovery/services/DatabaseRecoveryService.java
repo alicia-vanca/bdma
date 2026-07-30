@@ -3,6 +3,7 @@ package com.app.common.modules.databaserecovery.services;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.AppDataPaths;
 import com.app.common.exceptions.AppException;
+import com.app.common.modules.foldermanager.services.FolderSecurityService;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -121,6 +122,11 @@ public class DatabaseRecoveryService {
     private void ensureParentFolders(Path sourceDb, Path backupDb) throws IOException {
         Files.createDirectories(sourceDb.getParent());
         Files.createDirectories(backupDb.getParent());
+        try {
+            FolderSecurityService.hidePrivateAppDirectory(backupDb.getParent());
+        } catch (IOException e) {
+            logger.warn("Failed to hide database backup directory: {}", backupDb.getParent(), e);
+        }
     }
 
     private Path sourceDbPath() {

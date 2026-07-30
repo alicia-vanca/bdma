@@ -9,6 +9,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,9 +39,11 @@ import com.app.common.exceptions.DeviceDisconnectedException;
 import com.app.common.models.FileRecord;
 import com.app.common.modules.crypto.services.BodycamCryptoService;
 import com.app.common.modules.databaserecovery.services.DatabaseRecoveryService;
+import com.app.common.modules.device.configs.DeviceMediaLayout;
 import com.app.common.modules.datasync.events.FileSyncCompletedEvent;
 import com.app.common.modules.datasync.queues.DeviceSyncQueue;
 import com.app.common.modules.datasync.services.DataSyncService;
+import com.app.common.modules.datasync.services.DcamMediaIntegrityService;
 import com.app.common.modules.datasync.services.RemoteMediaCleanupService;
 import com.app.common.modules.foldermanager.dtos.PathResolutionResult;
 import com.app.common.modules.foldermanager.events.StorageRecoveryDeferredEvent;
@@ -66,9 +69,6 @@ public class DataSyncWorker implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(DataSyncWorker.class);
 
-    private static final String INTERNAL_ROOT = System.getProperty("app.internal.root", "/storage/emulated/0/DCIM");
-    private static final String EXTERNAL_SUFFIX = "/Android/data/com.bodycamera.nettysocket/cache";
-
     private static final String ERROR_DISCONNECTED = "device.sync.error.disconnected";
     private static final String ERROR_EXCEPTION = "device.sync.error.exception";
     private static final String ERROR_STORAGE_UNAVAILABLE = "device.sync.error.storage_unavailable";
@@ -81,6 +81,8 @@ public class DataSyncWorker implements Runnable {
     private static final String ERROR_PERMISSION_DENIED = "device.sync.error.permission_denied";
     private static final String ERROR_FILE_NOT_CREATED = "device.sync.error.file_not_created";
     private static final String ERROR_SIZE_MISMATCH = "device.sync.error.size_mismatch";
+    private static final String ERROR_MD5_MISMATCH = "device.sync.error.md5_mismatch";
+    private static final String ERROR_MD5_UNQUALIFIED = "device.sync.error.md5_unqualified";
     private static final String ERROR_TRANSFER = "device.sync.error.transfer";
     private static final String ERROR_ADB_PULL_FAILED = "device.sync.error.adb_pull_failed";
 
@@ -93,6 +95,8 @@ public class DataSyncWorker implements Runnable {
     private final DeviceSyncQueue queue;
     private final DataSyncService dataSyncService;
     private final RemoteMediaCleanupService remoteMediaCleanupService;
+    private final DcamMediaIntegrityService dcamMediaIntegrityService;
+    private final DeviceMediaLayout deviceMediaLayout;
     private final UserService userService;
     private final FolderManagerService folderManagerService;
     private final AdbClient adbClient;
@@ -119,7 +123,7 @@ public class DataSyncWorker implements Runnable {
 
     // Records and inner classes
     private record SyncFile(String remotePath, String localPath, String relativeLocalPath, FileInfo info,
-            String failureReason) {
+            String expectedMd5, String failureReason) {
     }
 
     private record PullResult(boolean succeeded, String failureReason) {
@@ -141,7 +145,13 @@ public class DataSyncWorker implements Runnable {
     }
 
     private record SyncFileCollection(List<SyncFile> allSyncFiles, List<SyncFile> unsyncedFiles,
-            int alreadySyncedCount) {
+            List<SyncFile> rejectedFiles, int alreadySyncedCount) {
+    }
+
+    private static final class RemoteFileState {
+        private String sidecarPath;
+        private boolean hasMedia;
+        private final List<String> pendingMediaPaths = new ArrayList<>();
     }
 
     /**
@@ -236,6 +246,8 @@ public class DataSyncWorker implements Runnable {
     public DataSyncWorker(DeviceSyncQueue queue,
             DataSyncService dataSyncService,
             RemoteMediaCleanupService remoteMediaCleanupService,
+            DcamMediaIntegrityService dcamMediaIntegrityService,
+            DeviceMediaLayout deviceMediaLayout,
             UserService userService,
             FolderManagerService folderManagerService,
             @Lazy AdbClient adbClient,
@@ -253,6 +265,8 @@ public class DataSyncWorker implements Runnable {
         this.queue = queue;
         this.dataSyncService = dataSyncService;
         this.remoteMediaCleanupService = remoteMediaCleanupService;
+        this.dcamMediaIntegrityService = dcamMediaIntegrityService;
+        this.deviceMediaLayout = deviceMediaLayout;
         this.userService = userService;
         this.folderManagerService = folderManagerService;
         this.adbClient = adbClient;
@@ -346,14 +360,21 @@ public class DataSyncWorker implements Runnable {
         }
 
         List<String> mediaRoots = new ArrayList<>();
-        List<String> remoteFilePaths = new ArrayList<>(findFiles(hardwareId, INTERNAL_ROOT));
-        mediaRoots.add(INTERNAL_ROOT);
+        String legacyInternalRoot = deviceMediaLayout.legacyInternalMediaRoot();
+        List<String> remoteFilePaths = new ArrayList<>(findFiles(hardwareId, legacyInternalRoot, FileType.ALL_VALUES));
+        mediaRoots.add(legacyInternalRoot);
+        String dcamInternalRoot = deviceMediaLayout.dcamInternalMediaRoot();
+        remoteFilePaths.addAll(findFiles(hardwareId, dcamInternalRoot, FileType.DCAM_VALUES));
+        mediaRoots.add(dcamInternalRoot);
 
         String ext = getExternalStorage(hardwareId);
         if (ext != null) {
-            String externalRoot = ext + EXTERNAL_SUFFIX;
-            remoteFilePaths.addAll(findFiles(hardwareId, externalRoot));
+            String externalRoot = deviceMediaLayout.legacyExternalMediaRoot(ext);
+            remoteFilePaths.addAll(findFiles(hardwareId, externalRoot, FileType.ALL_VALUES));
             mediaRoots.add(externalRoot);
+            String dcamExternalRoot = deviceMediaLayout.dcamExternalMediaRoot(ext);
+            remoteFilePaths.addAll(findFiles(hardwareId, dcamExternalRoot, FileType.DCAM_VALUES));
+            mediaRoots.add(dcamExternalRoot);
         } else {
             List<String> massStorageFiles = findFilesFromMassStorage(hardwareId);
             if (!massStorageFiles.isEmpty()) {
@@ -402,46 +423,93 @@ public class DataSyncWorker implements Runnable {
 
         List<SyncFile> allSyncFiles = new ArrayList<>();
         List<SyncFile> unsyncedFiles = new ArrayList<>();
-        Map<String, String> fileStates = new HashMap<>();
+        List<SyncFile> rejectedFiles = new ArrayList<>();
+        Map<String, RemoteFileState> fileStates = new HashMap<>();
         int alreadySyncedCount = 0;
-
-        for (String path : remoteFilePaths) {
-            String fileStem = removeExtension(path);
-            if (hasExtensionIgnoreCase(path, AppConstants.REMOTE_MD5_EXTENSION)) {
-                // A null value marks a media file already seen for this stem.
-                if (!fileStates.containsKey(fileStem)) {
-                    fileStates.put(fileStem, path);
-                }
-                continue;
-            }
-
-            // Mark this stem as having media, replacing any sidecar seen first.
-            fileStates.put(fileStem, null);
-
-            SyncFile syncFile = buildSyncFile(path, syncContext, lookupCache);
-            if (syncFile != null) {
-                allSyncFiles.add(syncFile);
-                queueManagerService.addFileToSyncTracker(syncContext.cameraId(),
-                        nonEncFileName(name(syncFile.remotePath())),
-                        syncFile.localPath());
-                if (!syncedPaths.contains(syncFile.relativeLocalPath())) {
-                    unsyncedFiles.add(syncFile);
-                } else {
-                    alreadySyncedCount++;
-                    queueManagerService.markSyncFileCompleted(syncContext.cameraId(), syncFile.localPath());
-                }
-            }
-        }
 
         String hardwareId = syncContext.hardwareId();
         String driveLetter = driveLetterCache.get(hardwareId);
-        for (String orphanPath : fileStates.values()) {
-            if (orphanPath != null) {
-                deleteOrphanSidecar(hardwareId, driveLetter, orphanPath);
+
+        for (String path : remoteFilePaths) {
+            RemoteFileState state = fileStates.computeIfAbsent(fileStemKey(path), ignored -> new RemoteFileState());
+            if (hasExtensionIgnoreCase(path, AppConstants.REMOTE_MD5_EXTENSION)) {
+                state.sidecarPath = path;
+                for (String pendingMediaPath : state.pendingMediaPaths) {
+                    alreadySyncedCount += collectMediaSyncFile(syncContext, syncedPaths, lookupCache,
+                            allSyncFiles, unsyncedFiles, rejectedFiles, hardwareId, driveLetter,
+                            pendingMediaPath, state.sidecarPath);
+                }
+                state.pendingMediaPaths.clear();
+                continue;
+            }
+
+            state.hasMedia = true;
+            if (dcamMediaIntegrityService.requiresMd5(path) && state.sidecarPath == null) {
+                state.pendingMediaPaths.add(path);
+                continue;
+            }
+
+            alreadySyncedCount += collectMediaSyncFile(syncContext, syncedPaths, lookupCache,
+                    allSyncFiles, unsyncedFiles, rejectedFiles, hardwareId, driveLetter,
+                    path, state.sidecarPath);
+        }
+
+        for (RemoteFileState state : fileStates.values()) {
+            for (String pendingMediaPath : state.pendingMediaPaths) {
+                alreadySyncedCount += collectMediaSyncFile(syncContext, syncedPaths, lookupCache,
+                        allSyncFiles, unsyncedFiles, rejectedFiles, hardwareId, driveLetter,
+                        pendingMediaPath, state.sidecarPath);
+            }
+            if (!state.hasMedia && state.sidecarPath != null) {
+                deleteOrphanSidecar(hardwareId, driveLetter, state.sidecarPath);
             }
         }
 
-        return new SyncFileCollection(allSyncFiles, unsyncedFiles, alreadySyncedCount);
+        return new SyncFileCollection(allSyncFiles, unsyncedFiles, rejectedFiles, alreadySyncedCount);
+    }
+
+    private int collectMediaSyncFile(SyncContext syncContext, Set<String> syncedPaths, LookupCache lookupCache,
+            List<SyncFile> allSyncFiles, List<SyncFile> unsyncedFiles, List<SyncFile> rejectedFiles,
+            String hardwareId, String driveLetter, String path, String sidecarPath) {
+        SyncFile syncFile = buildSyncFile(path, null, syncContext, lookupCache);
+        if (syncFile == null) {
+            return 0;
+        }
+
+        if (dcamMediaIntegrityService.requiresMd5(path)) {
+            String expectedMd5 = qualifiedDcamMd5(hardwareId, driveLetter, path, sidecarPath);
+            if (expectedMd5 == null) {
+                SyncFile rejectedFile = withFailureReason(syncFile, ERROR_MD5_UNQUALIFIED);
+                rejectedFiles.add(rejectedFile);
+                queueManagerService.addFileToSyncTracker(syncContext.cameraId(),
+                        nonEncFileName(name(rejectedFile.remotePath())), rejectedFile.localPath());
+                queueManagerService.markSyncFileFailed(syncContext.cameraId(), rejectedFile.localPath(),
+                        ERROR_MD5_UNQUALIFIED);
+                return 0;
+            }
+            syncFile = withExpectedMd5(syncFile, expectedMd5);
+        }
+
+        allSyncFiles.add(syncFile);
+        queueManagerService.addFileToSyncTracker(syncContext.cameraId(),
+                nonEncFileName(name(syncFile.remotePath())), syncFile.localPath());
+        if (!syncedPaths.contains(syncFile.relativeLocalPath())) {
+            unsyncedFiles.add(syncFile);
+            return 0;
+        }
+
+        queueManagerService.markSyncFileCompleted(syncContext.cameraId(), syncFile.localPath());
+        return 1;
+    }
+
+    private String qualifiedDcamMd5(String hardwareId, String driveLetter, String mediaPath,
+            String sidecarPath) {
+        try {
+            return dcamMediaIntegrityService.qualifiedMd5(hardwareId, mediaPath, sidecarPath, driveLetter);
+        } catch (DeviceDisconnectedException e) {
+            disconnectedDevices.add(hardwareId);
+            throw new PreflightException(I18n.get(ERROR_DISCONNECTED));
+        }
     }
 
     // Delete an orphan .md5 sidecar file (no corresponding media file).
@@ -455,10 +523,17 @@ public class DataSyncWorker implements Runnable {
         }
     }
 
+    private void deleteRejectedFiles(SyncContext syncContext, List<SyncFile> rejectedFiles) {
+        String driveLetter = driveLetterCache.get(syncContext.hardwareId());
+        for (SyncFile file : rejectedFiles) {
+            remoteMediaCleanupService.deleteRemoteFile(syncContext.hardwareId(), file.remotePath(), driveLetter);
+        }
+    }
+
     // Build SyncFile from remote path, validating user permissions and database
     // references. Size is retrieved later only for unsynced files.
     // Returns null if relative path cannot be determined or validation fails.
-    private SyncFile buildSyncFile(String path, SyncContext syncContext, LookupCache lookupCache) {
+    private SyncFile buildSyncFile(String path, String expectedMd5, SyncContext syncContext, LookupCache lookupCache) {
         String type = extractType(path);
         FileInfo info = FileInfo.parse(name(path), 0, type);
 
@@ -482,12 +557,22 @@ public class DataSyncWorker implements Runnable {
             return null;
         }
 
-        return new SyncFile(path, localPath, relativeLocalPath, info, null);
+        return new SyncFile(path, localPath, relativeLocalPath, info, expectedMd5, null);
     }
 
-    private List<String> findFiles(String hardwareId, String root) {
+    private SyncFile withExpectedMd5(SyncFile file, String expectedMd5) {
+        return new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(), expectedMd5,
+                file.failureReason());
+    }
+
+    private SyncFile withFailureReason(SyncFile file, String failureReason) {
+        return new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(),
+                file.expectedMd5(), failureReason);
+    }
+
+    private List<String> findFiles(String hardwareId, String root, List<String> types) {
         try {
-            return adbClient.findFiles(hardwareId, root, FileType.ALL_VALUES);
+            return adbClient.findFiles(hardwareId, root, types);
         } catch (DeviceDisconnectedException e) {
             disconnectedDevices.add(hardwareId);
             throw new PreflightException(I18n.get(ERROR_DISCONNECTED));
@@ -504,7 +589,7 @@ public class DataSyncWorker implements Runnable {
         if (saveDir == null)
             return null;
 
-        File dir = new File(new File(saveDir, info.username()), parts[parts.length - 3]);
+        File dir = new File(new File(saveDir, info.username()), info.type());
         return new File(dir, nonEncFileName(parts[parts.length - 1])).getAbsolutePath();
     }
 
@@ -531,16 +616,26 @@ public class DataSyncWorker implements Runnable {
         return lastDot > lastSeparator + 1 ? path.substring(0, lastDot) : path;
     }
 
+    private static String fileStemKey(String path) {
+        return removeExtension(path).toLowerCase(Locale.ROOT);
+    }
+
     private static boolean hasExtensionIgnoreCase(String path, String extension) {
         int extensionStart = path.length() - extension.length();
         return extensionStart >= 0
                 && path.regionMatches(true, extensionStart, extension, 0, extension.length());
     }
 
-    // Extract folder type from remote path (third-to-last path component)
+    // Extract canonical folder type from any supported remote path layout.
     private String extractType(String remotePath) {
         String[] parts = remotePath.split("/");
-        return parts.length >= 3 ? parts[parts.length - 3] : null;
+        for (int index = parts.length - 2; index >= 0; index--) {
+            String type = FileType.canonicalValue(parts[index]);
+            if (type != null) {
+                return type;
+            }
+        }
+        return null;
     }
 
     // -------------------------------------------------------------------------
@@ -567,12 +662,13 @@ public class DataSyncWorker implements Runnable {
 
             SyncPreparation preparedSyncFiles = prepareSyncFiles(deviceId, syncContext, autoDelete);
 
-            int totalRemoteFileCount = preparedSyncFiles.fileCollection().allSyncFiles().size();
+            int totalRemoteFileCount = preparedSyncFiles.fileCollection().allSyncFiles().size()
+                    + preparedSyncFiles.fileCollection().rejectedFiles().size();
 
             SyncCounters counters = new SyncCounters(
                     totalRemoteFileCount,
                     autoDelete ? 0 : preparedSyncFiles.fileCollection().alreadySyncedCount(),
-                    0);
+                    preparedSyncFiles.fileCollection().rejectedFiles().size());
 
             if (counters.passed > 0) {
                 log.info("Skipped {} already synced files", counters.passed);
@@ -584,6 +680,11 @@ public class DataSyncWorker implements Runnable {
 
             if (shouldRetryFailures && !failedList.isEmpty()) {
                 retryFailed(syncContext, preparedSyncFiles, failedList, counters);
+            }
+            failedList.addAll(preparedSyncFiles.fileCollection().rejectedFiles());
+
+            if (syncContext.autoDelete() && !isDeviceDead(hardwareId)) {
+                deleteRejectedFiles(syncContext, preparedSyncFiles.fileCollection().rejectedFiles());
             }
 
             // Clean up empty date-folders if both parent and child settings are enabled
@@ -710,7 +811,8 @@ public class DataSyncWorker implements Runnable {
         String reason;
         reason = result.getFailureReason() != null ? result.getFailureReason() : ERROR_UNKNOWN;
         failedList
-                .add(new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(), reason));
+                .add(new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), file.info(),
+                        file.expectedMd5(), reason));
         log.debug("Added to retry list: {}. Reason: {}", file.localPath(), reason);
     }
 
@@ -787,7 +889,8 @@ public class DataSyncWorker implements Runnable {
             return FileProcessingResult.failure(reason);
         }
 
-        PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size());
+        PullResult result = pullAndVerify(hardwareId, file.remotePath(), file.localPath(), file.info().size(),
+                file.expectedMd5());
         if (result.isSuccess()) {
             String nonDriverLetterSyncedPath = FileUtil.stripDriveLetter(file.localPath());
             dataSyncService.saveFile(uId, dId, nonEncFileName(name(file.remotePath())), nonDriverLetterSyncedPath,
@@ -811,8 +914,9 @@ public class DataSyncWorker implements Runnable {
         return FileProcessingResult.failure(result.failureReason());
     }
 
-    // Pull file from device and verify size against the expected remote size.
-    private PullResult pullAndVerify(String hardwareId, String remotePath, String localPath, long expectedSize) {
+    // Pull file from device and verify size and optional DCAM MD5.
+    private PullResult pullAndVerify(String hardwareId, String remotePath, String localPath, long expectedSize,
+            String expectedMd5) {
         String tempPath = localPath + AppConstants.TMP_EXTENSION;
         String decryptedTempPath = localPath + ".dec" + AppConstants.TMP_EXTENSION;
         boolean moveSucceeded = false;
@@ -820,6 +924,11 @@ public class DataSyncWorker implements Runnable {
             PullResult result = folderManagerService
                     .withSpecificDirPrepared(new File(tempPath).getParentFile(),
                             () -> pullAndVerifyInternal(hardwareId, remotePath, tempPath, expectedSize));
+            if (result.isSuccess() && expectedMd5 != null
+                    && !dcamMediaIntegrityService.matchesLocalFile(Path.of(tempPath), expectedMd5)) {
+                log.warn("DCAM video MD5 changed during transfer: {}", remotePath);
+                return PullResult.failure(ERROR_MD5_MISMATCH);
+            }
             if (result.isSuccess()) {
                 String sourcePath = tempPath;
                 if (isEncryptedRemoteFile(remotePath)) {
@@ -1066,7 +1175,8 @@ public class DataSyncWorker implements Runnable {
     private SyncFile createFileWithSize(SyncFile file, long size) {
         FileInfo updatedInfo = new FileInfo(file.info().cameraId(), file.info().username(),
                 file.info().createDate(), size, file.info().type());
-        return new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), updatedInfo, null);
+        return new SyncFile(file.remotePath(), file.localPath(), file.relativeLocalPath(), updatedInfo,
+                file.expectedMd5(), null);
     }
 
     // Encrypted files need space for pulled encrypted temp and decrypted temp.
@@ -1301,7 +1411,8 @@ public class DataSyncWorker implements Runnable {
             }
 
             syncFiles.set(i,
-                    new SyncFile(file.remotePath(), rebasedLocalPath, rebasedRelativePath, file.info(), null));
+                    new SyncFile(file.remotePath(), rebasedLocalPath, rebasedRelativePath, file.info(),
+                            file.expectedMd5(), null));
 
         }
     }
@@ -1342,9 +1453,10 @@ public class DataSyncWorker implements Runnable {
     private void failRemaining(String cameraId, String hardwareId, List<SyncFile> syncFiles, int fromIndex,
             List<SyncFile> failedList, SyncCounters counters, String reason) {
         int remainingCount = counters.total - counters.passed - counters.failed;
+        int existingFailedCount = counters.failed;
         failRemainingFiles(cameraId, syncFiles, fromIndex, failedList, reason);
 
-        counters.failed = failedList.size();
+        counters.failed = existingFailedCount + failedList.size();
 
         updateSyncProgress(cameraId, counters);
 
@@ -1364,6 +1476,7 @@ public class DataSyncWorker implements Runnable {
                     remaining.localPath(),
                     remaining.relativeLocalPath(),
                     remaining.info(),
+                    remaining.expectedMd5(),
                     reason));
         }
         for (SyncFile failedFile : failedList) {

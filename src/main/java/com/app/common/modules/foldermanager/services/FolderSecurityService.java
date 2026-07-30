@@ -14,17 +14,22 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.sun.jna.Native;
+import com.sun.jna.platform.win32.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.app.common.definitions.AppConstants;
+import com.app.common.definitions.AppDataPaths;
 import com.app.common.helpers.AlertHelper;
 import com.app.common.modules.i18n.I18n;
 import com.app.common.services.WindowsCommandService;
 import com.app.common.services.WindowsCommandService.CommandResult;
+import com.sun.jna.LastErrorException;
 
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
@@ -51,6 +56,7 @@ public class FolderSecurityService {
     private static final String ICACLS_DENY = "/deny";
     private static final String ICACLS_GRANT_REPLACE = "/grant:r";
     private static final String ICACLS_REMOVE_DENY = "/remove:d";
+    private static final String ICACLS_PRIVATE_DIRECTORY_ACCESS = "(OI)(CI)(M)";
     private static final int ACL_REPAIR_CANCELLED = 10;
     private static final int ACL_REPAIR_INVALID_PATH = 11;
     private static final int ACL_REPAIR_OWNERSHIP_FAILED = 12;
@@ -143,6 +149,7 @@ public class FolderSecurityService {
     private static void lockSinglePathRaw(Path path) throws IOException {
         try {
             grantSharedFolderAccess(path);
+            hideSinglePath(path);
             runRequiredCommand(path, "Lock folder",
                     CMD_ICACLS,
                     path.toString(),
@@ -151,6 +158,49 @@ public class FolderSecurityService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Lock interrupted for: " + path, e);
+        }
+    }
+
+    /**
+     * Hide a single path from normal Explorer views without changing ACLs.
+     * <p>
+     * @param path the path to hide
+     * @throws IOException if the hide operation fails
+     */
+    public static void hideSinglePath(Path path) throws IOException {
+        updateFileAttributes(path,
+                WinNT.FILE_ATTRIBUTE_HIDDEN | WinNT.FILE_ATTRIBUTE_SYSTEM,
+                0,
+                "Apply hidden attributes");
+    }
+
+    /**
+     * Hide the private database backup directory and retry once after granting
+     * Everyone inheritable modify access required to create and replace backups.
+     * <p>
+     * The ACL repair is limited to the configured application database backup
+     * directory, does not alter existing descendant ACLs, and does not apply shared
+     * storage delete protection.
+     *
+     * @param path application database backup directory
+     * @throws IOException if validation, ACL grant, or the hide operation fails
+     */
+    public static void hidePrivateAppDirectory(Path path) throws IOException {
+        Path privateDirectory = validatePrivateAppDirectory(path);
+        try {
+            hideSinglePath(privateDirectory);
+        } catch (IOException firstFailure) {
+            if (!isPermissionFailure(firstFailure)) {
+                throw firstFailure;
+            }
+
+            try {
+                grantEveryonePrivateDirectoryAccess(privateDirectory);
+                hideSinglePath(privateDirectory);
+            } catch (IOException repairFailure) {
+                firstFailure.addSuppressed(repairFailure);
+                throw firstFailure;
+            }
         }
     }
 
@@ -184,10 +234,55 @@ public class FolderSecurityService {
                     path.toString(),
                     ICACLS_REMOVE_DENY,
                     WINDOWS_EVERYONE_SID);
+            updateFileAttributes(path,
+                    0,
+                    WinNT.FILE_ATTRIBUTE_HIDDEN | WinNT.FILE_ATTRIBUTE_SYSTEM,
+                    "Remove hidden attributes");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Unlock interrupted for: " + path, e);
         }
+    }
+
+    private static void updateFileAttributes(Path path, int attributesToSet,
+                                             int attributesToClear, String operation) throws IOException {
+        Path absolutePath = path.toAbsolutePath().normalize();
+        String nativePath = absolutePath.toString();
+        int currentAttributes = readFileAttributes(absolutePath, operation);
+
+        int updatedAttributes = (currentAttributes | attributesToSet) & ~attributesToClear;
+
+        if (updatedAttributes == currentAttributes) {
+            return;
+        }
+
+        boolean success = Kernel32.INSTANCE.SetFileAttributes(nativePath, new WinDef.DWORD(updatedAttributes));
+
+        if (!success) {
+            int errorCode = Native.getLastError();
+            throw win32IOException(operation, absolutePath, errorCode);
+        }
+    }
+
+    private static IOException win32IOException(String operation, Path path, int errorCode) {
+        String errorMessage;
+        try {
+            errorMessage = Kernel32Util.formatMessageFromLastErrorCode(errorCode).trim();
+        } catch (RuntimeException e) {
+            errorMessage = "Unknown Windows error";
+        }
+        return new IOException(operation + " failed for: " + path
+                + " (Win32 error=" + errorCode + ": " + errorMessage + ")",
+                new LastErrorException(errorCode));
+    }
+
+    private static int readFileAttributes(Path path, String operation) throws IOException {
+        int attributes = Kernel32.INSTANCE.GetFileAttributes(path.toString());
+        if (attributes == WinBase.INVALID_FILE_ATTRIBUTES) {
+            int errorCode = Native.getLastError();
+            throw win32IOException(operation, path, errorCode);
+        }
+        return attributes;
     }
 
     private static void grantSharedFolderAccess(Path path) throws IOException, InterruptedException {
@@ -198,11 +293,53 @@ public class FolderSecurityService {
                 WINDOWS_AUTHENTICATED_USERS_SID + ":(OI)(CI)(M,WDAC)");
     }
 
+    private static void grantEveryonePrivateDirectoryAccess(Path path) throws IOException {
+        RepairResult result = runPrivateDirectoryAclRepairWithPrompt(path);
+
+        if (result.exitCode() != 0) {
+            log.warn("[private-acl-repair] Failed for {} with exit code {}: {}",
+                    path, result.exitCode(), result.output());
+            throw new IOException(
+                    "Elevated private directory ACL repair failed for " + path
+                            + " (exit " + result.exitCode() + ")");
+        }
+    }
+
+    private static Path validatePrivateAppDirectory(Path path) throws IOException {
+        if (path == null) {
+            throw new IOException("Private application directory path is null");
+        }
+
+        Path privateDirectory = path.toAbsolutePath().normalize();
+        Path expectedDirectory = AppDataPaths.dataBackupDir().toAbsolutePath().normalize();
+        if (!privateDirectory.equals(expectedDirectory)) {
+            throw new IOException("Refusing to modify ACL for unrelated private directory: " + privateDirectory);
+        }
+
+        validateDirectoryWithoutReparsePoint(Path.of(AppDataPaths.appDir()).toAbsolutePath().normalize());
+        validateDirectoryWithoutReparsePoint(privateDirectory);
+        return privateDirectory;
+    }
+
+    private static void validateDirectoryWithoutReparsePoint(Path path) throws IOException {
+        int attributes = readFileAttributes(path, "Validate private application directory");
+        if ((attributes & WinNT.FILE_ATTRIBUTE_DIRECTORY) == 0) {
+            throw new IOException("Private application path is not a directory: " + path);
+        }
+        if ((attributes & WinNT.FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+            throw new IOException("Refusing to modify ACL through reparse point: " + path);
+        }
+    }
+
     private static boolean isPermissionFailure(Throwable error) {
         Throwable current = error;
         while (current != null) {
 
             if (current instanceof AccessDeniedException) {
+                return true;
+            }
+            if (current instanceof LastErrorException lastError
+                    && lastError.getErrorCode() == WinError.ERROR_ACCESS_DENIED) {
                 return true;
             }
             String message = current.getMessage();
@@ -380,6 +517,23 @@ public class FolderSecurityService {
     }
 
     private static RepairResult runAclRepairWithPrompt(Path repairPath, boolean recursiveRepair) throws IOException {
+        return runAclRepairWithPrompt(
+                repairPath,
+                () -> executeAclRepair(repairPath, recursiveRepair),
+                "[acl-repair]");
+    }
+
+    private static RepairResult runPrivateDirectoryAclRepairWithPrompt(Path repairPath) throws IOException {
+        return runAclRepairWithPrompt(
+                repairPath,
+                () -> executePrivateDirectoryAclRepair(repairPath),
+                "[private-acl-repair]");
+    }
+
+    private static RepairResult runAclRepairWithPrompt(
+            Path repairPath,
+            Supplier<RepairResult> repairOperation,
+            String logPrefix) throws IOException {
         boolean javaFxAvailable = isJavaFxRuntimeAvailable();
         while (true) {
             if (javaFxAvailable) {
@@ -387,13 +541,13 @@ public class FolderSecurityService {
             }
 
             RepairResult result = javaFxAvailable
-                    ? runElevatedRepairWithProgress(repairPath, recursiveRepair)
-                    : executeAclRepair(repairPath, recursiveRepair);
+                    ? runElevatedRepairWithProgress(repairOperation)
+                    : repairOperation.get();
             if (result.exitCode() != ACL_REPAIR_CANCELLED) {
                 return result;
             }
 
-            log.info("[acl-repair] UAC denied for {}; prompting again", repairPath);
+            log.info("{} UAC denied for {}; prompting again", logPrefix, repairPath);
         }
     }
 
@@ -448,12 +602,11 @@ public class FolderSecurityService {
         alert.showAndWait();
     }
 
-    private static RepairResult runElevatedRepairWithProgress(Path repairPath, boolean recursiveRepair)
+    private static RepairResult runElevatedRepairWithProgress(Supplier<RepairResult> repairOperation)
             throws IOException {
         if (Platform.isFxApplicationThread()) {
             Alert progress = createAclRepairProgressAlert();
-            CompletableFuture<RepairResult> repair = CompletableFuture.supplyAsync(
-                    () -> executeAclRepair(repairPath, recursiveRepair));
+            CompletableFuture<RepairResult> repair = CompletableFuture.supplyAsync(repairOperation);
             repair.whenComplete((result, error) -> dismissAclRepairProgress(progress));
             progress.showAndWait();
             return repair.join();
@@ -491,7 +644,7 @@ public class FolderSecurityService {
         RepairResult result;
         boolean progressDismissed;
         try {
-            result = executeAclRepair(repairPath, recursiveRepair);
+            result = repairOperation.get();
         } finally {
             progressDismissed = dismissAclRepairProgress(progress);
         }
@@ -570,6 +723,61 @@ public class FolderSecurityService {
         }
     }
 
+    private static RepairResult executePrivateDirectoryAclRepair(Path repairPath) {
+        log.info("[private-acl-repair] Starting elevated repair for {}", repairPath);
+        try {
+            CommandResult result = WINDOWS_COMMAND_SERVICE.runElevatedPowerShell(
+                    buildPrivateDirectoryAclRepairScript(repairPath));
+            if (result.exitCode() == 0) {
+                log.info("[private-acl-repair] Elevated repair succeeded for {}", repairPath);
+            } else if (result.exitCode() == ACL_REPAIR_CANCELLED) {
+                log.info("[private-acl-repair] UAC denied for {}", repairPath);
+            } else {
+                log.warn("[private-acl-repair] Elevated repair failed for {} with exit code {}: {}",
+                        repairPath, result.exitCode(), result.output());
+            }
+            return new RepairResult(result.exitCode(), result.output());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[private-acl-repair] Elevated repair interrupted for {}", repairPath);
+            return new RepairResult(ACL_REPAIR_INTERRUPTED, "Private ACL repair interrupted");
+        } catch (IOException e) {
+            log.warn("[private-acl-repair] Could not start elevated repair for {}: {}",
+                    repairPath, e.getMessage());
+            return new RepairResult(ACL_REPAIR_ACL_FAILED, e.getMessage());
+        }
+    }
+
+    private static String buildPrivateDirectoryAclRepairScript(Path repairPath) {
+        String target = repairPath.toAbsolutePath().normalize().toString().replace("'", "''");
+        String appRoot = Path.of(AppDataPaths.appDir()).toAbsolutePath().normalize().toString()
+                .replace("'", "''");
+        return "$ErrorActionPreference = 'Stop'; "
+                + "$target = '" + target + "'; "
+                + "$appRoot = '" + appRoot + "'; "
+                + "$expected = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($appRoot, 'db_backup')); "
+                + "$actual = [System.IO.Path]::GetFullPath($target); "
+                + "try { "
+                + "if ($actual -ne $expected) { exit " + ACL_REPAIR_INVALID_PATH + " }; "
+                + "foreach ($candidate in @($appRoot, $target)) { "
+                + "$item = Get-Item -LiteralPath $candidate -Force; "
+                + "if (-not $item.PSIsContainer) { exit " + ACL_REPAIR_INVALID_PATH + " }; "
+                + "if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { exit "
+                + ACL_REPAIR_REPARSE_POINT + " }; "
+                + "}; "
+                + "& icacls.exe $target '/grant' '" + WINDOWS_EVERYONE_SID + ":"
+                + ICACLS_PRIVATE_DIRECTORY_ACCESS + "' | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { "
+                + "& takeown.exe /F $target | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_OWNERSHIP_FAILED + " }; "
+                + "& icacls.exe $target '/grant' '" + WINDOWS_EVERYONE_SID + ":"
+                + ICACLS_PRIVATE_DIRECTORY_ACCESS + "' | Out-Null; "
+                + "if ($LASTEXITCODE -ne 0) { exit " + ACL_REPAIR_ACL_FAILED + " } "
+                + "}; "
+
+                + "exit 0; "
+                + "} catch { exit " + ACL_REPAIR_SCRIPT_FAILED + " }";
+    }
     private static String buildAclRepairScript(Path repairPath, boolean recursiveRepair) {
         String target = repairPath.toString().replace("'", "''");
         String takeownScope = recursiveRepair ? " /R /D Y" : "";
@@ -680,6 +888,7 @@ public class FolderSecurityService {
     private interface AclOperation {
         void run() throws IOException;
     }
+
 
     /**
      * Validate backup file integrity using SHA-256 sidecar files.

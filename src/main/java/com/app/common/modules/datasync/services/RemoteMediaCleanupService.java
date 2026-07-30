@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import com.app.common.definitions.AppConstants;
 import com.app.common.definitions.enums.FileType;
 import com.app.common.modules.device.services.AdbClient;
+import com.app.common.modules.device.configs.DeviceMediaLayout;
 import com.app.common.services.MassStorageService;
 
 /**
@@ -30,10 +31,13 @@ public class RemoteMediaCleanupService {
 
     private final AdbClient adbClient;
     private final MassStorageService massStorageService;
+    private final DeviceMediaLayout deviceMediaLayout;
 
-    public RemoteMediaCleanupService(@Lazy AdbClient adbClient, MassStorageService massStorageService) {
+    public RemoteMediaCleanupService(@Lazy AdbClient adbClient, MassStorageService massStorageService,
+            DeviceMediaLayout deviceMediaLayout) {
         this.adbClient = adbClient;
         this.massStorageService = massStorageService;
+        this.deviceMediaLayout = deviceMediaLayout;
     }
 
     /**
@@ -53,14 +57,14 @@ public class RemoteMediaCleanupService {
                         hardwareId, remotePath);
                 return;
             }
-            massStorageService.deleteFile(driveLetter, remotePath);
-            if (sidecarPath != null) {
+            boolean mediaDeleted = massStorageService.deleteFile(driveLetter, remotePath);
+            if (mediaDeleted && sidecarPath != null) {
                 massStorageService.deleteFile(driveLetter, sidecarPath);
             }
             return;
         }
-        adbClient.deleteRemoteFile(hardwareId, remotePath);
-        if (sidecarPath != null) {
+        boolean mediaDeleted = adbClient.deleteRemoteFile(hardwareId, remotePath);
+        if (mediaDeleted && sidecarPath != null) {
             adbClient.deleteRemoteFile(hardwareId, sidecarPath);
         }
     }
@@ -108,7 +112,8 @@ public class RemoteMediaCleanupService {
     }
 
     private void cleanupEmptyDateFoldersInAdb(String hardwareId, String root) {
-        List<String> dateDirs = adbClient.findDateDirectories(hardwareId, root, FileType.ALL_VALUES);
+        List<String> types = deviceMediaLayout.isDcamMediaPath(root) ? FileType.DCAM_VALUES : FileType.ALL_VALUES;
+        List<String> dateDirs = adbClient.findDateDirectories(hardwareId, root, types);
         for (String dir : dateDirs) {
             if (isValidDateFolder(dir)) {
                 adbClient.deleteRemoteDirectoryIfEmpty(hardwareId, dir);

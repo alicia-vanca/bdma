@@ -4,11 +4,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.app.common.definitions.enums.FileType;
+import com.app.common.modules.device.configs.DeviceMediaLayout;
+
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,13 +31,13 @@ public class MassStorageService {
      */
     public static final String MASS_STORAGE_PREFIX = "/mass_storage/";
 
-    /**
-     * Relative path inside the SD card root to the bodycam cache directory.
-     */
-    private static final String BODYCAM_CACHE = "Android" + File.separator
-            + "data" + File.separator
-            + "com.bodycamera.nettysocket" + File.separator
-            + "cache";
+    private static final String DCAM_VIRTUAL_SOURCE = "dcam/";
+
+    private final DeviceMediaLayout deviceMediaLayout;
+
+    public MassStorageService(DeviceMediaLayout deviceMediaLayout) {
+        this.deviceMediaLayout = deviceMediaLayout;
+    }
 
     /**
      * Lists all media files on the SD card, returning ADB-style virtual paths.
@@ -46,39 +53,38 @@ public class MassStorageService {
      */
     public List<String> findFiles(String driveLetter, List<String> types) {
         List<String> result = new ArrayList<>();
-        File cacheRoot = new File(driveLetter + BODYCAM_CACHE);
-
-        if (!cacheRoot.exists()) {
-            log.warn("MassStorage cache root not found: {}", cacheRoot.getAbsolutePath());
-            return result;
-        }
+        File cacheRoot = new File(driveLetter + deviceMediaLayout.legacyMassStorageMediaPath());
+        File dcamRoot = new File(driveLetter + deviceMediaLayout.dcamMassStorageMediaPath());
 
         for (String type : types) {
-            collectType(cacheRoot, type, result);
+            collectType(cacheRoot, type, "", result);
+        }
+        for (String type : FileType.DCAM_VALUES) {
+            collectType(dcamRoot, type, DCAM_VIRTUAL_SOURCE, result);
         }
 
-        log.info("MassStorage scan found {} files under {}", result.size(), cacheRoot.getAbsolutePath());
+        log.info("MassStorage scan found {} files", result.size());
         return result;
     }
 
-    private void collectType(File cacheRoot, String type, List<String> result) {
-        File typeDir = new File(cacheRoot, type);
+    private void collectType(File mediaRoot, String type, String virtualSource, List<String> result) {
+        File typeDir = new File(mediaRoot, type);
         if (!typeDir.exists() || !typeDir.isDirectory()) return;
 
         File[] dateDirs = typeDir.listFiles(File::isDirectory);
         if (dateDirs == null) return;
 
         for (File dateDir : dateDirs) {
-            collectDateDir(type, dateDir, result);
+            collectDateDir(virtualSource, type, dateDir, result);
         }
     }
 
-    private void collectDateDir(String type, File dateDir, List<String> result) {
+    private void collectDateDir(String virtualSource, String type, File dateDir, List<String> result) {
         File[] files = dateDir.listFiles(File::isFile);
         if (files == null) return;
 
         for (File file : files) {
-            String virtualPath = toVirtualPath(type, dateDir.getName(), file.getName());
+            String virtualPath = toVirtualPath(virtualSource, type, dateDir.getName(), file.getName());
             result.add(virtualPath);
             log.trace("MassStorage found: {}", virtualPath);
         }
@@ -131,6 +137,40 @@ public class MassStorageService {
         return file.length();
     }
 
+    public String readTextFile(String driveLetter, String virtualPath) {
+        File file = toWindowsFile(driveLetter, virtualPath);
+        if (file == null || !file.isFile()) {
+            return "";
+        }
+        try {
+            return Files.readString(file.toPath(), StandardCharsets.US_ASCII);
+        } catch (IOException e) {
+            log.warn("MassStorage text read failed: {}: {}", file.getAbsolutePath(), e.getMessage());
+            return "";
+        }
+    }
+
+    public String calculateMd5(String driveLetter, String virtualPath) {
+        File file = toWindowsFile(driveLetter, virtualPath);
+        if (file == null || !file.isFile()) {
+            return "";
+        }
+        try (InputStream input = Files.newInputStream(file.toPath())) {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                if (read > 0) {
+                    digest.update(buffer, 0, read);
+                }
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (IOException | java.security.NoSuchAlgorithmException e) {
+            log.warn("MassStorage MD5 calculation failed: {}: {}", file.getAbsolutePath(), e.getMessage());
+            return "";
+        }
+    }
+
     /**
      * Converts type/date/filename components to an ADB-style virtual path.
      *
@@ -139,8 +179,8 @@ public class MassStorageService {
      *   → "/mass_storage/video/2026-04-21/file.mp4"
      * </pre>
      */
-    private String toVirtualPath(String type, String dateDir, String fileName) {
-        return MASS_STORAGE_PREFIX + type + "/" + dateDir + "/" + fileName;
+    private String toVirtualPath(String virtualSource, String type, String dateDir, String fileName) {
+        return MASS_STORAGE_PREFIX + virtualSource + type + "/" + dateDir + "/" + fileName;
     }
 
     /**
@@ -162,21 +202,22 @@ public class MassStorageService {
         //             → video/2026-04-21/file.mp4
         String relative = virtualPath.substring(MASS_STORAGE_PREFIX.length());
 
-        // Expected: type/dateDir/fileName
         String[] parts = relative.split("/");
-        if (parts.length != 3) {
+        String mediaRoot;
+        int offset;
+        if (parts.length == 4 && "dcam".equals(parts[0])) {
+            mediaRoot = deviceMediaLayout.dcamMassStorageMediaPath();
+            offset = 1;
+        } else if (parts.length == 3) {
+            mediaRoot = deviceMediaLayout.legacyMassStorageMediaPath();
+            offset = 0;
+        } else {
             log.warn("Unexpected virtual path format: {}", virtualPath);
             return null;
         }
 
-        String type = parts[0];
-        String dateDir = parts[1];
-        String fileName = parts[2];
-
-        return new File(
-                new File(new File(new File(driveLetter + BODYCAM_CACHE, type), dateDir), fileName)
-                        .getAbsolutePath()
-        );
+        return new File(new File(new File(driveLetter + mediaRoot, parts[offset]), parts[offset + 1]),
+                parts[offset + 2]);
     }
 
     /**
@@ -220,13 +261,18 @@ public class MassStorageService {
      */
     public List<String> listDateDirectories(String driveLetter, List<String> types) {
         List<String> result = new ArrayList<>();
-        File cacheRoot = new File(driveLetter + BODYCAM_CACHE);
-        if (!cacheRoot.exists()) {
-            return result;
-        }
+        File cacheRoot = new File(driveLetter + deviceMediaLayout.legacyMassStorageMediaPath());
+        collectDateDirectories(cacheRoot, types, "", result);
+        collectDateDirectories(new File(driveLetter + deviceMediaLayout.dcamMassStorageMediaPath()),
+                FileType.DCAM_VALUES,
+                DCAM_VIRTUAL_SOURCE, result);
+        return result;
+    }
 
+    private void collectDateDirectories(File mediaRoot, List<String> types, String virtualSource,
+            List<String> result) {
         for (String type : types) {
-            File typeDir = new File(cacheRoot, type);
+            File typeDir = new File(mediaRoot, type);
             if (!typeDir.exists() || !typeDir.isDirectory()) {
                 continue;
             }
@@ -237,10 +283,9 @@ public class MassStorageService {
             }
 
             for (File dateDir : dateDirs) {
-                result.add(MASS_STORAGE_PREFIX + type + "/" + dateDir.getName());
+                result.add(MASS_STORAGE_PREFIX + virtualSource + type + "/" + dateDir.getName());
             }
         }
-        return result;
     }
 
     /**
@@ -258,16 +303,11 @@ public class MassStorageService {
             return List.of();
         }
 
-        String relative = virtualDirPath.substring(MASS_STORAGE_PREFIX.length());
-        String[] parts = relative.split("/");
-        if (parts.length != 2) {
+        File dir = toWindowsDirectory(driveLetter, virtualDirPath);
+        if (dir == null) {
             log.warn("Unexpected virtual directory path format: {}", virtualDirPath);
             return List.of();
         }
-
-        File dir = new File(
-                new File(new File(driveLetter + BODYCAM_CACHE, parts[0]), parts[1])
-                        .getAbsolutePath());
         if (!dir.exists() || !dir.isDirectory()) {
             return List.of();
         }
@@ -294,15 +334,10 @@ public class MassStorageService {
             return false;
         }
 
-        String relative = virtualDirPath.substring(MASS_STORAGE_PREFIX.length());
-        String[] parts = relative.split("/");
-        if (parts.length != 2) {
+        File dir = toWindowsDirectory(driveLetter, virtualDirPath);
+        if (dir == null) {
             return false;
         }
-
-        File dir = new File(
-                new File(new File(driveLetter + BODYCAM_CACHE, parts[0]), parts[1])
-                        .getAbsolutePath());
 
         if (!dir.exists()) {
             return false;
@@ -331,6 +366,20 @@ public class MassStorageService {
         }
     }
 
+    private File toWindowsDirectory(String driveLetter, String virtualDirPath) {
+        if (!virtualDirPath.startsWith(MASS_STORAGE_PREFIX)) {
+            return null;
+        }
+
+        String[] parts = virtualDirPath.substring(MASS_STORAGE_PREFIX.length()).split("/");
+        if (parts.length == 3 && "dcam".equals(parts[0])) {
+            return new File(new File(driveLetter + deviceMediaLayout.dcamMassStorageMediaPath(), parts[1]), parts[2]);
+        }
+        if (parts.length == 2) {
+            return new File(new File(driveLetter + deviceMediaLayout.legacyMassStorageMediaPath(), parts[0]), parts[1]);
+        }
+        return null;
+    }
     /**
      * Returns total capacity, free space, and usable space for the mass storage drive.
      * Windows reports these metrics from the drive root, so values include the whole SD card.

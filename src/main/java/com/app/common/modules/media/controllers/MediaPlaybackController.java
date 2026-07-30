@@ -1,14 +1,9 @@
 package com.app.common.modules.media.controllers;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.DoubleConsumer;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.function.Predicate;
 
@@ -54,9 +49,13 @@ final class MediaPlaybackController {
     private static final Logger log = LoggerFactory.getLogger(MediaPlaybackController.class);
     private static final long END_TOLERANCE_MILLIS = 100;
     private static final String LIBVLC_LIBRARY_NAME = "libvlc";
-    private static final Pattern SELECTED_MODULE_PATTERN = Pattern.compile(
-            "using\\s+(?<type>.+?)\\s+module\\s+[\\\"'](?<name>[^\\\"']+)[\\\"']",
-            Pattern.CASE_INSENSITIVE);
+    private static final String VLC_MAIN_MODULE = "main";
+    private static final Pattern UNSUPPORTED_OPTION_ERROR_PATTERN = Pattern.compile(
+            "^option (?:marq|logo|amem)-\\S+ does not exist$");
+    private static final String NATIVE_LOG_FORMAT_FAILURE = "Failed to format native log message";
+    private static final String MISSING_QUIET_OPTION_ERROR = "option quiet does not exist";
+    private static final String SET_ON_TOP_ERROR = "Failed to set on top";
+    private static final String BUFFER_DEADLOCK_ERROR = "buffer deadlock prevented";
 
     private final VBox videoPane;
     private final StackPane videoContentPane;
@@ -90,8 +89,6 @@ final class MediaPlaybackController {
     private MediaPlayerFactory mediaPlayerFactory;
     private EmbeddedMediaPlayer mediaPlayer;
     private NativeLog nativeLog;
-    private volatile Path bundledVlcDirectory;
-    private final Set<String> observedVlcPlugins = ConcurrentHashMap.newKeySet();
 
     record PlaybackControllerDependencies(
             VBox videoPane,
@@ -310,11 +307,10 @@ final class MediaPlaybackController {
                 configureBundledVlcRuntime(vlcDirectory);
                 mediaPlayerFactory = new MediaPlayerFactory(
                         (NativeDiscovery) null, "--no-video-title-show", "--verbose=2");
-                bundledVlcDirectory = vlcDirectory;
                 nativeLog = new NativeLog(mediaPlayerFactory.getLibVlcInstance().get());
-                nativeLog.setLevel(LogLevel.DEBUG);
-                nativeLog.addLogListener(this::handleVlcNativeLog);
-                log.info("Using bundled libVLC runtime: {}", vlcDirectory);
+                nativeLog.setLevel(LogLevel.ERROR);
+                nativeLog.addLogListener((level, module, file, line, name, header, id, message) ->
+                        handleVlcNativeLog(level, module, message));
             }
             return mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer();
         } catch (RuntimeException | LinkageError e) {
@@ -330,85 +326,20 @@ final class MediaPlaybackController {
         }
     }
 
-    static SelectedVlcModule parseSelectedVlcModule(String message) {
-        Matcher matcher = SELECTED_MODULE_PATTERN.matcher(message == null ? "" : message);
-        return matcher.find()
-                ? new SelectedVlcModule(matcher.group("type").trim(), matcher.group("name").trim())
-                : null;
-    }
-
-    static String pluginCategoryForModuleType(String type) {
-        String normalizedType = type.toLowerCase(Locale.ROOT).replace('-', ' ').replace('_', ' ').trim();
-        if (normalizedType.equals("decoder") || normalizedType.endsWith(" decoder")
-                || normalizedType.equals("encoder") || normalizedType.endsWith(" encoder")) {
-            return "codec";
-        }
-        return switch (normalizedType) {
-        case "access" -> "access";
-        case "access output" -> "access_output";
-        case "audio filter" -> "audio_filter";
-        case "audio mixer" -> "audio_mixer";
-        case "audio output" -> "audio_output";
-        case "demux", "demuxer" -> "demux";
-        case "packetizer" -> "packetizer";
-        case "spu", "subtitle" -> "spu";
-        case "stream filter" -> "stream_filter";
-        case "stream output", "stream out" -> "stream_out";
-        case "text renderer" -> "text_renderer";
-        case "video converter", "video chroma" -> "video_chroma";
-        case "video filter" -> "video_filter";
-        case "video output" -> "video_output";
-        default -> null;
-        };
-    }
-
-    private void handleVlcNativeLog(LogLevel level, String module, String file, Integer line,
-            String name, String header, Integer id, String message) {
-        SelectedVlcModule selectedModule = parseSelectedVlcModule(message);
-        if (selectedModule != null) {
-            String pluginKey = selectedModule.type() + "|" + selectedModule.name();
-            if (observedVlcPlugins.add(pluginKey)) {
-                Path pluginDll = resolveVlcPluginDll(selectedModule);
-                log.info("VLC_RUNTIME_PLUGIN [{}] type={} module={} dll={} message={}",
-                        level, selectedModule.type(), selectedModule.name(),
-                        pluginDll == null ? "unresolved" : bundledVlcDirectory.relativize(pluginDll), message);
-            }
-        }
-        if (level == LogLevel.WARNING || level == LogLevel.ERROR) {
-            log.warn("VLC_NATIVE_LOG [{}] module={} message={}", level, module, message);
+    private void handleVlcNativeLog(LogLevel level, String module, String message) {
+        if (level == LogLevel.ERROR && !isSuppressedVlcError(module, message)) {
+            log.error("VLC_NATIVE_LOG [{}] module={} message={}", level, module, message);
         }
     }
 
-    private Path resolveVlcPluginDll(SelectedVlcModule selectedModule) {
-        Path root = bundledVlcDirectory;
-        if (root == null) {
-            return null;
-        }
-        String fileName = switch (selectedModule.name()) {
-        case "d3d11_filters" -> "libdirect3d11_filters_plugin.dll";
-        case "d3d9_filters" -> "libdirect3d9_filters_plugin.dll";
-        default -> "lib" + selectedModule.name() + "_plugin.dll";
-        };
-        String category = pluginCategoryForModuleType(selectedModule.type());
-        if (category != null) {
-            Path candidate = root.resolve("plugins").resolve(category).resolve(fileName);
-            if (Files.isRegularFile(candidate)) {
-                return candidate;
-            }
-        }
-        try (var pluginFiles = Files.walk(root.resolve("plugins"), 2)) {
-            return pluginFiles
-                    .filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().equalsIgnoreCase(fileName))
-                    .findFirst()
-                    .orElse(null);
-        } catch (IOException e) {
-            log.debug("Failed to resolve libVLC plugin DLL: {}", fileName, e);
-            return null;
-        }
+    static boolean isSuppressedVlcError(String module, String message) {
+        return (VLC_MAIN_MODULE.equals(module) || module == null)
+                && (NATIVE_LOG_FORMAT_FAILURE.equals(message)
+                        || MISSING_QUIET_OPTION_ERROR.equals(message)
+                        || SET_ON_TOP_ERROR.equals(message)
+                        || BUFFER_DEADLOCK_ERROR.equals(message)
+                        || (message != null && UNSUPPORTED_OPTION_ERROR_PATTERN.matcher(message).matches()));
     }
-
-    record SelectedVlcModule(String type, String name) {}
 
     private static Path resolveBundledVlcDirectory() {
         return NativeRuntimePathResolver.resolve(
