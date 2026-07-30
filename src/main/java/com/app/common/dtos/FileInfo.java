@@ -3,16 +3,13 @@ package com.app.common.dtos;
 import java.util.Set;
 
 /**
- * Parses file names with the following format:
+ * Parses file names with the following formats:
  * DSJ_{cameraId}_{username}_{yyyyMMdd}_{HHmmss}.ext
- * <p>
+ * DCAM_{cameraId}_{username}_{yyyyMMdd}_{HHmmss}.ext
+ *
  * Example:
  * DSJ_000003_000000_20260408_155023.jpg
- * → cameraId = "000003"
- * → username = "000000"
- * → createDate = "2026-04-08 15:50:23"
- * → size = file size in bytes
- * → type = folder category from remote path
+ * DCAM_000003_000000_20260408_155023.aac
  */
 public record FileInfo(
         String cameraId,
@@ -21,63 +18,52 @@ public record FileInfo(
         long size,
         String type) {
 
-    private static final String PREFIX = "DSJ_";
-    private static final Set<String> VALID_EXTENSIONS = Set.of("mp4", "mp3", "jpg", "jpeg", "png");
+    private static final Set<String> PREFIXES = Set.of("DSJ_", "DCAM_");
+    private static final Set<String> VALID_EXTENSIONS = Set.of("mp4", "mp3", "aac", "wav", "jpg", "jpeg", "png");
+    private static final Set<String> AUDIO_EXTENSIONS = Set.of("aac", "mp3", "wav", "mp4");
 
-    /**
-     * Parses a FileInfo from a file name.
-     * Returns null if the format is invalid.
-     */
     public static FileInfo parse(String fileName) {
         return parse(fileName, 0, null);
     }
 
-    /**
-     * Parses a FileInfo from a file name with size.
-     * Returns null if the format is invalid.
-     */
     public static FileInfo parse(String fileName, long size) {
         return parse(fileName, size, null);
     }
 
-    /**
-     * Parses a FileInfo from a file name with size and type.
-     * Returns null if the format is invalid.
-     */
     public static FileInfo parse(String fileName, long size, String type) {
         if (fileName == null || fileName.isBlank())
             return null;
 
         try {
-            // Validate and remove file extension
             if (!fileName.contains("."))
                 return null;
             String ext = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
             if (!VALID_EXTENSIONS.contains(ext))
                 return null;
-            String base = fileName.substring(0, fileName.lastIndexOf('.'));
-
-            // Validate prefix
-            if (!base.startsWith(PREFIX))
+            if (isAudioType(type) && !AUDIO_EXTENSIONS.contains(ext))
                 return null;
 
-            // Remove prefix "DSJ_"
-            String body = base.substring(PREFIX.length());
+            String base = fileName.substring(0, fileName.lastIndexOf('.'));
+            String prefix = PREFIXES.stream()
+                    .filter(base::startsWith)
+                    .findFirst()
+                    .orElse(null);
+            if (prefix == null)
+                return null;
 
-            // Split: cameraId _ userName _ yyyyMMdd _ HHmmss
+            String body = base.substring(prefix.length());
             String[] parts = body.split("_");
             if (parts.length < 4)
                 return null;
 
             String cameraId = parts[0];
             String username = parts[1];
-            String datePart = parts[2]; // yyyyMMdd
-            String timePart = parts[3]; // HHmmss
+            String datePart = parts[2];
+            String timePart = parts[3];
 
             if (datePart.length() != 8 || timePart.length() != 6)
                 return null;
 
-            // Format to "yyyy-MM-dd HH:mm:ss"
             String createDate = datePart.substring(0, 4) + "-"
                     + datePart.substring(4, 6) + "-"
                     + datePart.substring(6, 8) + " "
@@ -86,9 +72,12 @@ public record FileInfo(
                     + timePart.substring(4, 6);
 
             return new FileInfo(cameraId, username, createDate, size, type);
-
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static boolean isAudioType(String type) {
+        return type != null && "audio".equalsIgnoreCase(type);
     }
 }

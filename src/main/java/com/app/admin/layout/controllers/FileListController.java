@@ -1607,10 +1607,11 @@ public class FileListController {
 
     @EventListener
     public void onFileRestored(FileRestoredEvent event) {
-        if (event.syncedPath() != null && !event.syncedPath().isBlank()) {
-            fileVerificationCache.remove(event.syncedPath());
-        }
-        Platform.runLater(this::refreshCurrentFilterIfReady);
+        fileVerificationCache.clear();
+        Platform.runLater(() -> {
+            refreshCurrentFilterIfReady();
+            refreshFileTableIfReady();
+        });
     }
 
     private void refreshCurrentFilterIfReady() {

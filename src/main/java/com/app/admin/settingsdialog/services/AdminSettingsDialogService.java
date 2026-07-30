@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,6 +42,9 @@ public class AdminSettingsDialogService {
     private static final Path REG_EXE_PATH = Path.of("C:", "Windows", "System32", "reg.exe");
     private static final long RESET_SHUTDOWN_GRACE_SECONDS = 5;
     private static final long REG_COMMAND_TIMEOUT_SECONDS = 10;
+    private static final String USER_HOME_PROPERTY = "user.home";
+    private static final String DOWNLOADS_DIRECTORY = "Downloads";
+    private static final String BOOLEAN_FALSE_VALUE = Boolean.FALSE.toString();
 
     private final AppConfigService appConfigService;
     private final FolderManagerService folderManagerService;
@@ -56,7 +59,7 @@ public class AdminSettingsDialogService {
         thread.setDaemon(true);
         return thread;
     });
-    private volatile CompletableFuture<Boolean> resetTask = CompletableFuture.completedFuture(true);
+    private CompletableFuture<Boolean> resetTask = CompletableFuture.completedFuture(true);
     private Long resetUserId;
     private Role resetScope;
 
@@ -112,6 +115,15 @@ public class AdminSettingsDialogService {
      */
     @Transactional
     public void setAutoDeleteState(boolean autoDelete, boolean deleteEmptyDateFolders) {
+        saveAutoDeleteState(autoDelete, deleteEmptyDateFolders);
+    }
+
+    @Transactional
+    public void setDeleteEmptyDateFolders(boolean deleteEmptyDateFolders) {
+        saveAutoDeleteState(getAutoDelete(), deleteEmptyDateFolders);
+    }
+
+    private void saveAutoDeleteState(boolean autoDelete, boolean deleteEmptyDateFolders) {
         if (!autoDelete) {
             appConfigService.saveConfigValue(
                     AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC, Boolean.FALSE.toString());
@@ -126,10 +138,6 @@ public class AdminSettingsDialogService {
                 autoDelete, deleteEmptyDateFolders);
     }
 
-    public void setDeleteEmptyDateFolders(boolean deleteEmptyDateFolders) {
-        setAutoDeleteState(getAutoDelete(), deleteEmptyDateFolders);
-    }
-
     // ── Export ─────────────────────────────────────────────────────────────
 
     /**
@@ -142,7 +150,7 @@ public class AdminSettingsDialogService {
         if (stored != null && !stored.isBlank()) {
             return stored;
         }
-        String downloadsPath = Path.of(System.getProperty("user.home"), "Downloads").toString();
+        String downloadsPath = getDownloadsPath();
 
         log.warn("Export folder has not been set for user [{}], falling back to Downloads", userId);
         saveExportFolderForUser(userId, downloadsPath);
@@ -163,7 +171,7 @@ public class AdminSettingsDialogService {
         if (stored != null && !stored.isBlank()) {
             log.warn("Last export dir path no longer exists for path [{}], falling back to Downloads", stored);
         }
-        return Path.of(System.getProperty("user.home"), "Downloads").toString();
+        return getDownloadsPath();
     }
 
     /**
@@ -209,6 +217,10 @@ public class AdminSettingsDialogService {
         userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_ASK_EVERY_TIME_EXPORT,
                 String.valueOf(askEveryTime));
         log.info("Ask every time export set to: {} [userId={}]", askEveryTime, userId);
+    }
+
+    private static String getDownloadsPath() {
+        return Path.of(System.getProperty(USER_HOME_PROPERTY), DOWNLOADS_DIRECTORY).toString();
     }
 
     // ── Start with Windows ────────────────────────────────────────────────────
@@ -262,62 +274,76 @@ public class AdminSettingsDialogService {
     // Execute registry add/delete and return a user-facing diagnostic message when
     // the command cannot be applied.
     private RegistryCommandResult applyRegistryEntry(boolean enable) {
-        Process process = null;
         try {
-            ProcessBuilder pb;
-            if (enable) {
-                String exePath = resolveAppExePath();
-                File exeFile = new File(exePath);
-                if (!exeFile.exists()) {
-                    log.error("Launcher executable not found at: {}", exePath);
-                    return new RegistryCommandResult(false,
-                            "Cannot set startup when running from JAR. Install the application to enable this feature.");
-                }
-                // Wrap in quotes so Windows handles paths with spaces correctly.
-                String quotedExePath = "\"" + exePath + "\"";
-                pb = new ProcessBuilder(
-                        REG_EXE_PATH.toString(), "add", AppConstants.STARTUP_REG_KEY,
-                        "/v", AppConstants.STARTUP_REG_VALUE,
-                        "/t", "REG_SZ",
-                        "/d", quotedExePath,
-                        "/f");
-            } else {
-                pb = new ProcessBuilder(
-                        REG_EXE_PATH.toString(), "delete", AppConstants.STARTUP_REG_KEY,
-                        "/v", AppConstants.STARTUP_REG_VALUE,
-                        "/f");
-            }
-            process = pb.redirectErrorStream(true).start();
-            if (!process.waitFor(REG_COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(1, TimeUnit.SECONDS);
-                log.warn("Startup registry command timed out after {}s", REG_COMMAND_TIMEOUT_SECONDS);
+            Optional<ProcessBuilder> processBuilder = createRegistryProcessBuilder(enable);
+            if (processBuilder.isEmpty()) {
                 return new RegistryCommandResult(false,
-                        "Command timed out after " + REG_COMMAND_TIMEOUT_SECONDS + " seconds");
+                        "Cannot set startup when running from JAR. Install the application to enable this feature.");
             }
-            int exitCode = process.exitValue();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-            if (exitCode != 0) {
-                if (!enable && isMissingRegistryEntry(exitCode, output)) {
-                    log.debug("Startup registry entry already absent");
-                    return RegistryCommandResult.ok();
+
+            Process process = processBuilder.get().redirectErrorStream(true).start();
+            try {
+                return awaitRegistryCommand(process, enable);
+            } catch (InterruptedException e) {
+                if (process.isAlive()) {
+                    process.destroyForcibly();
                 }
-                log.warn("Startup registry command exited with code {}. Output: {}", exitCode, output);
-                return new RegistryCommandResult(false,
-                        "Command exited with code " + exitCode + (output.isBlank() ? "" : ". " + output));
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while applying startup registry entry", e);
+                return new RegistryCommandResult(false, "Interrupted while applying startup registry entry");
             }
-            return RegistryCommandResult.ok();
-        } catch (InterruptedException e) {
-            if (process != null && process.isAlive()) {
-                process.destroyForcibly();
-            }
-            Thread.currentThread().interrupt();
-            log.warn("Interrupted while applying startup registry entry", e);
-            return new RegistryCommandResult(false, "Interrupted while applying startup registry entry");
         } catch (Exception e) {
             log.error("Failed to apply startup registry entry", e);
             return new RegistryCommandResult(false, e.getMessage() == null ? "Unknown error" : e.getMessage());
         }
+    }
+
+    private Optional<ProcessBuilder> createRegistryProcessBuilder(boolean enable) {
+        if (!enable) {
+            return Optional.of(new ProcessBuilder(
+                    REG_EXE_PATH.toString(), "delete", AppConstants.STARTUP_REG_KEY,
+                    "/v", AppConstants.STARTUP_REG_VALUE,
+                    "/f"));
+        }
+
+        String exePath = resolveAppExePath();
+        if (!Files.isRegularFile(Path.of(exePath))) {
+            log.error("Launcher executable not found at: {}", exePath);
+            return Optional.empty();
+        }
+
+        String quotedExePath = "\"" + exePath + "\"";
+        return Optional.of(new ProcessBuilder(
+                REG_EXE_PATH.toString(), "add", AppConstants.STARTUP_REG_KEY,
+                "/v", AppConstants.STARTUP_REG_VALUE,
+                "/t", "REG_SZ",
+                "/d", quotedExePath,
+                "/f"));
+    }
+
+    private RegistryCommandResult awaitRegistryCommand(Process process, boolean enable)
+            throws IOException, InterruptedException {
+        if (!process.waitFor(REG_COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            process.waitFor(1, TimeUnit.SECONDS);
+            log.warn("Startup registry command timed out after {}s", REG_COMMAND_TIMEOUT_SECONDS);
+            return new RegistryCommandResult(false,
+                    "Command timed out after " + REG_COMMAND_TIMEOUT_SECONDS + " seconds");
+        }
+
+        int exitCode = process.exitValue();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        if (exitCode == 0) {
+            return RegistryCommandResult.ok();
+        }
+        if (!enable && isMissingRegistryEntry(exitCode, output)) {
+            log.debug("Startup registry entry already absent");
+            return RegistryCommandResult.ok();
+        }
+
+        log.warn("Startup registry command exited with code {}. Output: {}", exitCode, output);
+        return new RegistryCommandResult(false,
+                "Command exited with code " + exitCode + (output.isBlank() ? "" : ". " + output));
     }
 
     private boolean isMissingRegistryEntry(int exitCode, String output) {
@@ -413,15 +439,17 @@ public class AdminSettingsDialogService {
         }
 
         if (scope == Role.ADMIN || scope == Role.USER) {
-            String downloadsPath = Path.of(System.getProperty("user.home"), "Downloads").toString();
+            String downloadsPath = getDownloadsPath();
             userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_EXPORT_DIR, downloadsPath);
             userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_LAST_EXPORT_DIR, downloadsPath);
-            userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_ASK_EVERY_TIME_EXPORT, "false");
+            userSettingService.saveConfigValue(userId, AppConstants.KEY_USER_ASK_EVERY_TIME_EXPORT,
+                    BOOLEAN_FALSE_VALUE);
         }
 
         if (scope == Role.ADMIN || scope == Role.DEV) {
-            appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, "false");
-            appConfigService.saveConfigValue(AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC, "false");
+            appConfigService.saveConfigValue(AppConstants.KEY_IS_AUTO_DELETE_AFTER_SYNC, BOOLEAN_FALSE_VALUE);
+            appConfigService.saveConfigValue(AppConstants.KEY_IS_DELETE_EMPTY_DATE_FOLDER_AFTER_SYNC,
+                    BOOLEAN_FALSE_VALUE);
             folderManagerService.resetDefaultStoragePaths();
             setStartWithWindows(false);
         }
@@ -449,7 +477,7 @@ public class AdminSettingsDialogService {
         CompletableFuture<Boolean> task;
         synchronized (this) {
             if (resetExecutor.isShutdown()) {
-                return true;
+                return resetExecutor.isTerminated();
             }
             task = resetTask;
             resetExecutor.shutdown();
@@ -473,12 +501,12 @@ public class AdminSettingsDialogService {
             log.warn("Settings reset task exceeded {}s shutdown grace; interrupting and continuing shutdown",
                     RESET_SHUTDOWN_GRACE_SECONDS);
             resetExecutor.shutdownNow();
-            return true;
+            return false;
         } catch (InterruptedException e) {
             resetExecutor.shutdownNow();
             Thread.currentThread().interrupt();
             log.warn("Interrupted while waiting for settings reset task; forcing stop and continuing shutdown");
-            return true;
+            return false;
         }
     }
 

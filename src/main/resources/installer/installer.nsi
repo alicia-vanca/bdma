@@ -27,6 +27,8 @@
 !define ACTION_INSTALL_UPDATE "1"
 !define ACTION_UNINSTALL "2"
 !define ACTION_UNINSTALL_DELETE_DATA "3"
+!define ERROR_ALREADY_EXISTS 183
+!define INSTALLER_MUTEX_NAME "Global\DVID.BDMA.Installer"
 
 !define MUI_ICON "${INSTALLER_ICON}"
 !define MUI_UNICON "${INSTALLER_ICON}"
@@ -73,6 +75,19 @@ Page custom ShowActionDialog ShowActionDialogLeave
 
 ; ── Check if already installed ──────────────────────────────────
 Function .onInit
+  System::Call 'kernel32::CreateMutexW(p 0, i 0, w "${INSTALLER_MUTEX_NAME}") p .r0 ?e'
+  Pop $1
+
+  ${If} $0 == 0
+    MessageBox MB_OK|MB_ICONSTOP \
+      "BDMA Setup could not acquire its installer lock. Setup will close to avoid a concurrent installation."
+    Abort
+  ${EndIf}
+
+  ${If} $1 == ${ERROR_ALREADY_EXISTS}
+    Abort
+  ${EndIf}
+
   ; Prefer 64-bit PowerShell when available.
   StrCpy $PowerShellExe "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
   IfFileExists "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" 0 powershellReady

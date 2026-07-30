@@ -471,6 +471,7 @@ public class RestoreService {
 
             fileService.upsertFileRecord(destPath.toString(), sourcePath.toString(), userId, deviceId,
                     info.createDate(), fileName);
+            log.info("[RESTORE] Single file restored: {} -> {}", sourcePath, destPath);
             eventPublisher.publishEvent(new FileRestoredEvent(stripDriveLetter(destPath.toString())));
             return BackupSyncResult.success(1, List.of(), destPath.toString());
         } catch (FileNotFoundOnAnyDriveException e) {

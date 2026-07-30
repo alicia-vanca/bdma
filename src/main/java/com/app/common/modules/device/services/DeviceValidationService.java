@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import com.app.common.definitions.AppConstants;
 import com.app.common.exceptions.DeviceDisconnectedException;
+import com.app.common.modules.device.configs.DeviceMediaLayout;
 import com.app.common.modules.device.dtos.DeviceValidationResult;
 import com.app.common.models.ModelWhitelist;
 import com.app.common.models.ModelWhitelistRule;
@@ -40,20 +41,20 @@ public class DeviceValidationService {
     private final DeviceSpecMonitor deviceSpecMonitor;
 
     private final String configCsonPath;
-    private final String requiredDeviceDataFolder;
+    private final DeviceMediaLayout deviceMediaLayout;
 
     public DeviceValidationService(AdbClient adbClient,
             ModelWhitelistRepository whitelistRepository,
             @Lazy ValidatedDeviceRepository validatedDeviceRepository,
             DeviceSpecMonitor deviceSpecMonitor,
             @Value("${device.validation.config-cson-path}") String configCsonPath,
-            @Value("${device.validation.required-device-data-folder}") String requiredDeviceDataFolder) {
+            DeviceMediaLayout deviceMediaLayout) {
         this.adbClient = adbClient;
         this.whitelistRepository = whitelistRepository;
         this.validatedDeviceRepository = validatedDeviceRepository;
         this.deviceSpecMonitor = deviceSpecMonitor;
         this.configCsonPath = configCsonPath;
-        this.requiredDeviceDataFolder = requiredDeviceDataFolder;
+        this.deviceMediaLayout = deviceMediaLayout;
     }
 
     public DeviceValidationResult validateConnectedDevice(String adbSerial) {
@@ -101,7 +102,12 @@ public class DeviceValidationService {
             return failValidation(adbSerial, props, "Whitelist rule mismatch");
         }
 
-        List<String> missingFiles = findMissingFiles(adbSerial, Set.of(configCsonPath, requiredDeviceDataFolder));
+        List<String> missingFiles = findMissingFiles(adbSerial, Set.of(configCsonPath));
+        if (!adbClient.fileExists(adbSerial, deviceMediaLayout.legacyDeviceDataFolder())
+                && !adbClient.fileExists(adbSerial, deviceMediaLayout.dcamDeviceDataFolder())) {
+            missingFiles.add(deviceMediaLayout.legacyDeviceDataFolder() + " or "
+                    + deviceMediaLayout.dcamDeviceDataFolder());
+        }
         if (!missingFiles.isEmpty()) {
             return failValidation(adbSerial, props, "Required file not exist: " + String.join(", ", missingFiles));
         }

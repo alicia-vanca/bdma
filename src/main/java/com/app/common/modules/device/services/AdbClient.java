@@ -681,6 +681,25 @@ public class AdbClient {
         }
     }
 
+    public String calculateMd5(String serial, String path) {
+        try {
+            RunResult result = executeAdbCommand(serial, PULL_TIMEOUT, ADB_SHELL, "md5sum", path);
+            if (result.exitCode() != 0) {
+                return "";
+            }
+
+            String output = result.output().trim();
+            Matcher matcher = Pattern.compile("^([0-9a-fA-F]{32})(?:\\s+.*)?$").matcher(output);
+            return matcher.matches() ? matcher.group(1) : "";
+        } catch (DeviceDisconnectedException e) {
+            log.debug("Skip calculating remote MD5 because device is disconnected: {} on {}", path, serial);
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to calculate remote MD5 for {} on {}", path, serial, e);
+            return "";
+        }
+    }
+
     public Process startAdbProcess(String... args) {
         String adbExecutable = adbRuntimeService.resolveAdbExecutable();
         List<String> command = new ArrayList<>();
